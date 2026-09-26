@@ -1235,3 +1235,7 @@ void oledSetScreensaverAnim(int8_t animIdx) {
     s_forcedAnim = animIdx;
     s_forceRender = true;
 }
+
+void oledDiscardGridLatches() {
+    discardGridLatches();
+}

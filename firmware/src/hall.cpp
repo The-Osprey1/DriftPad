@@ -71,8 +71,7 @@ void HallKey::init(uint8_t index, uint8_t channel, uint8_t keycode, const char* 
     _valleyDepthMm = 0.0f;
     _isPressed = false;
     _everActuated = false;
-    _pressCount = 0;
-    _releaseCount = 0;
+    // Edge counters remain monotonic across resets to prevent phantom flashes on the Core 1 renderer
     _prevRaw = 2048.0f;
     for (int i = 0; i < 18; ++i) {
         _dHist[i] = 0.0f;

@@ -174,6 +174,7 @@ void processCommand(String line) {
         configResetDefaults();
         configApplyToHardware();
         configSave();
+        oledDiscardGridLatches();
         Serial.println(F("{\"status\":\"ok\",\"msg\":\"Factory reset complete\"}"));
         oledUpdate(true);
     }
@@ -183,6 +184,7 @@ void processCommand(String line) {
             configGet().baselines[i] = HallManager::getKey(i).getRestBaseline();
         }
         configSave();
+        oledDiscardGridLatches();
         Serial.println(F("{\"status\":\"ok\",\"msg\":\"Rest baselines calibrated and saved to Flash\"}"));
         oledUpdate(true);
     }
@@ -258,6 +260,7 @@ void setup() {
 
     delay(150);
     HallManager::calibrateAllRestBaselines(64);
+    oledDiscardGridLatches();
 
     oledUpdate(true);
     Serial.println(F("[SYSTEM] DriftPad Firmware v2.0 Online."));
