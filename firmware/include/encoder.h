@@ -5,35 +5,20 @@
 
 /**
  * @file encoder.h
- * @brief Header file for the Encoder class.
- *
- * This file contains the declaration of the Encoder class, which is responsible for encoding data.
+ * @brief Rotary encoder driver for navigation and live parameter adjustment.
  */
 
-/**
- * @brief Initializes the rotary encoder GPIO pins.
- */
 void encoderInit();
-
-/**
- * @brief Updates the rotary encoder state.
- *
- * Call this repeatedly from the main loop.
- */
 void encoderUpdate();
 
-/**
- * @brief Gets the current encoder position.
- *
- * @return Signed encoder position.
- */
-std::int32_t encoderGetPosition();
+// Absolute position
+int32_t encoderGetPosition();
 
-/**
- * @brief Checks whether the encoder push button is currently pressed.
- *
- * @return true if pressed, otherwise false.
- */
+// Relative change since last call
+int32_t encoderGetDelta();
+
+// Push switch state (debounced)
 bool encoderIsPressed();
+bool encoderWasClicked();
 
-#endif
+#endif // ENCODER_H

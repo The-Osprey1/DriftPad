@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DriftPad // Web Configurator</title>
+    <style>
+        :root {
+            --bg-base: #0f1117;
+            --bg-card: #181c27;
+            --bg-elevated: #222738;
+            --accent: #00f2fe;
+            --accent-glow: rgba(0, 242, 254, 0.35);
+            --accent-purple: #7928ca;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border: #2d3748;
+            --green: #10b981;
+            --red: #ef4444;
+            --amber: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-badge {
+            background: linear-gradient(135deg, var(--accent), var(--accent-purple));
+            color: #000;
+            font-weight: 900;
+            font-size: 13px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            letter-spacing: 1px;
+        }
+
+        .brand h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .btn {
+            background: var(--bg-elevated);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00f2fe, #4facfe);
+            color: #000;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 0 16px rgba(0, 242, 254, 0.6);
+            transform: translateY(-1px);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--red);
+            box-shadow: 0 0 8px var(--red);
+        }
+
+        .status-dot.connected {
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* 4x4 Key Matrix */
+        .key-matrix-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .layer-tabs {
+            display: flex;
+            background: var(--bg-elevated);
+            border-radius: 8px;
+            padding: 4px;
+            gap: 4px;
+            width: 100%;
+        }
+
+        .layer-tab {
+            flex: 1;
+            padding: 8px 12px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: all 0.2s;
+        }
+
+        .layer-tab.active {
+            background: var(--accent);
+            color: #000;
+            box-shadow: 0 2px 8px var(--accent-glow);
+        }
+
+        .keypad-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 76px);
+            grid-template-rows: repeat(4, 76px);
+            gap: 12px;
+            background: #11141d;
+            padding: 16px;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+        }
+
+        .key-cap {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+            position: relative;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .key-cap:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .key-cap.pressed {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff;
+            transform: translateY(2px);
+            box-shadow: 0 0 16px rgba(16, 185, 129, 0.6);
+            border-color: #34d399;
+        }
+
+        .key-label {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .key-sub {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .key-cap.pressed .key-sub {
+            color: #d1fae5;
+        }
+
+        /* Tuning Controls */
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .control-val {
+            color: var(--accent);
+            font-family: monospace;
+            font-size: 15px;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: var(--bg-elevated);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--accent-glow);
+            transition: 0.15s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        /* Switch Cutaway Simulation */
+        .switch-visualizer {
+            background: #11141d;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .stem-track {
+            height: 24px;
+            background: var(--bg-elevated);
+            border-radius: 6px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .stem-progress {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #3b82f6, var(--accent));
+            transition: width 0.05s ease;
+        }
+
+        .stem-marker-act {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--amber);
+            box-shadow: 0 0 6px var(--amber);
+        }
+
+        .log-console {
+            background: #090b10;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: Consolas, monospace;
+            font-size: 12px;
+            color: #10b981;
+            height: 110px;
+            overflow-y: auto;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            width: 420px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Navigation Header -->
+    <header>
+        <div class="brand">
+            <span class="brand-badge">HE</span>
+            <h1>DriftPad Rapid Trigger Configurator</h1>
+        </div>
+        <div class="header-actions">
+            <div id="statusDot" class="status-dot"></div>
+            <span id="statusText" style="font-size: 14px; font-weight: 600; color: var(--text-muted);">Disconnected</span>
+            <button id="connectBtn" class="btn btn-primary" onclick="toggleConnect()">Connect DriftPad</button>
+            <button id="hidBtn" class="btn" onclick="toggleHid()">Enable HID Output</button>
+            <button class="btn" onclick="sendCommand('SCREENSAVER')">Screensaver</button>
+            <button class="btn" onclick="saveToFlash()">Save to Flash</button>
+            <button class="btn" onclick="sendCommand('BOOTSEL')">Bootloader</button>
+            <button class="btn" style="color: var(--red); border-color: rgba(239,68,68,0.4);" onclick="factoryReset()">Reset</button>
+        </div>
+    </header>
+
+    <div class="main-grid">
+
+        <!-- Left Column: Keypad & Layers -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">16-Key Matrix Map</span>
+                <span id="activeLayerLabel" style="font-size: 13px; font-weight: 600; color: var(--accent);">Layer 0: Numpad</span>
+            </div>
+
+            <div class="key-matrix-container">
+                <div class="layer-tabs">
+                    <div class="layer-tab active" onclick="selectLayer(0)">L0: Numpad</div>
+                    <div class="layer-tab" onclick="selectLayer(1)">L1: Navigation</div>
+                    <div class="layer-tab" onclick="selectLayer(2)">L2: WASD Gaming</div>
+                </div>
+
+                <div class="keypad-grid" id="keypadGrid">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </div>
+
+            <div style="font-size: 12px; color: var(--text-muted); text-align: center;">
+                Click any key to remap its digital HID output. Keys light up live during press.
+            </div>
+        </div>
+
+        <!-- Right Column: Rapid Trigger Tuning & Switch Simulation -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">Rapid Trigger & DSP Tuning</span>
+                <span style="font-size: 12px; color: var(--green); font-weight: 600;">ACTIVE DSP ENGINE</span>
+            </div>
+
+            <!-- Actuation Point Slider -->
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Actuation Point (mm)</span>
+                    <span id="actVal" class="control-val">1.20 mm</span>
+                </div>
+                <input type="range" id="actSlider" min="0.2" max="3.6" step="0.05" value="1.20" oninput="onActuationChange(this.value)">
+                <span style="font-size: 11px; color: var(--text-muted);">Depth at which standard keystroke triggers down.</span>
+            </div>
+
+            <!-- Rapid Trigger Sensitivity Slider -->
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Rapid Trigger Sensitivity (mm)</span>
+                    <span id="rtSensVal" class="control-val">0.20 mm</span>
+                </div>
+                <input type="range" id="rtSensSlider" min="0.05" max="1.50" step="0.05" value="0.20" oninput="onRtSensChange(this.value)">
+                <span style="font-size: 11px; color: var(--text-muted);">Distance switch must reverse upward to release or downward to re-trigger.</span>
+            </div>
+
+            <!-- Rapid Trigger Enable Toggle -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
+                <div>
+                    <div style="font-weight: 600; font-size: 14px;">Rapid Trigger Mode</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Continuous dynamic actuation & release without fixed reset point.</div>
+                </div>
+                <input type="checkbox" id="rtToggle" checked onchange="onRtToggle(this.checked)" style="transform: scale(1.3); cursor: pointer;">
+            </div>
+
+            <!-- Switch Stem Simulation Sandbox -->
+            <div class="switch-visualizer">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 700; color: var(--text-main);">Software Switch Simulator (Key 0)</span>
+                    <span id="simDepthLabel" style="font-size: 13px; font-family: monospace; color: var(--accent);">Travel: 0.00 mm</span>
+                </div>
+                <div class="stem-track">
+                    <div id="stemProgress" class="stem-progress"></div>
+                    <div id="actMarker" class="stem-marker-act" style="left: 30%;"></div>
+                </div>
+                <input type="range" id="simSlider" min="0.0" max="4.0" step="0.05" value="0.0" oninput="onSimSlider(this.value)">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted);">
+                    <span>0.0mm (Rest)</span>
+                    <span style="color: var(--amber);">▲ Actuation Point</span>
+                    <span>4.0mm (Bottom Out)</span>
+                </div>
+            </div>
+
+            <!-- Device Event Log -->
+            <div class="control-group">
+                <span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">Serial Communication Console</span>
+                <div id="logConsole" class="log-console">
+                    [WEB] DriftPad Web Configurator Initialized.<br>
+                    [READY] Click "Connect DriftPad" to pair via USB WebSerial.
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Key Remap Modal -->
+    <div id="remapModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 style="font-size: 18px; color: var(--accent);">Remap Key</h3>
+            <div id="remapKeyInfo" style="font-size: 13px; color: var(--text-muted);">Configuring Key...</div>
+            <div class="control-group">
+                <label style="font-size: 12px; font-weight: 600;">Display Label (max 4 chars)</label>
+                <input type="text" id="remapLabelInput" maxlength="4" style="background: var(--bg-elevated); border: 1px solid var(--border); color: #fff; padding: 8px 12px; border-radius: 6px;">
+            </div>
+            <div class="control-group">
+                <label style="font-size: 12px; font-weight: 600;">HID Keycode (ASCII / Arduino Keycode)</label>
+                <input type="number" id="remapCodeInput" style="background: var(--bg-elevated); border: 1px solid var(--border); color: #fff; padding: 8px 12px; border-radius: 6px;">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+                <button class="btn" onclick="closeRemapModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveRemapKey()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let port = null;
+        let reader = null;
+        let writer = null;
+        let activeLayer = 0;
+        let selectedKeyIdx = -1;
+
+        let deviceConfig = {
+            actuation: 1.20,
+            rt_sens: 0.20,
+            rt_enabled: true,
+            active_layer: 0,
+            layers: [
+                // Layer 0: Numpad default
+                [
+                    {idx: 0, code: 177, label: "ESC"}, {idx: 1, code: 55, label: "7"}, {idx: 2, code: 56, label: "8"}, {idx: 3, code: 57, label: "9"},
+                    {idx: 4, code: 240, label: "M1"},  {idx: 5, code: 52, label: "4"}, {idx: 6, code: 53, label: "5"}, {idx: 7, code: 54, label: "6"},
+                    {idx: 8, code: 241, label: "M2"},  {idx: 9, code: 49, label: "1"}, {idx: 10, code: 50, label: "2"}, {idx: 11, code: 51, label: "3"},
+                    {idx: 12, code: 242, label: "M3"}, {idx: 13, code: 243, label: "M4"}, {idx: 14, code: 48, label: "0"}, {idx: 15, code: 176, label: "ENT"}
+                ],
+                // Layer 1: Nav default
+                [
+                    {idx: 0, code: 177, label: "ESC"}, {idx: 1, code: 210, label: "HOME"}, {idx: 2, code: 218, label: "UP"}, {idx: 3, code: 211, label: "PGUP"},
+                    {idx: 4, code: 179, label: "TAB"}, {idx: 5, code: 216, label: "LEFT"}, {idx: 6, code: 217, label: "DOWN"}, {idx: 7, code: 215, label: "RGHT"},
+                    {idx: 8, code: 209, label: "INS"}, {idx: 9, code: 213, label: "END"}, {idx: 10, code: 217, label: "DOWN"}, {idx: 11, code: 214, label: "PGDN"},
+                    {idx: 12, code: 178, label: "BSPC"}, {idx: 13, code: 212, label: "DEL"}, {idx: 14, code: 32, label: "SPCE"}, {idx: 15, code: 176, label: "ENT"}
+                ],
+                // Layer 2: WASD Gaming default
+                [
+                    {idx: 0, code: 177, label: "ESC"}, {idx: 1, code: 49, label: "1"}, {idx: 2, code: 50, label: "2"}, {idx: 3, code: 51, label: "3"},
+                    {idx: 4, code: 179, label: "TAB"}, {idx: 5, code: 113, label: "Q"}, {idx: 6, code: 119, label: "W"}, {idx: 7, code: 101, label: "E"},
+                    {idx: 8, code: 129, label: "SHFT"}, {idx: 9, code: 97, label: "A"}, {idx: 10, code: 115, label: "S"}, {idx: 11, code: 100, label: "D"},
+                    {idx: 12, code: 128, label: "CTRL"}, {idx: 13, code: 114, label: "R"}, {idx: 14, code: 32, label: "SPCE"}, {idx: 15, code: 102, label: "F"}
+                ]
+            ]
+        };
+
+        function log(msg) {
+            const consoleBox = document.getElementById("logConsole");
+            const entry = document.createElement("div");
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            consoleBox.appendChild(entry);
+            consoleBox.scrollTop = consoleBox.scrollHeight;
+        }
+
+        function renderKeypad() {
+            const grid = document.getElementById("keypadGrid");
+            grid.innerHTML = "";
+            const keys = deviceConfig.layers[activeLayer] || [];
+
+            for (let i = 0; i < 16; ++i) {
+                const k = keys[i] || { idx: i, code: 0, label: "KEY" };
+                const btn = document.createElement("div");
+                btn.className = "key-cap";
+                btn.id = `keyCap_${i}`;
+                btn.onclick = () => openRemapModal(i);
+
+                const label = document.createElement("div");
+                label.className = "key-label";
+                label.textContent = k.label;
+
+                const sub = document.createElement("div");
+                sub.className = "key-sub";
+                sub.textContent = `#${k.idx}`;
+
+                btn.appendChild(label);
+                btn.appendChild(sub);
+                grid.appendChild(btn);
+            }
+        }
+
+        function selectLayer(l) {
+            activeLayer = l;
+            document.querySelectorAll(".layer-tab").forEach((el, idx) => {
+                el.classList.toggle("active", idx === l);
+            });
+            const names = ["Layer 0: Numpad", "Layer 1: Navigation", "Layer 2: WASD Gaming"];
+            document.getElementById("activeLayerLabel").textContent = names[l];
+            renderKeypad();
+            sendCommand(`SET_LAYER ${l}`);
+        }
+
+        let hidEnabled = false;
+        function toggleHid() {
+            hidEnabled = !hidEnabled;
+            sendCommand(`SET_HID ${hidEnabled ? 1 : 0}`);
+            const btn = document.getElementById("hidBtn");
+            if (hidEnabled) {
+                btn.textContent = "Disable HID Output";
+                btn.style.borderColor = "var(--green)";
+                btn.style.color = "var(--green)";
+            } else {
+                btn.textContent = "Enable HID Output";
+                btn.style.borderColor = "var(--border)";
+                btn.style.color = "var(--text-main)";
+            }
+        }
+
+        async function toggleConnect() {
+            if (port) {
+                try {
+                    await reader.cancel();
+                    await port.close();
+                } catch(e) {}
+                port = null;
+                updateConnectState(false);
+                return;
+            }
+
+            if (!navigator.serial) {
+                alert("WebSerial is not supported in this browser. Please use Chrome, Edge, or Opera.");
+                return;
+            }
+
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                updateConnectState(true);
+                log("Connected to DriftPad USB Serial.");
+
+                const textDecoder = new TextDecoderStream();
+                port.readable.pipeTo(textDecoder.writable);
+                reader = textDecoder.readable.getReader();
+
+                const textEncoder = new TextEncoderStream();
+                textEncoder.readable.pipeTo(port.writable);
+                writer = textEncoder.writable.getWriter();
+
+                readLoop();
+                sendCommand("GET_CONFIG");
+            } catch (err) {
+                log("Connection error: " + err);
+                port = null;
+                updateConnectState(false);
+            }
+        }
+
+        function updateConnectState(connected) {
+            const dot = document.getElementById("statusDot");
+            const txt = document.getElementById("statusText");
+            const btn = document.getElementById("connectBtn");
+            if (connected) {
+                dot.classList.add("connected");
+                txt.textContent = "Connected";
+                btn.textContent = "Disconnect";
+            } else {
+                dot.classList.remove("connected");
+                txt.textContent = "Disconnected";
+                btn.textContent = "Connect DriftPad";
+            }
+        }
+
+        async function sendCommand(cmd) {
+            if (!writer) return;
+            try {
+                await writer.write(cmd + "\n");
+                log("TX -> " + cmd);
+            } catch (err) {
+                log("Write error: " + err);
+            }
+        }
+
+        async function readLoop() {
+            let buffer = "";
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) {
+                        buffer += value;
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop();
+                        for (const line of lines) {
+                            handleIncomingLine(line.trim());
+                        }
+                    }
+                }
+            } catch (err) {
+                log("Reader terminated: " + err);
+            }
+        }
+
+        function handleIncomingLine(line) {
+            if (!line) return;
+            log("RX <- " + line);
+
+            try {
+                const data = JSON.parse(line);
+                if (data.type === "config") {
+                    deviceConfig.actuation = data.actuation;
+                    deviceConfig.rt_sens = data.rt_sens;
+                    deviceConfig.rt_enabled = data.rt_enabled;
+                    deviceConfig.active_layer = data.active_layer;
+                    deviceConfig.layers = data.layers;
+
+                    document.getElementById("actSlider").value = data.actuation;
+                    document.getElementById("actVal").textContent = data.actuation.toFixed(2) + " mm";
+                    document.getElementById("rtSensSlider").value = data.rt_sens;
+                    document.getElementById("rtSensVal").textContent = data.rt_sens.toFixed(2) + " mm";
+                    document.getElementById("rtToggle").checked = data.rt_enabled;
+                    updateActuationMarker(data.actuation);
+
+                    selectLayer(data.active_layer);
+                } else if (data.type === "sim_event") {
+                    const el = document.getElementById(`keyCap_${data.key}`);
+                    if (el) {
+                        el.classList.toggle("pressed", data.pressed);
+                    }
+                }
+            } catch(e) {
+                // Non-JSON telemetry / info string
+            }
+        }
+
+        function onActuationChange(val) {
+            val = parseFloat(val);
+            document.getElementById("actVal").textContent = val.toFixed(2) + " mm";
+            updateActuationMarker(val);
+            sendCommand(`SET_ACTUATION ${val.toFixed(2)}`);
+        }
+
+        function updateActuationMarker(actMm) {
+            const pct = (actMm / 4.0) * 100;
+            document.getElementById("actMarker").style.left = `${pct}%`;
+        }
+
+        function onRtSensChange(val) {
+            val = parseFloat(val);
+            document.getElementById("rtSensVal").textContent = val.toFixed(2) + " mm";
+            sendCommand(`SET_RT_SENS ${val.toFixed(2)}`);
+        }
+
+        function onRtToggle(enabled) {
+            sendCommand(`SET_RT_ENABLE ${enabled ? 1 : 0}`);
+        }
+
+        function onSimSlider(val) {
+            val = parseFloat(val);
+            document.getElementById("simDepthLabel").textContent = `Travel: ${val.toFixed(2)} mm`;
+            const pct = (val / 4.0) * 100;
+            document.getElementById("stemProgress").style.width = `${pct}%`;
+
+            // Inject simulated travel into Key 0
+            sendCommand(`SIM 0 ${val.toFixed(2)}`);
+        }
+
+        function saveToFlash() {
+            sendCommand("SAVE");
+        }
+
+        function factoryReset() {
+            if (confirm("Reset all settings, actuation points, and keymaps to factory defaults?")) {
+                sendCommand("RESET");
+                setTimeout(() => sendCommand("GET_CONFIG"), 200);
+            }
+        }
+
+        // Remap Key Modal Logic
+        function openRemapModal(keyIdx) {
+            selectedKeyIdx = keyIdx;
+            const k = deviceConfig.layers[activeLayer][keyIdx];
+            document.getElementById("remapKeyInfo").textContent = `Configuring Key #${keyIdx} on Layer ${activeLayer}`;
+            document.getElementById("remapLabelInput").value = k.label;
+            document.getElementById("remapCodeInput").value = k.code;
+            document.getElementById("remapModal").classList.add("open");
+        }
+
+        function closeRemapModal() {
+            document.getElementById("remapModal").classList.remove("open");
+        }
+
+        function saveRemapKey() {
+            const label = document.getElementById("remapLabelInput").value.trim().toUpperCase() || "KEY";
+            const code = parseInt(document.getElementById("remapCodeInput").value) || 0;
+
+            deviceConfig.layers[activeLayer][selectedKeyIdx].label = label;
+            deviceConfig.layers[activeLayer][selectedKeyIdx].code = code;
+
+            renderKeypad();
+            sendCommand(`SET_KEY ${activeLayer} ${selectedKeyIdx} ${code} ${label}`);
+            closeRemapModal();
+        }
+
+        // Initialize UI
+        renderKeypad();
+        updateActuationMarker(1.20);
+    </script>
+</body>
+</html>
