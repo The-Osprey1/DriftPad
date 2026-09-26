@@ -10,7 +10,7 @@
  * @brief Analog Hall-effect switch management, calibration, and Rapid Trigger algorithm.
  *
  * Implements:
- * - Velocity-adaptive EMA smoothing (alpha in [0.18, 0.95]) and 60Hz EMI correlation rejection.
+ * - 60Hz EMI comb filter on held keys plus a fast (alpha 0.95) path for motion and RT release.
  * - Dynamic baseline auto-zero tracking with low-pass motion conditioning.
  * - Magnetic polarity auto-detection and dynamic range auto-ranging.
  * - Rapid Trigger with directional hysteresis and quantization deadband tolerance.
@@ -69,9 +69,14 @@ public:
     static void setRtEnabled(bool enabled) { s_rtEnabled = enabled; }
     static bool isRtEnabled() { return s_rtEnabled; }
 
+    // Below 0.10mm, 10-count 60Hz EMI plus 3-count thermal noise causes false RT releases
+    // (tests/test_adversarial_m2.py ADV-02). Mirrored by HallKeyDSP.RT_SENS_MIN_MM.
+    static constexpr float RT_SENS_MIN_MM = 0.10f;
+    static constexpr float RT_SENS_MAX_MM = 2.00f;
+
     static void setRtSensitivity(float mm) {
-        if (mm < 0.05f) mm = 0.05f;
-        if (mm > 2.00f) mm = 2.00f;
+        if (mm < RT_SENS_MIN_MM) mm = RT_SENS_MIN_MM;
+        if (mm > RT_SENS_MAX_MM) mm = RT_SENS_MAX_MM;
         s_rtPressMm = mm;
         s_rtReleaseMm = mm;
     }
@@ -105,15 +110,19 @@ private:
     static constexpr float BOTTOM_DEADZONE_MM      = 0.15f;
     static constexpr float REST_DRIFT_THRESHOLD_MM = 0.15f;
 
-    // Adaptive noise filter and 60Hz EMI correlation
-    static constexpr float ALPHA_MIN = 0.18f;
-    static constexpr float ALPHA_MAX = 0.95f;
-    static constexpr float V_THRESH  = 2.0f;
+    // 60Hz EMI comb filter and adaptive smoothing (mirrors HallKeyDSP)
+    static constexpr int   HIST_LEN     = 18;
+    static constexpr float ALPHA_FAST   = 0.95f;  // motion / RT release: track raw
+    static constexpr float ALPHA_HELD   = 0.25f;  // held key: smooth the comb-filtered signal
+    static constexpr float ALPHA_MOVING = 0.90f;  // recently changed state, not yet held
+    static constexpr uint16_t HELD_SAMPLES = 30;
+    // Start "long unpressed" so the comb filter is active from boot
+    static constexpr uint16_t INITIAL_UNPRESSED_SAMPLES = 100;
     float    _prevRaw;
-    float    _dHist[18];
+    float    _dHist[HIST_LEN];
+    float    _rawHist[HIST_LEN];
     uint8_t  _dIdx;
-    bool     _swungPos;
-    bool     _swungNeg;
+    uint8_t  _hIdx;
 
     // Auto-zero baseline tracking
     static constexpr float BETA     = 0.20f;
@@ -121,13 +130,11 @@ private:
     float    _driftTravel;
     float    _baselineErrFilt;
 
-    // Held state sample counters and adaptive noise envelope
+    // Held state sample counters
     uint16_t _pressSamples;
     uint16_t _unpressedSamples;
-    float    _noiseEnv;
     uint16_t _stationaryUnpressedMs;
     bool     _recoveringBaseline;
-    uint8_t  _chatterGuard;
     uint8_t  _motionSamples;
     bool     _humanContact;
 

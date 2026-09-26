@@ -36,8 +36,8 @@ def validate_get_config_payload(payload: Dict[str, Any]) -> Tuple[bool, Optional
         return False, f"Invalid actuation point: {actuation} (must be in [0.25, 3.80] mm)"
 
     rt_sens = payload.get("rt_sens")
-    if isinstance(rt_sens, bool) or not isinstance(rt_sens, (int, float)) or not (0.05 <= rt_sens <= 2.00):
-        return False, f"Invalid RT sensitivity: {rt_sens} (must be in [0.05, 2.00] mm)"
+    if isinstance(rt_sens, bool) or not isinstance(rt_sens, (int, float)) or not (0.10 <= rt_sens <= 2.00):
+        return False, f"Invalid RT sensitivity: {rt_sens} (must be in [0.10, 2.00] mm)"
 
     if not isinstance(payload.get("rt_enabled"), bool):
         return False, f"Invalid rt_enabled flag: {payload.get('rt_enabled')}"
@@ -155,8 +155,8 @@ class MockSerialCommandParser:
                 val = float(tokens[1])
             except ValueError:
                 return {"status": "error", "msg": "Invalid float"}
-            if not (0.05 <= val <= 2.00):
-                return {"status": "error", "msg": "RT sensitivity out of range [0.05, 2.00]"}
+            if not (0.10 <= val <= 2.00):
+                return {"status": "error", "msg": "RT sensitivity out of range [0.10, 2.00]"}
             self.rt_sens_mm = val
             return {"status": "ok", "msg": f"RT sensitivity set to {val:.2f} mm"}
 
@@ -293,11 +293,11 @@ class TestConfigSchema(unittest.TestCase):
         self.assertEqual(res_err2["status"], "error")
 
         # 4. SET_RT_SENS valid & invalid
-        res = parser.execute_command("SET_RT_SENS 0.08")
+        res = parser.execute_command("SET_RT_SENS 0.12")
         self.assertEqual(res["status"], "ok")
-        self.assertEqual(parser.rt_sens_mm, 0.08)
+        self.assertEqual(parser.rt_sens_mm, 0.12)
 
-        res_err = parser.execute_command("SET_RT_SENS 0.02")  # < 0.05mm
+        res_err = parser.execute_command("SET_RT_SENS 0.05")  # < 0.10mm floor
         self.assertEqual(res_err["status"], "error")
 
         res_err2 = parser.execute_command("SET_RT_SENS 2.50")  # > 2.00mm
@@ -357,7 +357,7 @@ class TestConfigSchema(unittest.TestCase):
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "settings": {
                 "actuation": 2.15,
-                "rt_sens": 0.08,
+                "rt_sens": 0.12,
                 "rt_enabled": True,
                 "active_layer": 2,
                 "layers": custom_layers

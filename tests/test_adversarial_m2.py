@@ -5,8 +5,8 @@ Author: Challenger 1 (Milestone M2)
 Role: Empirical Challenger & Adversarial DSP Specialist
 
 Tests:
-1. ADV-01: Rapid Trigger Chatter at 0.05mm sensitivity under 20-count 60Hz EMI.
-2. ADV-02: Rapid Trigger Chatter at 0.05mm under 10-count EMI + 3-sigma Gaussian noise.
+1. ADV-01: Rapid Trigger Chatter at minimum sensitivity (RT_SENS_MIN_MM) under 20-count 60Hz EMI.
+2. ADV-02: Rapid Trigger Chatter at minimum sensitivity under 10-count EMI + 3-sigma Gaussian noise.
 3. ADV-03: Auto-zero baseline tracking lockout under uncalibrated negative step drift (-60 counts).
 4. ADV-04: Auto-zero baseline tracking lockout under positive step drift (+60 counts).
 5. ADV-05: Auto-zero baseline tracking lockout under resting travel (0.22mm).
@@ -33,11 +33,12 @@ class TestAdversarialDSP(unittest.TestCase):
 
     def test_adv01_rapid_trigger_chatter_at_005mm_with_60hz_emi(self):
         """
-        ADV-01: Adversarial challenge against RT at maximum sensitivity (0.05mm) with 60Hz EMI.
+        ADV-01: Adversarial challenge against RT at maximum sensitivity (RT_SENS_MIN_MM) with 60Hz EMI.
         Fails if false releases occur during stationary hold at 2.0mm.
         """
         dsp = HallKeyDSP(auto_polarity=False)
-        dsp.set_rt_sensitivity(0.05)
+        dsp.set_rt_sensitivity(HallKeyDSP.RT_SENS_MIN_MM)
+        s = dsp.rt_release_mm
 
         # Press key to 2.0mm (2548 counts on 2048 baseline + 1000 range)
         for _ in range(50):
@@ -60,19 +61,22 @@ class TestAdversarialDSP(unittest.TestCase):
 
         # The ideal expectation is 0 false releases
         # We record the observed failure count for empirical proof
-        print(f"\n[ADV-01] 0.05mm RT under 20-count 60Hz EMI: {false_releases} false releases, {false_actuations} false actuations")
+        print(f"\n[ADV-01] {s:.2f}mm RT under 20-count 60Hz EMI: {false_releases} false releases, {false_actuations} false actuations")
         self.assertEqual(
             false_releases, 0,
-            f"ADV-01 BUG CONFIRMED: 0.05mm RT produced {false_releases} false releases under 60Hz EMI! Chatter rate: {false_releases/5.0:.1f} Hz"
+            f"ADV-01 BUG CONFIRMED: {s:.2f}mm RT produced {false_releases} false releases under 60Hz EMI! Chatter rate: {false_releases/5.0:.1f} Hz"
         )
 
     def test_adv02_rapid_trigger_chatter_at_005mm_with_emi_and_noise(self):
         """
-        ADV-02: Adversarial challenge against RT at 0.05mm with 10-count EMI + 3-sigma Gaussian noise.
+        ADV-02: Adversarial challenge against RT at maximum sensitivity (RT_SENS_MIN_MM) with
+        10-count EMI + 3-sigma Gaussian noise. At 0.05mm this produced 285 false releases in 5s,
+        which is why the floor is 0.10mm.
         """
         random.seed(42)
         dsp = HallKeyDSP(auto_polarity=False)
-        dsp.set_rt_sensitivity(0.05)
+        dsp.set_rt_sensitivity(HallKeyDSP.RT_SENS_MIN_MM)
+        s = dsp.rt_release_mm
 
         for _ in range(50):
             dsp.update(2548)
@@ -86,10 +90,10 @@ class TestAdversarialDSP(unittest.TestCase):
                 if not dsp.is_pressed:
                     false_releases += 1
 
-        print(f"\n[ADV-02] 0.05mm RT under 10-count EMI + Gaussian noise: {false_releases} false releases in 5s")
+        print(f"\n[ADV-02] {s:.2f}mm RT under 10-count EMI + Gaussian noise: {false_releases} false releases in 5s")
         self.assertEqual(
             false_releases, 0,
-            f"ADV-02 BUG CONFIRMED: 0.05mm RT produced {false_releases} false releases under composite noise!"
+            f"ADV-02 BUG CONFIRMED: {s:.2f}mm RT produced {false_releases} false releases under composite noise!"
         )
 
     def test_adv03_autozero_uncalibrated_negative_step_lockout(self):

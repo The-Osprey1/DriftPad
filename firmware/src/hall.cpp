@@ -44,13 +44,14 @@ HallKey::HallKey()
       _peakDepthMm(0.0f), _valleyDepthMm(0.0f),
       _isPressed(false), _everActuated(false),
       _pressCount(0), _releaseCount(0),
-      _prevRaw(2048.0f), _dIdx(0), _swungPos(false), _swungNeg(false),
+      _prevRaw(2048.0f), _dIdx(0), _hIdx(0),
       _driftTravel(0.0f), _baselineErrFilt(0.0f),
-      _pressSamples(0), _unpressedSamples(0), _noiseEnv(0.0f),
+      _pressSamples(0), _unpressedSamples(INITIAL_UNPRESSED_SAMPLES),
       _stationaryUnpressedMs(0), _recoveringBaseline(false),
-      _chatterGuard(0), _motionSamples(0), _humanContact(false) {
-    for (int i = 0; i < 18; ++i) {
+      _motionSamples(0), _humanContact(false) {
+    for (int i = 0; i < HIST_LEN; ++i) {
         _dHist[i] = 0.0f;
+        _rawHist[i] = 2048.0f;
     }
 }
 
@@ -73,20 +74,18 @@ void HallKey::init(uint8_t index, uint8_t channel, uint8_t keycode, const char* 
     _everActuated = false;
     // Edge counters remain monotonic across resets to prevent phantom flashes on the Core 1 renderer
     _prevRaw = 2048.0f;
-    for (int i = 0; i < 18; ++i) {
+    for (int i = 0; i < HIST_LEN; ++i) {
         _dHist[i] = 0.0f;
+        _rawHist[i] = 2048.0f;
     }
     _dIdx = 0;
-    _swungPos = false;
-    _swungNeg = false;
+    _hIdx = 0;
     _driftTravel = 0.0f;
     _baselineErrFilt = 0.0f;
     _pressSamples = 0;
-    _unpressedSamples = 0;
-    _noiseEnv = 0.0f;
+    _unpressedSamples = INITIAL_UNPRESSED_SAMPLES;
     _stationaryUnpressedMs = 0;
     _recoveringBaseline = false;
-    _chatterGuard = 0;
     _motionSamples = 0;
     _humanContact = false;
 }
@@ -96,20 +95,18 @@ void HallKey::calibrateRest(uint16_t sample) {
     _filteredRaw = (float)sample;
     _currentRaw = sample;
     _prevRaw = (float)sample;
-    for (int i = 0; i < 18; ++i) {
+    for (int i = 0; i < HIST_LEN; ++i) {
         _dHist[i] = 0.0f;
+        _rawHist[i] = (float)sample;
     }
     _dIdx = 0;
-    _swungPos = false;
-    _swungNeg = false;
+    _hIdx = 0;
     _driftTravel = 0.0f;
     _baselineErrFilt = 0.0f;
     _pressSamples = 0;
-    _unpressedSamples = 0;
-    _noiseEnv = 0.0f;
+    _unpressedSamples = INITIAL_UNPRESSED_SAMPLES;
     _stationaryUnpressedMs = 0;
     _recoveringBaseline = false;
-    _chatterGuard = 0;
     _motionSamples = 0;
     _humanContact = false;
     if (_restBaseline < 2048.0f) {
@@ -120,41 +117,64 @@ void HallKey::calibrateRest(uint16_t sample) {
 }
 
 bool HallKey::update(uint16_t rawAdc) {
+    // Kept in exact sync with HallKeyDSP.update() in tests/test_dsp_harness.py.
+    // tests/test_firmware_parity.py compiles this file on the host and fails if they diverge.
     float rawVal = (float)rawAdc;
     _currentRaw = rawAdc;
 
-    // 1. Instantaneous velocity and 60Hz EMI correlation filter
+    // 1. Instantaneous velocity and 60Hz EMI comb filter
     float instV = fabsf(rawVal - _prevRaw);
     _prevRaw = rawVal;
 
+    // At 1kHz a 60Hz period is 16.67 samples, so raw[n-8]/raw[n-9] weighted 2/3 : 1/3
+    // sits half a period back and cancels the 60Hz component when averaged with raw[n].
+    _rawHist[_hIdx] = rawVal;
+    float raw8 = _rawHist[((int)_hIdx - 8 + HIST_LEN) % HIST_LEN];
+    float raw9 = _rawHist[((int)_hIdx - 9 + HIST_LEN) % HIST_LEN];
+    _hIdx = (_hIdx + 1) % HIST_LEN;
+
+    float combVal = 0.5f * (rawVal + (2.0f / 3.0f) * raw8 + (1.0f / 3.0f) * raw9);
+
     float d0 = rawVal - _filteredRaw;
-    int idx8 = ((int)_dIdx - 8 + 18) % 18;
-    int idx17 = ((int)_dIdx - 17 + 18) % 18;
-    float d8 = _dHist[idx8];
-    float d17 = _dHist[idx17];
+    float d8 = _dHist[((int)_dIdx - 8 + HIST_LEN) % HIST_LEN];
     _dHist[_dIdx] = d0;
-    _dIdx = (_dIdx + 1) % 18;
+    _dIdx = (_dIdx + 1) % HIST_LEN;
 
     float corr8 = d0 * d8;
-    float corr17 = d0 * d17;
 
-    bool isEmi = (fabsf(d0) < 45.0f) && (
-        (corr8 < -2.0f && (corr17 > 0.0f || fabsf(d17) < 8.0f)) ||
-        (corr8 < -1.0f && instV <= 8.5f) ||
-        (_noiseEnv > 4.0f && fabsf(d0) < _noiseEnv * 1.5f && instV <= 15.0f)
-    );
+    bool isHeld = (_pressSamples > HELD_SAMPLES) || (_unpressedSamples > HELD_SAMPLES);
 
-    float alpha;
-    if (isEmi) {
-        alpha = ALPHA_MIN;
-    } else {
-        float vEst = fabsf(d0);
-        float vRatio = (V_THRESH > 0.0f) ? (vEst / V_THRESH) : 1.0f;
-        if (vRatio > 1.0f) vRatio = 1.0f;
-        alpha = ALPHA_MIN + (ALPHA_MAX - ALPHA_MIN) * vRatio;
+    // Upward motion while pressed bypasses the comb filter so RT releases stay low-latency,
+    // unless the deviation anti-correlates with half a 60Hz period ago (EMI, not motion).
+    bool isReleasing = false;
+    if (_isPressed) {
+        if (_voltageIncreasesOnPress) {
+            isReleasing = (rawVal < _filteredRaw - 1.5f);
+        } else {
+            isReleasing = (rawVal > _filteredRaw + 1.5f);
+        }
+        if (corr8 < -2.0f) {
+            isReleasing = false;
+        }
     }
 
-    _filteredRaw += alpha * (rawVal - _filteredRaw);
+    float targetVal;
+    float alpha;
+    if (isReleasing) {
+        targetVal = rawVal;
+        alpha = ALPHA_FAST;
+    } else if (!_isPressed && (instV > 10.0f || fabsf(d0) > 22.0f)) {
+        targetVal = rawVal;
+        alpha = ALPHA_FAST;
+    } else if (isHeld) {
+        targetVal = combVal;
+        alpha = ALPHA_HELD;
+    } else {
+        targetVal = rawVal;
+        alpha = ALPHA_MOVING;
+    }
+
+    _filteredRaw += alpha * (targetVal - _filteredRaw);
 
     // 2. Polarity Detection
     float delta = _filteredRaw - _restBaseline;
@@ -255,7 +275,7 @@ bool HallKey::update(uint16_t rawAdc) {
         }
     }
 
-    // State tracking and noise envelope estimation
+    // Held state sample counters
     if (_isPressed) {
         if (_pressSamples < 65535) _pressSamples++;
         _unpressedSamples = 0;
@@ -263,26 +283,6 @@ bool HallKey::update(uint16_t rawAdc) {
         if (_unpressedSamples < 65535) _unpressedSamples++;
         _pressSamples = 0;
     }
-
-    bool isOsc = (fabsf(d0) > 3.0f && fabsf(d8) > 3.0f && corr8 < -10.0f && corr17 > -5.0f);
-    if (isOsc || _chatterGuard > 0) {
-        float envTarget = fmaxf(fabsf(d0), fabsf(d8));
-        if (envTarget > _noiseEnv) {
-            _noiseEnv += 0.35f * (envTarget - _noiseEnv);
-        } else {
-            _noiseEnv += 0.005f * (envTarget - _noiseEnv);
-        }
-    } else {
-        _noiseEnv += 0.002f * (0.0f - _noiseEnv);
-    }
-
-    if (_chatterGuard > 0) _chatterGuard--;
-
-    float noiseMm = (_noiseEnv / _dynamicRange) * SWITCH_TOTAL_TRAVEL_MM;
-    float ratchetDeadband = 1.5f * noiseMm;
-    float effRelease      = fmaxf(s_rtReleaseMm, 2.5f * noiseMm);
-    float valleyDeadband  = 1.5f * noiseMm;
-    float effPress        = fmaxf(s_rtPressMm, 2.5f * noiseMm);
 
     // 7. Rapid Trigger State Machine
     bool stateChanged = false;
@@ -300,7 +300,7 @@ bool HallKey::update(uint16_t rawAdc) {
         } else {
             // Key already actuated in current stroke
             if (s_rtEnabled) {
-                if ((_travelMm - _valleyDepthMm >= effPress - quantTol) && (_travelMm > TOP_DEADZONE_MM)) {
+                if ((_travelMm - _valleyDepthMm >= s_rtPressMm - quantTol) && (_travelMm > TOP_DEADZONE_MM)) {
                     shouldActuate = true;
                 }
             } else {
@@ -315,17 +315,13 @@ bool HallKey::update(uint16_t rawAdc) {
             _pressCount++;
             _everActuated = true;
             _peakDepthMm = _travelMm;
-            if (_unpressedSamples < 20) {
-                _chatterGuard = 40;
-                _noiseEnv = fmaxf(_noiseEnv, 18.0f);
-            }
             _pressSamples = 0;
             if (s_enableHidOutput) {
                 Keyboard.press(_hidKeyCode);
             }
             stateChanged = true;
         } else {
-            if (_travelMm < _valleyDepthMm - valleyDeadband) {
+            if (_travelMm < _valleyDepthMm) {
                 _valleyDepthMm = _travelMm;
             }
             if (_travelMm <= TOP_DEADZONE_MM) {
@@ -334,7 +330,7 @@ bool HallKey::update(uint16_t rawAdc) {
             }
         }
     } else {
-        if (_travelMm > _peakDepthMm + ratchetDeadband) {
+        if (_travelMm > _peakDepthMm) {
             _peakDepthMm = _travelMm;
         }
 
@@ -342,7 +338,7 @@ bool HallKey::update(uint16_t rawAdc) {
 
         if (_travelMm <= TOP_DEADZONE_MM) {
             shouldRelease = true;
-        } else if (s_rtEnabled && (_peakDepthMm - _travelMm >= effRelease - quantTol)) {
+        } else if (s_rtEnabled && (_peakDepthMm - _travelMm >= s_rtReleaseMm - quantTol)) {
             shouldRelease = true;
         } else if (!s_rtEnabled && (_travelMm < (s_actuationPointMm - 0.20f))) {
             shouldRelease = true;
@@ -352,10 +348,6 @@ bool HallKey::update(uint16_t rawAdc) {
             _isPressed = false;
             _releaseCount++;
             _valleyDepthMm = _travelMm;
-            if (_pressSamples < 20) {
-                _chatterGuard = 40;
-                _noiseEnv = fmaxf(_noiseEnv, 18.0f);
-            }
             _unpressedSamples = 0;
             if (s_enableHidOutput) {
                 Keyboard.release(_hidKeyCode);

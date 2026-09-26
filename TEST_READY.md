@@ -73,7 +73,7 @@ The suite is partitioned into four distinct validation tiers:
 | **TC-01** | `test_tc01_rapid_trigger_accuracy_0_20mm` | RT Turnaround Accuracy ($S_{rt} = 0.20\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
 | **TC-02** | `test_tc02_rapid_trigger_accuracy_0_15mm` | RT Turnaround Accuracy ($S_{rt} = 0.15\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
 | **TC-03** | `test_tc03_rapid_trigger_accuracy_0_10mm` | RT Turnaround Accuracy ($S_{rt} = 0.10\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
-| **TC-04** | `test_tc04_rapid_trigger_accuracy_0_05mm` | RT Turnaround Accuracy ($S_{rt} = 0.05\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
+| **TC-04** | `test_tc04_rapid_trigger_accuracy_min_sensitivity_depth_sweep` | RT Turnaround Accuracy at floor ($S_{rt} = 0.10\text{mm}$, depths 1.0 to 3.0mm) | $\ge 99.0\%$ | **100.0%** | **PASS** |
 | **TC-05** | `test_tc05_rapid_trigger_multi_velocity_sweep` | Dynamic Velocity Sweep (20–100 mm/s) | $\ge 99.0\%$ | **100.0%** (180/180 events) | **PASS** |
 | **TC-06** | `test_tc06_quiescent_noise_stationary_hold` | 10s Rest with 60Hz EMI (20 cnts) + Thermal | 0 false KeyDowns | **0 false KeyDowns** (10,000 samples) | **PASS** |
 | **TC-07** | `test_tc07_in_stroke_stationary_hold_sub_rt_jitter` | 5s Held at 2.0mm with $0.5 \cdot S_{rt}$ Jitter | 0 false KeyUps | **0 false KeyUps** (5,000 samples) | **PASS** |

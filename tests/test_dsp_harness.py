@@ -22,11 +22,15 @@ from typing import List, Tuple, Dict, Any, Optional
 
 class HallKeyDSP:
     """
-    Bit-accurate reference implementation of the RP2040 HallKey DSP pipeline.
-    
+    Reference implementation of the RP2040 HallKey DSP pipeline (firmware/src/hall.cpp).
+
+    update() is a line-for-line mirror of HallKey::update(); the only intended difference is
+    float64 here versus float32 on the RP2040. tests/test_firmware_parity.py compiles hall.cpp
+    on the host and fails if the two produce different key events, so change both together.
+
     Models:
     - 12-bit ADC raw acquisition (0..4095 counts)
-    - Velocity-adaptive low-pass filter (suppresses 60Hz EMI while minimizing stroke lag)
+    - 60Hz EMI comb filter on held keys, fast raw-tracking path for motion and RT release
     - Magnetic polarity auto-detection and dynamic range calibration
     - Baseline auto-zero drift compensation
     - Directional hysteresis & Rapid Trigger peak/valley ratchet state machine
@@ -36,6 +40,19 @@ class HallKeyDSP:
     TOP_DEADZONE_MM: float = 0.20
     BOTTOM_DEADZONE_MM: float = 0.15
     REST_DRIFT_THRESHOLD_MM: float = 0.15
+
+    # Below 0.10mm, 10-count 60Hz EMI plus 3-count thermal noise causes false RT releases
+    # (test_adversarial_m2.py ADV-02). Mirrors HallKey::RT_SENS_MIN_MM / RT_SENS_MAX_MM.
+    RT_SENS_MIN_MM: float = 0.10
+    RT_SENS_MAX_MM: float = 2.00
+
+    # Filter constants, mirroring hall.h
+    HIST_LEN: int = 18
+    ALPHA_FAST: float = 0.95
+    ALPHA_HELD: float = 0.25
+    ALPHA_MOVING: float = 0.90
+    HELD_SAMPLES: int = 30
+    INITIAL_UNPRESSED_SAMPLES: int = 100
 
     def __init__(
         self,
@@ -67,17 +84,12 @@ class HallKeyDSP:
         self.rt_release_mm: float = 0.20
         self.rt_enabled: bool = True
 
-        # Adaptive filter parameters
-        self.alpha_min: float = 0.18
-        self.alpha_max: float = 0.95
-        self.v_thresh: float = 2.0
+        # 60Hz EMI comb filter state
         self.prev_raw: float = float(rest_baseline)
-        self.d_hist: List[float] = [0.0] * 18
+        self.d_hist: List[float] = [0.0] * self.HIST_LEN
         self.d_idx: int = 0
-        self.raw_hist: List[float] = [2048.0] * 18
+        self.raw_hist: List[float] = [float(rest_baseline)] * self.HIST_LEN
         self.h_idx: int = 0
-        self.swung_pos: bool = False
-        self.swung_neg: bool = False
 
         # Auto-zero baseline tracking parameters
         self.beta: float = 0.20
@@ -85,13 +97,11 @@ class HallKeyDSP:
         self.drift_travel: float = 0.0
         self.baseline_err_filt: float = 0.0
 
-        # Held state sample counters and adaptive noise envelope
+        # Held state sample counters
         self.press_samples: int = 0
-        self.unpressed_samples: int = 100
-        self.noise_env: float = 0.0
+        self.unpressed_samples: int = self.INITIAL_UNPRESSED_SAMPLES
         self.stationary_unpressed_ms: int = 0
         self.recovering_baseline: bool = False
-        self.chatter_guard: int = 0
         self.motion_samples: int = 0
         self.human_contact: bool = False
 
@@ -101,20 +111,16 @@ class HallKeyDSP:
         self.filtered_raw = float(sample)
         self.current_raw = sample
         self.prev_raw = float(sample)
-        self.d_hist = [0.0] * 18
+        self.d_hist = [0.0] * self.HIST_LEN
         self.d_idx = 0
-        self.raw_hist = [float(sample)] * 18
+        self.raw_hist = [float(sample)] * self.HIST_LEN
         self.h_idx = 0
-        self.swung_pos = False
-        self.swung_neg = False
         self.drift_travel = 0.0
         self.baseline_err_filt = 0.0
         self.press_samples = 0
-        self.unpressed_samples = 100
-        self.noise_env = 0.0
+        self.unpressed_samples = self.INITIAL_UNPRESSED_SAMPLES
         self.stationary_unpressed_ms = 0
         self.recovering_baseline = False
-        self.chatter_guard = 0
         self.motion_samples = 0
         self.human_contact = False
         if self.rest_baseline < 2048:
@@ -132,7 +138,7 @@ class HallKeyDSP:
 
     def set_rt_sensitivity(self, mm: float) -> None:
         """Set Rapid Trigger press and release turnaround sensitivity in millimeters."""
-        clamped = max(0.05, min(2.00, mm))
+        clamped = max(self.RT_SENS_MIN_MM, min(self.RT_SENS_MAX_MM, mm))
         self.rt_press_mm = clamped
         self.rt_release_mm = clamped
 
@@ -157,22 +163,20 @@ class HallKeyDSP:
         self.prev_raw = raw_val
 
         self.raw_hist[self.h_idx] = raw_val
-        raw8 = self.raw_hist[(self.h_idx - 8) % 18]
-        raw9 = self.raw_hist[(self.h_idx - 9) % 18]
-        self.h_idx = (self.h_idx + 1) % 18
+        raw8 = self.raw_hist[(self.h_idx - 8) % self.HIST_LEN]
+        raw9 = self.raw_hist[(self.h_idx - 9) % self.HIST_LEN]
+        self.h_idx = (self.h_idx + 1) % self.HIST_LEN
 
         comb_val = 0.5 * (raw_val + (2.0 / 3.0) * raw8 + (1.0 / 3.0) * raw9)
 
         d0 = raw_val - self.filtered_raw
-        d8 = self.d_hist[(self.d_idx - 8) % 18]
-        d17 = self.d_hist[(self.d_idx - 17) % 18]
+        d8 = self.d_hist[(self.d_idx - 8) % self.HIST_LEN]
         self.d_hist[self.d_idx] = d0
-        self.d_idx = (self.d_idx + 1) % 18
+        self.d_idx = (self.d_idx + 1) % self.HIST_LEN
 
         corr8 = d0 * d8
-        corr17 = d0 * d17
 
-        is_held = (self.press_samples > 30) or (self.unpressed_samples > 30)
+        is_held = (self.press_samples > self.HELD_SAMPLES) or (self.unpressed_samples > self.HELD_SAMPLES)
 
         is_releasing = False
         if self.is_pressed:
@@ -185,16 +189,16 @@ class HallKeyDSP:
 
         if is_releasing:
             target_val = raw_val
-            alpha = 0.95
+            alpha = self.ALPHA_FAST
         elif not self.is_pressed and (inst_v > 10.0 or abs(d0) > 22.0):
             target_val = raw_val
-            alpha = 0.95
+            alpha = self.ALPHA_FAST
         elif is_held:
             target_val = comb_val
-            alpha = 0.25
+            alpha = self.ALPHA_HELD
         else:
             target_val = raw_val
-            alpha = 0.90
+            alpha = self.ALPHA_MOVING
 
         self.filtered_raw += alpha * (target_val - self.filtered_raw)
 
@@ -276,7 +280,7 @@ class HallKeyDSP:
                 self.recovering_baseline = False
                 self.stationary_unpressed_ms = 0
 
-        # State tracking and noise envelope estimation
+        # Held state sample counters
         if self.is_pressed:
             if self.press_samples < 65535:
                 self.press_samples += 1
@@ -652,14 +656,24 @@ class TestDSPHarness(unittest.TestCase):
             f"TC-03: Turnaround accuracy {accuracy:.2f}% below threshold 99.0%"
         )
 
-    def test_tc04_rapid_trigger_accuracy_0_05mm(self):
-        """TC-04: Rapid Trigger turnaround accuracy at 0.05mm sensitivity (>= 99.0%)."""
+    def test_tc04_rapid_trigger_accuracy_min_sensitivity_depth_sweep(self):
+        """TC-04: Rapid Trigger turnaround accuracy at the minimum sensitivity across base depths (>= 99.0%)."""
+        s_min = HallKeyDSP.RT_SENS_MIN_MM
         for depth in [1.0, 1.5, 2.0, 2.5, 3.0]:
-            accuracy = self._evaluate_rt_reversals(s_rt=0.05, num_cycles=100, margin_pct=0.0, base_depth_mm=depth)
+            accuracy = self._evaluate_rt_reversals(s_rt=s_min, num_cycles=100, margin_pct=0.0, base_depth_mm=depth)
             self.assertGreaterEqual(
                 accuracy, 99.0,
-                f"TC-04: Turnaround accuracy {accuracy:.2f}% at base depth {depth:.1f}mm below threshold 99.0%"
+                f"TC-04: Turnaround accuracy {accuracy:.2f}% at {s_min:.2f}mm, base depth {depth:.1f}mm below threshold 99.0%"
             )
+
+    def test_rt_sensitivity_clamped_to_floor(self):
+        """Requests below RT_SENS_MIN_MM clamp to the floor rather than enabling a chatter-prone setting."""
+        dsp = HallKeyDSP()
+        dsp.set_rt_sensitivity(0.05)
+        self.assertEqual(dsp.rt_press_mm, HallKeyDSP.RT_SENS_MIN_MM)
+        self.assertEqual(dsp.rt_release_mm, HallKeyDSP.RT_SENS_MIN_MM)
+        dsp.set_rt_sensitivity(5.0)
+        self.assertEqual(dsp.rt_press_mm, HallKeyDSP.RT_SENS_MAX_MM)
 
     def test_tc05_rapid_trigger_multi_velocity_sweep(self):
         """TC-05: Rapid Trigger turnaround accuracy across multi-velocity strokes (>= 99.0%)."""
