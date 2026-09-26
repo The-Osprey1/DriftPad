@@ -1,18 +1,14 @@
-# TEST_READY — DriftPad Automated Verification Harness
+# Testing
 
-**Project:** DriftPad 16-Key Hall-Effect Rapid Trigger Macropad  
-**Document:** Test Suite Readiness & Acceptance Verification Report  
-**Author:** Test Writer M1  
-**Timestamp:** 2026-09-25T04:29:00Z  
-**File Location:** `c:\Users\devyn\Documents\antigravity\kind-heisenberg\DriftPad\TEST_READY.md`  
-**Reference Request:** `.agents/teamwork/ORIGINAL_REQUEST.md` (Requirements R1, R2, R3 and Acceptance Criteria)  
-**Reference Specification:** `.agents/teamwork/spec_miner_survey_3/spec_verification_harness.md`  
+DriftPad's firmware logic is verified by a Python test harness in [`tests/`](../tests). It models the Hall-effect signal chain and Rapid Trigger algorithm, builds the real firmware with PlatformIO and checks the UF2 output, and validates the configurator's serial protocol and profile schema.
 
 ---
 
-## 1. Executive Verification Summary
+## 1. Summary
 
-The automated verification harness for the DriftPad 16-key Hall-effect Rapid Trigger macropad has been built in **pure Python 3 (Python 3.12 standard library, zero external pip dependencies)**. All test suites have been executed against the host environment and firmware artifacts.
+The automated verification harness for the DriftPad 16-key Hall-effect Rapid Trigger macropad has been built in **pure Python 3 (Python 3.12 standard library, zero external pip dependencies)**. The results below were recorded on a Windows host with PlatformIO installed. Without PlatformIO, the four build tests (`TC-13`, `TC-B1`, `TC-B2`, `TC-B3`) fail and everything else still passes.
+
+Snapshot of the master runner output from that run:
 
 ```
 ======================================================================================
@@ -31,7 +27,7 @@ The automated verification harness for the DriftPad 16-key Hall-effect Rapid Tri
 
 ## 2. Test Execution Commands
 
-To execute tests from the project root (`c:\Users\devyn\Documents\antigravity\kind-heisenberg\DriftPad`):
+Run these from the repository root:
 
 ### 2.1 Complete Master Test Suite
 ```bash
@@ -140,12 +136,19 @@ To track ambient thermal and power supply drift up to $\pm 100\text{ counts}$ wi
 
 ---
 
-## 7. Deliverable Artifact Locations
+## 7. Test Files
 
-- Master Test Runner: `c:\Users\devyn\Documents\antigravity\kind-heisenberg\DriftPad\tests\run_all_tests.py`
-- DSP Engine Test Suite: `c:\Users\devyn\Documents\antigravity\kind-heisenberg\DriftPad\tests\test_dsp_harness.py`
-- PlatformIO Build Verification: `c:\Users\devyn\Documents\antigravity\kind-heisenberg\DriftPad\tests\test_build.py`
-- Configuration & Schema Test Suite: `c:\Users\devyn\Documents\antigravity\kind-heisenberg\DriftPad\tests\test_config_schema.py`
-- Acceptance Report: `c:\Users\devyn\Documents\antigravity\kind-heisenberg\DriftPad\TEST_READY.md`
+| File | Contents |
+|---|---|
+| [`tests/run_all_tests.py`](../tests/run_all_tests.py) | Master runner that prints the status table |
+| [`tests/test_dsp_harness.py`](../tests/test_dsp_harness.py) | DSP model, waveform generators, Rapid Trigger, noise, latency and drift tests |
+| [`tests/test_build.py`](../tests/test_build.py) | PlatformIO build and UF2 / ELF / BIN checks |
+| [`tests/test_config_schema.py`](../tests/test_config_schema.py) | Serial protocol, keymap schema and configurator checks |
+| [`tests/test_adversarial_m2.py`](../tests/test_adversarial_m2.py) | Extra adversarial cases (chatter under noise, baseline lockout, OLED bounds). Not part of the master runner |
+| [`tests/test_challenger2_verification.py`](../tests/test_challenger2_verification.py) | Firmware binary layout and serial command coverage checks. Not part of the master runner |
 
-All deliverables are verified and ready for Milestone M2.
+Run the last two directly, for example `python -m unittest tests.test_adversarial_m2`.
+
+## 8. Known Open Issues
+
+- **ADV-02 fails.** At the minimum RT sensitivity of 0.05 mm, the DSP model produces false releases (285 in the current run) under 10-count 60 Hz EMI plus 3-sigma Gaussian noise. The main suite's TC-04 passes at 0.05 mm because it does not combine both noise sources. Until this is fixed, RT sensitivities above 0.05 mm are the safer choice on noisy hardware.

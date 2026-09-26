@@ -2,10 +2,13 @@
 """
 demo_oled.py - DriftPad OLED Live Showcase Script
 
-Runs an interactive animation on the physical OLED display via COM3:
+Runs an interactive animation on the physical OLED display over serial
+(default port COM3; pass another port as the first argument):
 1. "Breathing" analog travel bar gauge
 2. 4x4 Key Matrix ripple/snake patterns
 3. Rapid Trigger rapid turnaround demonstration
+
+Usage (from the repo root):  python tools/demo_oled.py [PORT]
 """
 
 import sys
