@@ -38,6 +38,5 @@ void oledWake();
 void oledSleep();
 bool oledIsSleeping();
 void oledSetScreensaverAnim(int8_t animIdx);
-void oledDiscardGridLatches();
 
 #endif // OLED_H
