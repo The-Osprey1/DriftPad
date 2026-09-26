@@ -38,7 +38,7 @@ The handler lives in `processCommand()` in [`firmware/src/main.cpp`](../firmware
 |---|---|
 | `FULLSCREEN [0\|1]` | Sets full-screen mode, or toggles it with no argument |
 | `SCREENSAVER` | Starts the screensaver now |
-| `ANIM [n]` | Forces screensaver animation `n` (0 to 2) and starts it. With no argument the firmware picks the animation itself |
+| `ANIM [n]` | Forces screensaver animation `n` and starts it: 0 starfield, 1 cyber rain, 2 oscilloscope, 3 synthwave grid, 4 magnetic ripples, 5 Game of Life. With no argument the firmware cycles through all six (20 s each, with a dithered wipe between them) |
 | `SLEEP` / `WAKE` | Turns the OLED off or on |
 | `OLED_SCAN` | Scans the I2C bus and reports what it finds |
 | `OLED_TEST` | Draws a test pattern |
