@@ -44,7 +44,7 @@ volatile bool s_displaySleeping = false;
 volatile int8_t s_forcedAnim = -1;
 volatile uint32_t s_screensaverStartTime = 0;
 constexpr uint32_t SCREENSAVER_TIMEOUT_MS = 45000;       // 45s idle -> start screensaver
-constexpr uint32_t SCREENSAVER_ANIM_CYCLE_MS = 20000;   // 20s per animation cycle (0 -> 1 -> 2)
+constexpr uint32_t SCREENSAVER_ANIM_CYCLE_MS = 20000;   // 20s per animation cycle (0 -> 1 -> ... -> 5)
 constexpr uint32_t DISPLAY_SLEEP_TIMEOUT_MS = 3600000UL; // 1 hour (3600s) -> turn display OFF
 volatile uint32_t s_menuLastActive = 0;
 volatile uint32_t s_lastActivityTime = 0;
@@ -112,6 +112,38 @@ void initRain() {
 
 // Animation 2: Oscilloscope Sine Flow
 float s_wavePhase = 0.0f;
+
+// Animation 3: Synthwave Horizon Grid
+float s_gridScroll = 0.0f;
+uint8_t s_gridFrame = 0;
+
+// Animation 4: Magnetic Pulse Ripples
+struct Ripple {
+    int16_t x, y;
+    int16_t r;      // Current radius; <= 0 means waiting to spawn
+    int16_t maxR;
+};
+constexpr uint8_t NUM_RIPPLES = 4;
+Ripple s_ripples[NUM_RIPPLES];
+bool s_ripplesInit = false;
+
+// Animation 5: Conway's Game of Life (64x32 cells, 2x2 px each, toroidal wrap)
+constexpr uint8_t LIFE_W = 64;
+constexpr uint8_t LIFE_H = 32;
+uint64_t s_life[LIFE_H];
+uint64_t s_lifeNext[LIFE_H];
+bool s_lifeInit = false;
+uint8_t s_lifeFrame = 0;
+uint16_t s_lifeGeneration = 0;
+
+// Screensaver sequencing & cross-animation transition
+constexpr uint8_t NUM_SCREENSAVER_ANIMS = 6;
+constexpr uint32_t SCREENSAVER_TRANSITION_MS = 1500;    // Dithered diagonal wipe between animations
+int8_t s_ssShownAnim = -1;       // Animation fully on screen (or the one being wiped away)
+int8_t s_ssIncomingAnim = -1;    // Animation being wiped in, -1 when no transition is running
+uint32_t s_ssTransitionStart = 0;
+uint32_t s_ssSessionStart = 0;   // Detects a fresh screensaver session so it starts without a wipe
+uint8_t s_ssScratch[SCREEN_WIDTH * SCREEN_HEIGHT / 8];
 
 void configure128x64Hardware() {
     // Explicitly enforce 128x64 Interleaved COM hardware configuration for Hosyond SSD1306:
@@ -749,7 +781,9 @@ void renderFullScreen() {
     mutex_exit(&s_wireMutex);
 }
 
-void updateFloatingBadge(int16_t w, int16_t h, const char* text) {
+void updateFloatingBadge(const char* text) {
+    const int16_t w = (int16_t)strlen(text) * 6 + 8;
+    const int16_t h = 14;
     s_badgeX += s_badgeDX;
     s_badgeY += s_badgeDY;
     if (s_badgeX <= 1) { s_badgeX = 1; s_badgeDX = 1; }
@@ -803,8 +837,6 @@ void renderAnimStarfield() {
             s_stars[i].prev_y = -1;
         }
     }
-
-    updateFloatingBadge(56, 14, "DRIFTPAD");
 }
 
 // Animation 1: Digital Cyber Rain & Floating CYBER RT Badge
@@ -839,8 +871,6 @@ void renderAnimMatrixRain() {
             }
         }
     }
-
-    updateFloatingBadge(56, 14, "CYBER RT");
 }
 
 // Animation 2: Dual Harmonic Oscilloscope Flux Wave & Floating HALL FLUX Badge
@@ -864,34 +894,310 @@ void renderAnimOscilloscope() {
             s_display.drawPixel(x + 1, y2, OLED_COLOR_WHITE);
         }
     }
+}
 
-    updateFloatingBadge(62, 14, "HALL FLUX");
+// Animation 3: Synthwave Horizon Grid & Floating DRIFT GRID Badge
+void renderAnimSynthGrid() {
+    constexpr int16_t HORIZON = 30;
+    constexpr int16_t SUN_R = 15;
+
+    s_gridFrame++;
+    s_gridScroll += 0.06f;
+    if (s_gridScroll >= 1.0f) {
+        s_gridScroll -= 1.0f;
+    }
+
+    // Twinkling sky stars (fixed positions, each blinks on its own beat)
+    static const uint8_t kSky[][2] = {
+        {6, 4}, {19, 11}, {31, 3}, {44, 17}, {88, 5}, {97, 14},
+        {109, 3}, {121, 10}, {13, 22}, {115, 21}, {76, 2}, {52, 7}
+    };
+    for (uint8_t i = 0; i < sizeof(kSky) / sizeof(kSky[0]); ++i) {
+        if (((s_gridFrame + i * 11) % 48) > 3) {
+            s_display.drawPixel(kSky[i][0], kSky[i][1], OLED_COLOR_WHITE);
+        }
+    }
+
+    // Setting sun: upper half disc with slits that scroll down and widen toward the horizon
+    uint8_t slitOffset = (s_gridFrame / 4) % 4;
+    for (int16_t dy = -SUN_R; dy < 0; ++dy) {
+        int16_t fromHorizon = -dy;
+        if (fromHorizon <= 10) {
+            uint8_t gap = fromHorizon <= 5 ? 2 : 1;
+            if (((fromHorizon + slitOffset) % 4) < gap) {
+                continue;
+            }
+        }
+        int16_t half = (int16_t)sqrtf((float)(SUN_R * SUN_R - dy * dy));
+        s_display.drawFastHLine(64 - half, HORIZON + dy, half * 2 + 1, OLED_COLOR_WHITE);
+    }
+
+    s_display.drawFastHLine(0, HORIZON, 128, OLED_COLOR_WHITE);
+
+    // Floor rails converging on the vanishing point
+    for (int8_t i = -6; i <= 6; ++i) {
+        s_display.drawLine(64 + i * 4, HORIZON + 1, 64 + i * 24, 63, OLED_COLOR_WHITE);
+    }
+
+    // Cross ties rushing toward the viewer (perspective y = horizon + k / depth)
+    for (uint8_t k = 0; k < 9; ++k) {
+        float depth = (float)k + 1.0f - s_gridScroll;
+        if (depth < 0.5f) continue;
+        int16_t y = HORIZON + (int16_t)(33.0f / depth);
+        if (y > HORIZON + 1 && y < 64) {
+            s_display.drawFastHLine(0, y, 128, OLED_COLOR_WHITE);
+        }
+    }
+}
+
+void spawnRipple(Ripple& rp) {
+    rp.x = rand() % 128;
+    rp.y = rand() % 64;
+    rp.r = -(rand() % 24);          // Staggered start so rings don't pulse in lockstep
+    rp.maxR = 22 + (rand() % 26);
+}
+
+// Midpoint circle; skip > 0 draws only every skip-th step so fading rings break up into dots
+void drawRippleRing(int16_t cx, int16_t cy, int16_t r, uint8_t skip) {
+    int16_t x = r;
+    int16_t y = 0;
+    int16_t err = 1 - r;
+    uint8_t n = 0;
+    while (x >= y) {
+        if (skip == 0 || (n % skip) == 0) {
+            s_display.drawPixel(cx + x, cy + y, OLED_COLOR_WHITE);
+            s_display.drawPixel(cx - x, cy + y, OLED_COLOR_WHITE);
+            s_display.drawPixel(cx + x, cy - y, OLED_COLOR_WHITE);
+            s_display.drawPixel(cx - x, cy - y, OLED_COLOR_WHITE);
+            s_display.drawPixel(cx + y, cy + x, OLED_COLOR_WHITE);
+            s_display.drawPixel(cx - y, cy + x, OLED_COLOR_WHITE);
+            s_display.drawPixel(cx + y, cy - x, OLED_COLOR_WHITE);
+            s_display.drawPixel(cx - y, cy - x, OLED_COLOR_WHITE);
+        }
+        n++;
+        y++;
+        if (err < 0) {
+            err += 2 * y + 1;
+        } else {
+            x--;
+            err += 2 * (y - x) + 1;
+        }
+    }
+}
+
+// Animation 4: Magnetic Pulse Ripples & Floating MAG PULSE Badge
+void renderAnimRipples() {
+    if (!s_ripplesInit) {
+        for (uint8_t i = 0; i < NUM_RIPPLES; ++i) {
+            spawnRipple(s_ripples[i]);
+        }
+        s_ripplesInit = true;
+    }
+
+    for (uint8_t i = 0; i < NUM_RIPPLES; ++i) {
+        Ripple& rp = s_ripples[i];
+        rp.r++;
+        if (rp.r > rp.maxR) {
+            spawnRipple(rp);
+            continue;
+        }
+        if (rp.r <= 0) continue;
+
+        // Impact flash, then an outer wavefront trailed by a weaker echo ring
+        if (rp.r <= 2) {
+            s_display.fillCircle(rp.x, rp.y, 3 - rp.r, OLED_COLOR_WHITE);
+        }
+        uint8_t skip = 0;
+        if (rp.r > rp.maxR * 3 / 4) {
+            skip = 3;
+        } else if (rp.r > rp.maxR / 2) {
+            skip = 2;
+        }
+        drawRippleRing(rp.x, rp.y, rp.r, skip);
+        if (rp.r > 7) {
+            drawRippleRing(rp.x, rp.y, rp.r - 7, skip + 2);
+        }
+    }
+}
+
+inline bool lifeCell(const uint64_t* grid, int16_t x, int16_t y) {
+    x = (x + LIFE_W) % LIFE_W;
+    y = (y + LIFE_H) % LIFE_H;
+    return (grid[y] >> x) & 1ULL;
+}
+
+// Drops a random 6x6 soup somewhere on the board to keep the colony evolving
+void lifeInjectSoup() {
+    int16_t ox = rand() % LIFE_W;
+    int16_t oy = rand() % LIFE_H;
+    for (int16_t dy = 0; dy < 6; ++dy) {
+        for (int16_t dx = 0; dx < 6; ++dx) {
+            if ((rand() % 100) < 45) {
+                s_life[(oy + dy) % LIFE_H] |= 1ULL << ((ox + dx) % LIFE_W);
+            }
+        }
+    }
+}
+
+void lifeSeed() {
+    for (uint8_t y = 0; y < LIFE_H; ++y) {
+        uint64_t row = 0;
+        for (uint8_t x = 0; x < LIFE_W; ++x) {
+            if ((rand() % 100) < 22) {
+                row |= 1ULL << x;
+            }
+        }
+        s_life[y] = row;
+    }
+    s_lifeGeneration = 0;
+    s_lifeInit = true;
+}
+
+void lifeStep() {
+    uint16_t population = 0;
+    for (int16_t y = 0; y < LIFE_H; ++y) {
+        uint64_t row = 0;
+        for (int16_t x = 0; x < LIFE_W; ++x) {
+            uint8_t n = 0;
+            for (int8_t dy = -1; dy <= 1; ++dy) {
+                for (int8_t dx = -1; dx <= 1; ++dx) {
+                    if ((dx != 0 || dy != 0) && lifeCell(s_life, x + dx, y + dy)) {
+                        n++;
+                    }
+                }
+            }
+            bool alive = lifeCell(s_life, x, y);
+            if (n == 3 || (alive && n == 2)) {
+                row |= 1ULL << x;
+                population++;
+            }
+        }
+        s_lifeNext[y] = row;
+    }
+    memcpy(s_life, s_lifeNext, sizeof(s_life));
+    s_lifeGeneration++;
+
+    if (population < 20) {
+        lifeSeed();
+    } else if ((s_lifeGeneration % 50) == 0) {
+        lifeInjectSoup();
+    }
+}
+
+// Animation 5: Conway's Game of Life & Floating CELL LIFE Badge
+void renderAnimLife() {
+    if (!s_lifeInit) {
+        lifeSeed();
+    }
+    // ~10 generations per second at 30 FPS
+    if (++s_lifeFrame >= 3) {
+        s_lifeFrame = 0;
+        lifeStep();
+    }
+
+    for (uint8_t y = 0; y < LIFE_H; ++y) {
+        uint64_t row = s_life[y];
+        if (row == 0) continue;
+        for (uint8_t x = 0; x < LIFE_W; ++x) {
+            if ((row >> x) & 1ULL) {
+                s_display.fillRect(x * 2, y * 2, 2, 2, OLED_COLOR_WHITE);
+            }
+        }
+    }
+}
+
+struct ScreensaverAnim {
+    void (*render)();
+    const char* label;
+};
+
+const ScreensaverAnim kScreensaverAnims[NUM_SCREENSAVER_ANIMS] = {
+    {renderAnimStarfield,    "DRIFTPAD"},
+    {renderAnimMatrixRain,   "CYBER RT"},
+    {renderAnimOscilloscope, "HALL FLUX"},
+    {renderAnimSynthGrid,    "DRIFT GRID"},
+    {renderAnimRipples,      "MAG PULSE"},
+    {renderAnimLife,         "CELL LIFE"},
+};
+
+// Blends two frames with a dithered diagonal wipe sweeping from top-left to bottom-right.
+// Each pixel flips to the incoming frame once the sweep front passes (x + y) plus a 4x4
+// Bayer offset, so the front is a soft ~64 px dithered band instead of a hard edge.
+// front runs 0..256: 0 = all outgoing, 256 = all incoming.
+void blendWipe(uint8_t* outgoing, const uint8_t* incoming, int16_t front) {
+    static const uint8_t kBayer4[4][4] = {
+        { 0,  8,  2, 10},
+        {12,  4, 14,  6},
+        { 3, 11,  1,  9},
+        {15,  7, 13,  5},
+    };
+    for (uint8_t page = 0; page < SCREEN_HEIGHT / 8; ++page) {
+        for (uint8_t x = 0; x < SCREEN_WIDTH; ++x) {
+            uint8_t mask = 0;
+            for (uint8_t bit = 0; bit < 8; ++bit) {
+                uint8_t y = page * 8 + bit;
+                int16_t key = x + y + kBayer4[y & 3][x & 3] * 4;
+                if (key < front) {
+                    mask |= 1 << bit;
+                }
+            }
+            uint16_t idx = x + page * SCREEN_WIDTH;
+            outgoing[idx] = (incoming[idx] & mask) | (outgoing[idx] & ~mask);
+        }
+    }
 }
 
 void renderScreensaver() {
     discardGridLatches();
+
+    uint32_t now = millis();
+    uint32_t sessionStart = s_screensaverStartTime;
+    int8_t forced = s_forcedAnim;
+    int8_t target;
+    if (forced >= 0 && forced < NUM_SCREENSAVER_ANIMS) {
+        target = forced;
+    } else {
+        // Cycle through all animations every SCREENSAVER_ANIM_CYCLE_MS (20s)
+        target = ((now - sessionStart) / SCREENSAVER_ANIM_CYCLE_MS) % NUM_SCREENSAVER_ANIMS;
+    }
+
+    if (s_ssShownAnim < 0 || s_ssSessionStart != sessionStart) {
+        // Fresh screensaver session: show the target immediately, no wipe
+        s_ssSessionStart = sessionStart;
+        s_ssShownAnim = target;
+        s_ssIncomingAnim = -1;
+    } else if (s_ssIncomingAnim < 0 && target != s_ssShownAnim) {
+        s_ssIncomingAnim = target;
+        s_ssTransitionStart = now;
+    }
+
+    uint32_t elapsed = now - s_ssTransitionStart;
+    if (s_ssIncomingAnim >= 0 && elapsed >= SCREENSAVER_TRANSITION_MS) {
+        s_ssShownAnim = s_ssIncomingAnim;
+        s_ssIncomingAnim = -1;
+    }
+
+    const char* badge = kScreensaverAnims[s_ssShownAnim].label;
     s_display.clearDisplay();
 
-    uint8_t animIdx = 0;
-    if (s_forcedAnim >= 0 && s_forcedAnim <= 2) {
-        animIdx = (uint8_t)s_forcedAnim;
+    if (s_ssIncomingAnim < 0) {
+        kScreensaverAnims[s_ssShownAnim].render();
     } else {
-        // Cycle between the 3 animations every SCREENSAVER_ANIM_CYCLE_MS (20s)
-        animIdx = ((millis() - s_screensaverStartTime) / SCREENSAVER_ANIM_CYCLE_MS) % 3;
+        // Both animations keep moving during the wipe: render incoming, stash it, render outgoing, blend
+        uint8_t* buf = s_display.getBuffer();
+        kScreensaverAnims[s_ssIncomingAnim].render();
+        memcpy(s_ssScratch, buf, sizeof(s_ssScratch));
+        s_display.clearDisplay();
+        kScreensaverAnims[s_ssShownAnim].render();
+
+        int16_t front = (int16_t)((elapsed * 256UL) / SCREENSAVER_TRANSITION_MS);
+        blendWipe(buf, s_ssScratch, front);
+        if (front >= 128) {
+            badge = kScreensaverAnims[s_ssIncomingAnim].label;
+        }
     }
 
-    switch (animIdx) {
-        case 0:
-            renderAnimStarfield();
-            break;
-        case 1:
-            renderAnimMatrixRain();
-            break;
-        case 2:
-        default:
-            renderAnimOscilloscope();
-            break;
-    }
+    updateFloatingBadge(badge);
 
     mutex_enter_blocking(&s_wireMutex);
     s_display.display();

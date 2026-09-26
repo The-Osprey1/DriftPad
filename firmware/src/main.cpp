@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Keyboard.h>
 #include <Wire.h>
+#include <cstring>
 
 #include "pins.h"
 #include "mux.h"
@@ -14,6 +15,41 @@ namespace {
 bool s_streamTelemetry = false;
 uint32_t s_lastStreamTime = 0;
 String s_serialBuffer = "";
+
+void printJsonEscaped(const char* text) {
+    if (text == nullptr) return;
+    for (const char* p = text; *p != '\0'; ++p) {
+        char c = *p;
+        if (c == '"' || c == '\\') {
+            Serial.print('\\');
+            Serial.print(c);
+        } else if ((uint8_t)c >= 0x20) {
+            Serial.print(c);
+        }
+    }
+}
+
+void copyLabelSafe(char* dst, size_t dstSize, const char* src) {
+    if (dst == nullptr || dstSize == 0) return;
+    if (src == nullptr) {
+        dst[0] = '\0';
+        return;
+    }
+
+    size_t i = 0;
+    for (; i + 1 < dstSize && src[i] != '\0'; ++i) {
+        char c = src[i];
+        if ((c >= '0' && c <= '9') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            c == '_' || c == '-') {
+            dst[i] = c;
+        } else {
+            dst[i] = '_';
+        }
+    }
+    dst[i] = '\0';
+}
 
 void sendConfigJson() {
     DeviceSettings& cfg = configGet();
@@ -37,7 +73,7 @@ void sendConfigJson() {
             Serial.print(F(",\"code\":"));
             Serial.print(cfg.keymaps[l][k].hidCode);
             Serial.print(F(",\"label\":\""));
-            Serial.print(cfg.keymaps[l][k].label);
+            printJsonEscaped(cfg.keymaps[l][k].label);
             Serial.print(F("\"}"));
         }
         Serial.print(F("]"));
@@ -62,7 +98,7 @@ void sendStatusJson() {
         Serial.print(F(",\"travel\":"));
         Serial.print(k.getTravelMm(), 2);
         Serial.print(F(",\"label\":\""));
-        Serial.print(k.getLabel());
+        printJsonEscaped(k.getLabel());
         Serial.print(F("\"}"));
     }
     Serial.println(F("]}"));
@@ -135,15 +171,21 @@ void processCommand(String line) {
         char labelBuf[8] = {0};
         int layer = 0, keyIdx = 0, hidCode = 0;
         if (sscanf(line.c_str(), "SET_KEY %d %d %d %7s", &layer, &keyIdx, &hidCode, labelBuf) >= 3) {
-            if (layer >= 0 && layer < NUM_LAYERS && keyIdx >= 0 && keyIdx < NUM_KEYS) {
+            if (layer >= 0 && layer < NUM_LAYERS && keyIdx >= 0 && keyIdx < NUM_KEYS && hidCode >= 0 && hidCode <= 255) {
                 configGet().keymaps[layer][keyIdx].hidCode = (uint8_t)hidCode;
                 if (strlen(labelBuf) > 0) {
-                    strncpy(configGet().keymaps[layer][keyIdx].label, labelBuf, sizeof(configGet().keymaps[layer][keyIdx].label) - 1);
+                    copyLabelSafe(
+                        configGet().keymaps[layer][keyIdx].label,
+                        sizeof(configGet().keymaps[layer][keyIdx].label),
+                        labelBuf
+                    );
                 }
                 configApplyToHardware();
                 configSave();
                 Serial.printf("{\"status\":\"ok\",\"msg\":\"Key L%d:K%d updated\"}\n", layer, keyIdx);
                 oledUpdate(true);
+            } else {
+                Serial.println(F("{\"status\":\"error\",\"msg\":\"Invalid key update arguments\"}"));
             }
         }
     }

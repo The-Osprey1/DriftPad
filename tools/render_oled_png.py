@@ -9,7 +9,6 @@ and comprehensive rendering of all edge cases (NRM pill, 4-char labels, ripple f
 import os
 import re
 import math
-import shutil
 from PIL import Image, ImageDraw
 
 # -------------------------------------------------------------
@@ -442,7 +441,7 @@ def render_screen(
 
 
 # -------------------------------------------------------------
-# 4. Generate & Save PNGs to figures/
+# 4. Generate & Save PNGs to docs/images/
 # -------------------------------------------------------------
 def build_composite_gallery(images, titles, cols=2, scale=4, pad=20, card_gap=25):
     """Generates an aesthetic multi-card showcase gallery image."""
@@ -493,12 +492,9 @@ def build_composite_gallery(images, titles, cols=2, scale=4, pad=20, card_gap=25
 def main():
     disp = OLEDDisplay()
 
-    # Destination directory: figures/ in repository root
-    figures_dir = os.path.join(PROJECT_ROOT, "figures")
+    # Destination directory: docs/images/ in repository root
+    figures_dir = os.path.join(PROJECT_ROOT, "docs", "images")
     os.makedirs(figures_dir, exist_ok=True)
-
-    # Also mirror to brain artifact directory if accessible
-    artifact_dir = r"C:\Users\devyn\.gemini\antigravity\brain\5718f2fc-a709-431c-bfa8-22edc30be32b"
 
     print(f"Rendering pixel-accurate OLED PNGs to: {figures_dir}")
 
@@ -634,9 +630,6 @@ def main():
     showcase.save(path_showcase)
     print(f"  [OK] Dual showcase saved to: {path_showcase}")
 
-    # Also save to project root
-    showcase.save(os.path.join(PROJECT_ROOT, "driftpad_oled_showcase.png"))
-
     # ---------------------------------------------------------
     # Comprehensive Edge Cases Composite Gallery (10-card showcase)
     # ---------------------------------------------------------
@@ -664,32 +657,6 @@ def main():
     path_gallery = os.path.join(figures_dir, "driftpad_oled_edge_showcase.png")
     edge_gallery.save(path_gallery)
     print(f"  [OK] Edge Cases composite gallery saved to: {path_gallery}")
-
-    # ---------------------------------------------------------
-    # Mirror artifacts to brain directory if present
-    # ---------------------------------------------------------
-    if os.path.isdir(artifact_dir):
-        for name in [
-            "driftpad_oled_standby.png",
-            "driftpad_oled_actuated.png",
-            "driftpad_oled_showcase.png",
-            "driftpad_oled_edge_showcase.png",
-            "driftpad_oled_edge_nrm_pill.png",
-            "driftpad_oled_edge_label_home.png",
-            "driftpad_oled_edge_label_pgup.png",
-            "driftpad_oled_edge_a1_plunge.png",
-            "driftpad_oled_edge_a1_fast_tap.png",
-            "driftpad_oled_edge_a1_overshoot.png",
-            "driftpad_oled_edge_a1_rt_reset.png",
-            "driftpad_oled_edge_ripple_frame1.png",
-            "driftpad_oled_edge_ripple_frame2.png",
-            "driftpad_oled_edge_ripple_frame3.png",
-            "driftpad_oled_edge_redline_outline.png",
-        ]:
-            src = os.path.join(figures_dir, name)
-            if os.path.exists(src):
-                shutil.copy(src, os.path.join(artifact_dir, name))
-        print("  [OK] Mirrored all figures to brain artifacts directory.")
 
     print("\n[SUCCESS] All requested OLED PNGs and edge cases rendered successfully.")
 
