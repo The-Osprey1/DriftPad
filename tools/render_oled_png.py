@@ -171,11 +171,12 @@ def render_screen(
     a1_mode=True,
     overshoot_keys=None,
     key_travels=None,
+    rt_repress=False,
 ):
     """
     Renders an exact frame matching firmware/src/oled.cpp.
     All text readouts (RT sensitivity, layer name, pill text) and animation states
-    (A1 Plunge, ripple frame, redline flash) are fully parameterized.
+    (A1 Plunge, ripple frame, redline flash, RT re-press) are fully parameterized.
     """
     display.clear()
 
@@ -221,48 +222,78 @@ def render_screen(
     # 3. Left Side: Active Key Cockpit vs Standby Cockpit
     if is_active:
         # Subtext with clean clearance
-        display.printText("TRIGGERED", 6, 13, size=1, col=1)
+        if rt_repress:
+            display.printText("STROKE:RT", 6, 13, size=1, col=1)
+        else:
+            display.printText("TRIGGERED", 6, 13, size=1, col=1)
 
         cx, cy, cw, ch = 5, 23, 54, 26
         # Top/bottom framing accents with clear spacing
         display.drawFastHLine(14, 21, 36, 1)
         display.drawFastHLine(14, 50, 36, 1)
 
-        # Inverted filled card with chamfered corners
-        display.fillRect(cx + 3, cy, cw - 3, ch, 1)
-        display.fillRect(cx, cy + 3, 3, ch - 3, 1)
-        display.drawPixel(cx, cy, 0)
-        display.drawPixel(cx + 1, cy, 0)
-        display.drawPixel(cx, cy + 1, 0)
-        display.drawPixel(cx + cw - 1, cy + ch - 1, 0)
-        display.drawPixel(cx + cw - 2, cy + ch - 1, 0)
-        display.drawPixel(cx + cw - 1, cy + ch - 2, 0)
-
-        # Inverted speed chevrons and centered label based on label length
         key_len = len(key_label)
-        if key_len == 1:
-            display.drawLine(12, 27, 9, 44, 0)
-            display.drawLine(15, 27, 12, 44, 0)
-            display.drawLine(49, 27, 46, 44, 0)
-            display.drawLine(52, 27, 49, 44, 0)
-            display.printText(key_label, cx + (cw - 15) // 2, cy + (ch - 21) // 2, size=3, col=0, bg=1)
-        elif key_len == 2:
-            display.drawLine(10, 27, 8, 44, 0)
-            display.drawLine(54, 27, 52, 44, 0)
-            display.printText(key_label, cx + (cw - 22) // 2, cy + (ch - 14) // 2, size=2, col=0, bg=1)
-        elif key_len == 3:
-            display.printText(key_label, cx + (cw - 34) // 2, cy + (ch - 14) // 2, size=2, col=0, bg=1)
-        elif key_len == 4:
-            display.printText(key_label, cx + (cw - 46) // 2, cy + (ch - 14) // 2, size=2, col=0, bg=1)
+        if not rt_repress:
+            # Inverted filled card with chamfered corners
+            display.fillRect(cx + 3, cy, cw - 3, ch, 1)
+            display.fillRect(cx, cy + 3, 3, ch - 3, 1)
+            display.drawPixel(cx, cy, 0)
+            display.drawPixel(cx + 1, cy, 0)
+            display.drawPixel(cx, cy + 1, 0)
+            display.drawPixel(cx + cw - 1, cy + ch - 1, 0)
+            display.drawPixel(cx + cw - 2, cy + ch - 1, 0)
+            display.drawPixel(cx + cw - 1, cy + ch - 2, 0)
+
+            # Inverted speed chevrons and centered label based on label length
+            if key_len == 1:
+                display.drawLine(12, 27, 9, 44, 0)
+                display.drawLine(15, 27, 12, 44, 0)
+                display.drawLine(49, 27, 46, 44, 0)
+                display.drawLine(52, 27, 49, 44, 0)
+                display.printText(key_label, cx + (cw - 15) // 2, cy + (ch - 21) // 2, size=3, col=0, bg=1)
+            elif key_len == 2:
+                display.drawLine(10, 27, 8, 44, 0)
+                display.drawLine(54, 27, 52, 44, 0)
+                display.printText(key_label, cx + (cw - 22) // 2, cy + (ch - 14) // 2, size=2, col=0, bg=1)
+            elif key_len == 3:
+                display.printText(key_label, cx + (cw - 34) // 2, cy + (ch - 14) // 2, size=2, col=0, bg=1)
+            elif key_len == 4:
+                display.printText(key_label, cx + (cw - 46) // 2, cy + (ch - 14) // 2, size=2, col=0, bg=1)
+            else:
+                display.printText(key_label, cx + 4, cy + (ch - 8) // 2, size=1, col=0, bg=1)
         else:
-            display.printText(key_label, cx + 4, cy + (ch - 8) // 2, size=1, col=0, bg=1)
+            # Outlined chamfered frame (matching oled.cpp lines 532-538)
+            display.drawLine(cx + 3, cy, cx + cw - 1, cy, 1)
+            display.drawLine(cx + cw - 1, cy, cx + cw - 1, cy + ch - 4, 1)
+            display.drawLine(cx + cw - 1, cy + ch - 4, cx + cw - 4, cy + ch - 1, 1)
+            display.drawLine(cx + cw - 4, cy + ch - 1, cx, cy + ch - 1, 1)
+            display.drawLine(cx, cy + ch - 1, cx, cy + 3, 1)
+            display.drawLine(cx, cy + 3, cx + 3, cy, 1)
+
+            # Normal speed chevrons in white
+            if key_len == 1:
+                display.drawLine(12, 27, 9, 44, 1)
+                display.drawLine(15, 27, 12, 44, 1)
+                display.drawLine(49, 27, 46, 44, 1)
+                display.drawLine(52, 27, 49, 44, 1)
+                display.printText(key_label, cx + (cw - 15) // 2, cy + (ch - 21) // 2, size=3, col=1)
+            elif key_len == 2:
+                display.drawLine(10, 27, 8, 44, 1)
+                display.drawLine(54, 27, 52, 44, 1)
+                display.printText(key_label, cx + (cw - 22) // 2, cy + (ch - 14) // 2, size=2, col=1)
+            elif key_len == 3:
+                display.printText(key_label, cx + (cw - 34) // 2, cy + (ch - 14) // 2, size=2, col=1)
+            elif key_len == 4:
+                display.printText(key_label, cx + (cw - 46) // 2, cy + (ch - 14) // 2, size=2, col=1)
+            else:
+                display.printText(key_label, cx + 4, cy + (ch - 8) // 2, size=1, col=1)
 
         # Sub-Telemetry: Depth readout (X: 3..37) + Formula Drift Motec Tachometer (X: 41..63)
         display.printText(f"{travel_mm:.2f}mm", 3, 53, size=1, col=1)
 
         # 6-Stage Motec Tachometer with Angled Speed Chevrons /// (X: 41..63, Y: 52..59)
         active_segs = int((travel_mm / 4.0) * 6.0)
-        if is_active and active_segs < 3: active_segs = 3
+        if (not rt_repress) and active_segs < 3: active_segs = 3
         if active_segs > 6: active_segs = 6
 
         for s in range(5):
@@ -274,8 +305,8 @@ def render_screen(
                 display.drawPixel(sx + 1, 59, 1)
 
         # Segment 5: Redline shift block (X: 61..63) with redline_flash support
-        if active_segs >= 6 or is_active:
-            if redline_flash:
+        if active_segs >= 6 or (not rt_repress):
+            if redline_flash and (not rt_repress):
                 display.fillRect(61, 52, 3, 8, 1)  # Strobe F1 Shift Light
             else:
                 display.drawRect(61, 52, 3, 8, 1)  # Outlined resting block
@@ -329,13 +360,13 @@ def render_screen(
             key_idx = row * 4 + col
             bx = GRID_X + col * (BOX_W + GAP_X)
             by = GRID_Y + row * (BOX_H + GAP_Y)
-            pressed = (is_active and key_idx == active_key_idx)
+            pressed = (is_active and key_idx == active_key_idx and not rt_repress)
             is_macro = (key_idx in [4, 8, 12, 13])
 
             if a1_mode:
                 if key_travels and key_idx in key_travels:
                     t = key_travels[key_idx]
-                elif pressed:
+                elif is_active and key_idx == active_key_idx:
                     t = travel_mm
                 else:
                     t = 0.0
@@ -533,28 +564,35 @@ def main():
     img_a1_overshoot.save(path_a1_overshoot)
     print(f"  [OK] Edge Case: A1 Release Overshoot (-1px): {path_a1_overshoot}")
 
-    # Edge Case 7: Legacy Ripple frame 1 (Key 'D', r=1 halo + 2 sparks strictly within 3px gap)
+    # Edge Case 7: A1 Rapid Trigger Re-press Reset (1-frame visual reset during held actuation)
+    render_screen(disp, is_active=True, key_label="D", travel_mm=2.20, active_key_idx=7, rt_repress=True)
+    img_a1_rt_reset = disp.to_pil_image(scale=6)
+    path_a1_rt_reset = os.path.join(figures_dir, "driftpad_oled_edge_a1_rt_reset.png")
+    img_a1_rt_reset.save(path_a1_rt_reset)
+    print(f"  [OK] Edge Case: A1 RT Re-press Reset (1-frame): {path_a1_rt_reset}")
+
+    # Edge Case 8: Legacy Ripple frame 1 (Key 'D', r=1 halo + 2 sparks strictly within 3px gap)
     render_screen(disp, is_active=True, key_label="D", travel_mm=1.85, active_key_idx=7, ripple_frame=1, a1_mode=False)
     img_ripple1 = disp.to_pil_image(scale=6)
     path_r1 = os.path.join(figures_dir, "driftpad_oled_edge_ripple_frame1.png")
     img_ripple1.save(path_r1)
     print(f"  [OK] Edge Case: Ripple frame 1 (halo + sparks): {path_r1}")
 
-    # Edge Case 8: Legacy Ripple frame 2 (Key 'D', r=1 halo, sparks dropped for frames >= 2)
+    # Edge Case 9: Legacy Ripple frame 2 (Key 'D', r=1 halo, sparks dropped for frames >= 2)
     render_screen(disp, is_active=True, key_label="D", travel_mm=1.85, active_key_idx=7, ripple_frame=2, a1_mode=False)
     img_ripple2 = disp.to_pil_image(scale=6)
     path_r2 = os.path.join(figures_dir, "driftpad_oled_edge_ripple_frame2.png")
     img_ripple2.save(path_r2)
     print(f"  [OK] Edge Case: Ripple frame 2 (halo only): {path_r2}")
 
-    # Edge Case 9: Legacy Ripple frame 3 (Key 'D', dissipated corner ticks, no sparks, halo capped at r=1)
+    # Edge Case 10: Legacy Ripple frame 3 (Key 'D', dissipated corner ticks, no sparks, halo capped at r=1)
     render_screen(disp, is_active=True, key_label="D", travel_mm=1.85, active_key_idx=7, ripple_frame=3, a1_mode=False)
     img_ripple3 = disp.to_pil_image(scale=6)
     path_r3 = os.path.join(figures_dir, "driftpad_oled_edge_ripple_frame3.png")
     img_ripple3.save(path_r3)
     print(f"  [OK] Edge Case: Ripple frame 3 (dissipated corners): {path_r3}")
 
-    # Edge Case 10: Redline Shift Block resting / off-strobe (redline_flash=False)
+    # Edge Case 11: Redline Shift Block resting / off-strobe (redline_flash=False)
     render_screen(disp, is_active=True, key_label="D", travel_mm=4.00, active_key_idx=7, redline_flash=False)
     img_redline_off = disp.to_pil_image(scale=6)
     path_redline_off = os.path.join(figures_dir, "driftpad_oled_edge_redline_outline.png")
@@ -600,7 +638,7 @@ def main():
     showcase.save(os.path.join(PROJECT_ROOT, "driftpad_oled_showcase.png"))
 
     # ---------------------------------------------------------
-    # Comprehensive Edge Cases Composite Gallery (8-card showcase)
+    # Comprehensive Edge Cases Composite Gallery (10-card showcase)
     # ---------------------------------------------------------
     edge_configs = [
         ("NRM Pill (Zero Overlap)", dict(is_active=False, rt_enabled=False, pill_text="L0:NRM")),
@@ -608,9 +646,11 @@ def main():
         ("4-Char: PGUP Key", dict(is_active=True, key_label="PGUP", travel_mm=3.20, active_key_idx=3, layer_name="NAVIG", layer_idx=1, pill_text="L1:RT")),
         ("A1: Travel Plunge (2.5mm)", dict(is_active=False, key_travels={7: 2.50})),
         ("A1: Actuated Lock (Solid)", dict(is_active=True, key_label="D", travel_mm=1.85, active_key_idx=7)),
+        ("A1: RT Reset (1-Frame)", dict(is_active=True, key_label="D", travel_mm=2.20, active_key_idx=7, rt_repress=True)),
         ("A1: Release Overshoot (-1px)", dict(is_active=False, overshoot_keys={7})),
         ("A1: Fast Tap (Latched Frame)", dict(is_active=True, key_label="D", travel_mm=1.85, active_key_idx=7, redline_flash=True)),
         ("A1: Fast Tap Rebound (-1px)", dict(is_active=False, overshoot_keys={7})),
+        ("Redline Resting Outline", dict(is_active=True, key_label="D", travel_mm=4.00, active_key_idx=7, redline_flash=False)),
     ]
 
     rendered_edge_imgs = []
@@ -640,6 +680,7 @@ def main():
             "driftpad_oled_edge_a1_plunge.png",
             "driftpad_oled_edge_a1_fast_tap.png",
             "driftpad_oled_edge_a1_overshoot.png",
+            "driftpad_oled_edge_a1_rt_reset.png",
             "driftpad_oled_edge_ripple_frame1.png",
             "driftpad_oled_edge_ripple_frame2.png",
             "driftpad_oled_edge_ripple_frame3.png",
