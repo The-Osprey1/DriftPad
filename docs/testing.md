@@ -69,7 +69,7 @@ The suite is partitioned into four distinct validation tiers:
 | **TC-01** | `test_tc01_rapid_trigger_accuracy_0_20mm` | RT Turnaround Accuracy ($S_{rt} = 0.20\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
 | **TC-02** | `test_tc02_rapid_trigger_accuracy_0_15mm` | RT Turnaround Accuracy ($S_{rt} = 0.15\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
 | **TC-03** | `test_tc03_rapid_trigger_accuracy_0_10mm` | RT Turnaround Accuracy ($S_{rt} = 0.10\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
-| **TC-04** | `test_tc04_rapid_trigger_accuracy_0_05mm` | RT Turnaround Accuracy ($S_{rt} = 0.05\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
+| **TC-04** | `test_tc04_rapid_trigger_accuracy_min_sensitivity_depth_sweep` | RT Turnaround Accuracy at floor ($S_{rt} = 0.10\text{mm}$, depths 1.0 to 3.0mm) | $\ge 99.0\%$ | **100.0%** | **PASS** |
 | **TC-05** | `test_tc05_rapid_trigger_multi_velocity_sweep` | Dynamic Velocity Sweep (20–100 mm/s) | $\ge 99.0\%$ | **100.0%** (180/180 events) | **PASS** |
 | **TC-06** | `test_tc06_quiescent_noise_stationary_hold` | 10s Rest with 60Hz EMI (20 cnts) + Thermal | 0 false KeyDowns | **0 false KeyDowns** (10,000 samples) | **PASS** |
 | **TC-07** | `test_tc07_in_stroke_stationary_hold_sub_rt_jitter` | 5s Held at 2.0mm with $0.5 \cdot S_{rt}$ Jitter | 0 false KeyUps | **0 false KeyUps** (5,000 samples) | **PASS** |
@@ -144,6 +144,7 @@ To track ambient thermal and power supply drift up to $\pm 100\text{ counts}$ wi
 | [`tests/test_dsp_harness.py`](../tests/test_dsp_harness.py) | DSP model, waveform generators, Rapid Trigger, noise, latency and drift tests |
 | [`tests/test_build.py`](../tests/test_build.py) | PlatformIO build and UF2 / ELF / BIN checks |
 | [`tests/test_config_schema.py`](../tests/test_config_schema.py) | Serial protocol, keymap schema and configurator checks |
+| [`tests/test_firmware_parity.py`](../tests/test_firmware_parity.py) | Compiles `firmware/src/hall.cpp` for the host, runs the TC and ADV suites against it, and requires identical key events to the Python model. Skipped when no `g++`/`clang++` is on PATH |
 | [`tests/test_adversarial_m2.py`](../tests/test_adversarial_m2.py) | Extra adversarial cases (chatter under noise, baseline lockout, OLED bounds). Not part of the master runner |
 | [`tests/test_challenger2_verification.py`](../tests/test_challenger2_verification.py) | Firmware binary layout and serial command coverage checks. Not part of the master runner |
 
@@ -151,4 +152,4 @@ Run the last two directly, for example `python -m unittest tests.test_adversaria
 
 ## 8. Known Open Issues
 
-- **ADV-02 fails.** At the minimum RT sensitivity of 0.05 mm, the DSP model produces false releases (285 in the current run) under 10-count 60 Hz EMI plus 3-sigma Gaussian noise. The main suite's TC-04 passes at 0.05 mm because it does not combine both noise sources. Until this is fixed, RT sensitivities above 0.05 mm are the safer choice on noisy hardware.
+- **Resolved: ADV-02.** At 0.05 mm the DSP produced 285 false releases in 5 s under 10-count 60 Hz EMI plus 3-sigma Gaussian noise. The RT sensitivity floor is now 0.10 mm (`HallKey::RT_SENS_MIN_MM`, mirrored by `HallKeyDSP.RT_SENS_MIN_MM`), where ADV-02 produces none.

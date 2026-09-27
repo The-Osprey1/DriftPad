@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import test_dsp_harness
 import test_build
 import test_config_schema
+import test_firmware_parity
 
 
 class TableTestResult(unittest.TestResult):
@@ -94,7 +95,7 @@ def get_test_metadata(test_method_name: str, docstring: str) -> Dict[str, str]:
     elif "tc03" in test_method_name:
         return {"id": "TC-03", "cat": "DSP RT", "desc": "RT Reversal Accuracy (0.10mm)"}
     elif "tc04" in test_method_name:
-        return {"id": "TC-04", "cat": "DSP RT", "desc": "RT Reversal Accuracy (0.05mm)"}
+        return {"id": "TC-04", "cat": "DSP RT", "desc": "RT Min Sens (0.10mm) Depth Sweep"}
     elif "tc05" in test_method_name:
         return {"id": "TC-05", "cat": "DSP RT", "desc": "RT Multi-Velocity Sweep"}
     elif "tc06" in test_method_name:
@@ -139,6 +140,22 @@ def get_test_metadata(test_method_name: str, docstring: str) -> Dict[str, str]:
         return {"id": "TC-C2", "cat": "Config", "desc": "Adversarial Schema Rejection"}
     elif "tc16" in test_method_name:
         return {"id": "TC-16", "cat": "DSP RT Noise", "desc": "RT Reversals with Active Noise"}
+    elif "clamped_to_floor" in test_method_name:
+        return {"id": "TC-S2", "cat": "DSP Model", "desc": "RT Sensitivity Floor Clamp"}
+    elif test_method_name.startswith("test_adv0"):
+        adv = {
+            "1": "RT Floor Chatter, 20-count EMI",
+            "2": "RT Floor Chatter, EMI + Thermal",
+            "3": "Auto-Zero Boot Negative Step",
+            "4": "Auto-Zero Positive Step",
+            "5": "Auto-Zero Finger Rest Freeze",
+        }
+        n = test_method_name[len("test_adv0")]
+        return {"id": f"ADV-0{n}", "cat": "Adversarial", "desc": adv.get(n, test_method_name)}
+    elif "identical_key_events" in test_method_name:
+        return {"id": "FW-SYNC", "cat": "FW Parity", "desc": "hall.cpp vs Model Key Events"}
+    elif "constants_match" in test_method_name:
+        return {"id": "FW-CONST", "cat": "FW Parity", "desc": "hall.h vs Model Constants"}
     else:
         clean_name = test_method_name.replace("test_", "")[:32]
         return {"id": "UNIT", "cat": "Unit", "desc": clean_name}
@@ -161,6 +178,10 @@ def run_all() -> int:
     suite.addTests(loader.loadTestsFromTestCase(test_dsp_harness.TestDSPHarness))
     suite.addTests(loader.loadTestsFromTestCase(test_build.TestPlatformIOBuild))
     suite.addTests(loader.loadTestsFromTestCase(test_config_schema.TestConfigSchema))
+    # Same DSP suites against firmware/src/hall.cpp compiled for the host (skipped without g++/clang++)
+    suite.addTests(loader.loadTestsFromTestCase(test_firmware_parity.TestFirmwareModelLockstep))
+    suite.addTests(loader.loadTestsFromTestCase(test_firmware_parity.TestDSPHarnessOnFirmware))
+    suite.addTests(loader.loadTestsFromTestCase(test_firmware_parity.TestAdversarialOnFirmware))
 
     table_result = TableTestResult()
     start_time = time.perf_counter()
@@ -177,6 +198,8 @@ def run_all() -> int:
         method_name = test._testMethodName
         doc = getattr(test, method_name).__doc__ or ""
         meta = get_test_metadata(method_name, doc)
+        if type(test).__name__.endswith("OnFirmware"):
+            meta = {"id": "FW " + meta["id"], "cat": "FW Parity", "desc": meta["desc"]}
         
         status = rec["status"]
         elapsed_str = f"{rec['elapsed_ms']:6.1f} ms"

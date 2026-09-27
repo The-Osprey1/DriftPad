@@ -343,14 +343,15 @@ void renderMenuOverlay() {
             s_display.setTextSize(1);
             s_display.print(" mm");
 
-            // Precision Slider Bar (0.05mm to 2.00mm)
+            // Precision Slider Bar (RT_SENS_MIN_MM to RT_SENS_MAX_MM)
             s_display.drawRect(8, 44, 112, 7, OLED_COLOR_WHITE);
             // Calibration ticks along slider
             s_display.drawPixel(8 + 28, 42, OLED_COLOR_WHITE);
             s_display.drawPixel(8 + 56, 42, OLED_COLOR_WHITE);
             s_display.drawPixel(8 + 84, 42, OLED_COLOR_WHITE);
 
-            float ratio = (HallKey::getRtSensitivity() - 0.05f) / (2.00f - 0.05f);
+            float ratio = (HallKey::getRtSensitivity() - HallKey::RT_SENS_MIN_MM) /
+                          (HallKey::RT_SENS_MAX_MM - HallKey::RT_SENS_MIN_MM);
             if (ratio < 0.0f) ratio = 0.0f;
             if (ratio > 1.0f) ratio = 1.0f;
             int16_t knobX = 8 + (int16_t)(ratio * 108.0f);
@@ -1332,10 +1333,8 @@ void oledAdjustCurrentSetting(int32_t delta) {
     switch (s_currentMenu) {
         case MenuMode::ADJUST_RT: {
             float val = HallKey::getRtSensitivity() + (delta * 0.05f);
-            if (val < 0.05f) val = 0.05f;
-            if (val > 2.00f) val = 2.00f;
             HallKey::setRtSensitivity(val);
-            cfg.rtSensMm = val;
+            cfg.rtSensMm = HallKey::getRtSensitivity();
             break;
         }
         case MenuMode::ADJUST_ACTUATION: {

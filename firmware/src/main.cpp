@@ -135,14 +135,14 @@ void processCommand(String line) {
     }
     else if (line.startsWith("SET_RT_SENS ")) {
         float val = line.substring(12).toFloat();
-        if (val >= 0.05f && val <= 2.0f) {
+        if (val >= HallKey::RT_SENS_MIN_MM && val <= HallKey::RT_SENS_MAX_MM) {
             HallKey::setRtSensitivity(val);
             configGet().rtSensMm = val;
             configSave();
             Serial.printf("{\"status\":\"ok\",\"msg\":\"RT sensitivity set to %s mm\"}\n", String(val, 2).c_str());
             oledUpdate(true);
         } else {
-            Serial.println(F("{\"status\":\"error\",\"msg\":\"Invalid RT sensitivity (0.05 - 2.0mm)\"}"));
+            Serial.println(F("{\"status\":\"error\",\"msg\":\"Invalid RT sensitivity (0.10 - 2.0mm)\"}"));
         }
     }
     else if (line.startsWith("SET_RT_ENABLE ")) {

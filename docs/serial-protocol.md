@@ -23,7 +23,7 @@ The handler lives in `processCommand()` in [`firmware/src/main.cpp`](../firmware
 | Command | Range | Effect |
 |---|---|---|
 | `SET_ACTUATION <mm>` | 0.10 to 3.80 | Actuation point for all keys |
-| `SET_RT_SENS <mm>` | 0.05 to 2.00 | Rapid Trigger sensitivity |
+| `SET_RT_SENS <mm>` | 0.10 to 2.00 | Rapid Trigger sensitivity |
 | `SET_RT_ENABLE <0\|1>` | | Turns Rapid Trigger off or on |
 | `SET_LAYER <n>` | 0 to 2 | Switches the active keymap layer |
 | `SET_KEY <layer> <key> <hid> [label]` | layer 0 to 2, key 0 to 15 | Remaps one key. `hid` is an Arduino `Keyboard` key code; `label` is up to 4 characters for the OLED |

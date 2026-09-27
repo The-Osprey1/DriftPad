@@ -108,6 +108,8 @@ void configSave() {
 void configApplyToHardware() {
     HallKey::setActuationPoint(s_settings.actuationMm);
     HallKey::setRtSensitivity(s_settings.rtSensMm);
+    // Settings saved under an older, lower floor are clamped; keep the stored copy consistent
+    s_settings.rtSensMm = HallKey::getRtSensitivity();
     HallKey::setRapidTrigger(s_settings.rtEnabled);
 
     // Apply keymap for active layer to HallManager keys
