@@ -140,14 +140,13 @@ constexpr uint8_t NUM_RIPPLES = 4;
 Ripple s_ripples[NUM_RIPPLES];
 bool s_ripplesInit = false;
 
-// Animation 5: Conway's Game of Life (64x32 cells, 2x2 px each, toroidal wrap)
-constexpr uint8_t LIFE_W = 64;
-constexpr uint8_t LIFE_H = 32;
-uint64_t s_life[LIFE_H];
-uint64_t s_lifeNext[LIFE_H];
-bool s_lifeInit = false;
-uint8_t s_lifeFrame = 0;
-uint16_t s_lifeGeneration = 0;
+// Animation 5: Lava Lamp metaballs (field sampled on a 4 px grid, interpolated per pixel)
+constexpr uint8_t LAVA_BLOBS = 5;
+constexpr uint8_t LAVA_GX = SCREEN_WIDTH / 4 + 1;
+constexpr uint8_t LAVA_GY = SCREEN_HEIGHT / 4 + 1;
+uint16_t s_lavaGrid[LAVA_GY][LAVA_GX];
+uint16_t s_lavaField[SCREEN_HEIGHT][SCREEN_WIDTH];
+float s_lavaTime = 0.0f;
 
 // Screensaver sequencing & cross-animation transition
 constexpr uint8_t NUM_SCREENSAVER_ANIMS = 6;
@@ -1033,87 +1032,87 @@ void renderAnimRipples() {
     }
 }
 
-inline bool lifeCell(const uint64_t* grid, int16_t x, int16_t y) {
-    x = (x + LIFE_W) % LIFE_W;
-    y = (y + LIFE_H) % LIFE_H;
-    return (grid[y] >> x) & 1ULL;
-}
+// Animation 5: Lava Lamp & Floating LAVA LAMP Badge
+// Blobs drift up and down on slow, unrelated sine periods so they merge and pinch apart.
+// Each blob gets a 1 px rim plus Bayer-dithered shading that thickens toward its core.
+void renderAnimLava() {
+    struct Blob {
+        uint8_t cx, swingX;
+        float speedX, speedY, phase;
+        uint8_t radius;
+    };
+    static const Blob kBlobs[LAVA_BLOBS] = {
+        {30, 10, 0.21f, 0.31f, 0.0f, 13},
+        {64, 14, 0.17f, 0.23f, 2.1f, 11},
+        {96,  9, 0.26f, 0.37f, 4.0f, 12},
+        {48, 12, 0.29f, 0.19f, 1.3f,  9},
+        {84, 11, 0.15f, 0.27f, 5.2f, 10},
+    };
+    static const uint8_t kBayer4[4][4] = {
+        { 0,  8,  2, 10},
+        {12,  4, 14,  6},
+        { 3, 11,  1,  9},
+        {15,  7, 13,  5},
+    };
+    constexpr uint16_t EDGE = 256;   // Field value on a lone blob's radius
+    constexpr uint16_t CORE = 360;   // Shading starts here, leaving a dark gap inside the rim
+    constexpr uint16_t FIELD_MAX = 2048;
 
-// Drops a random 6x6 soup somewhere on the board to keep the colony evolving
-void lifeInjectSoup() {
-    int16_t ox = rand() % LIFE_W;
-    int16_t oy = rand() % LIFE_H;
-    for (int16_t dy = 0; dy < 6; ++dy) {
-        for (int16_t dx = 0; dx < 6; ++dx) {
-            if ((rand() % 100) < 45) {
-                s_life[(oy + dy) % LIFE_H] |= 1ULL << ((ox + dx) % LIFE_W);
+    s_lavaTime += RENDER_INTERVAL_MS / 1000.0f;
+    if (s_lavaTime > 1000.0f) {
+        s_lavaTime -= 1000.0f;
+    }
+
+    int16_t bx[LAVA_BLOBS], by[LAVA_BLOBS];
+    int32_t strength[LAVA_BLOBS];
+    for (uint8_t k = 0; k < LAVA_BLOBS; ++k) {
+        const Blob& b = kBlobs[k];
+        bx[k] = (int16_t)(b.cx + b.swingX * sinf(s_lavaTime * b.speedX + b.phase));
+        by[k] = (int16_t)(32.0f + 34.0f * sinf(s_lavaTime * b.speedY + b.phase * 1.7f));
+        strength[k] = (int32_t)b.radius * b.radius * EDGE;
+    }
+
+    for (uint8_t j = 0; j < LAVA_GY; ++j) {
+        for (uint8_t i = 0; i < LAVA_GX; ++i) {
+            int32_t f = 0;
+            for (uint8_t k = 0; k < LAVA_BLOBS; ++k) {
+                int32_t dx = i * 4 - bx[k];
+                int32_t dy = j * 4 - by[k];
+                f += strength[k] / (dx * dx + dy * dy + 1);
             }
+            s_lavaGrid[j][i] = (uint16_t)(f > FIELD_MAX ? FIELD_MAX : f);
         }
     }
-}
 
-void lifeSeed() {
-    for (uint8_t y = 0; y < LIFE_H; ++y) {
-        uint64_t row = 0;
-        for (uint8_t x = 0; x < LIFE_W; ++x) {
-            if ((rand() % 100) < 22) {
-                row |= 1ULL << x;
-            }
+    for (uint8_t y = 0; y < SCREEN_HEIGHT; ++y) {
+        uint8_t gy = y >> 2, fy = y & 3;
+        for (uint8_t x = 0; x < SCREEN_WIDTH; ++x) {
+            uint8_t gx = x >> 2, fx = x & 3;
+            uint32_t top = s_lavaGrid[gy][gx] * (4 - fx) + s_lavaGrid[gy][gx + 1] * fx;
+            uint32_t bot = s_lavaGrid[gy + 1][gx] * (4 - fx) + s_lavaGrid[gy + 1][gx + 1] * fx;
+            s_lavaField[y][x] = (uint16_t)((top * (4 - fy) + bot * fy) >> 4);
         }
-        s_life[y] = row;
     }
-    s_lifeGeneration = 0;
-    s_lifeInit = true;
-}
 
-void lifeStep() {
-    uint16_t population = 0;
-    for (int16_t y = 0; y < LIFE_H; ++y) {
-        uint64_t row = 0;
-        for (int16_t x = 0; x < LIFE_W; ++x) {
-            uint8_t n = 0;
-            for (int8_t dy = -1; dy <= 1; ++dy) {
-                for (int8_t dx = -1; dx <= 1; ++dx) {
-                    if ((dx != 0 || dy != 0) && lifeCell(s_life, x + dx, y + dy)) {
-                        n++;
-                    }
-                }
+    uint8_t* buf = s_display.getBuffer();
+    for (uint8_t y = 0; y < SCREEN_HEIGHT; ++y) {
+        for (uint8_t x = 0; x < SCREEN_WIDTH; ++x) {
+            uint16_t f = s_lavaField[y][x];
+            if (f < EDGE) continue;
+
+            // Off-screen neighbours count as inside so blobs leaving the screen stay open
+            bool rim = (x > 0 && s_lavaField[y][x - 1] < EDGE) ||
+                       (x < SCREEN_WIDTH - 1 && s_lavaField[y][x + 1] < EDGE) ||
+                       (y > 0 && s_lavaField[y - 1][x] < EDGE) ||
+                       (y < SCREEN_HEIGHT - 1 && s_lavaField[y + 1][x] < EDGE);
+            bool on = rim;
+            if (!rim && f >= CORE) {
+                uint8_t level = 1 + (f - CORE) / 96;
+                if (level > 8) level = 8;
+                on = kBayer4[y & 3][x & 3] < level;
             }
-            bool alive = lifeCell(s_life, x, y);
-            if (n == 3 || (alive && n == 2)) {
-                row |= 1ULL << x;
-                population++;
-            }
-        }
-        s_lifeNext[y] = row;
-    }
-    memcpy(s_life, s_lifeNext, sizeof(s_life));
-    s_lifeGeneration++;
-
-    if (population < 20) {
-        lifeSeed();
-    } else if ((s_lifeGeneration % 50) == 0) {
-        lifeInjectSoup();
-    }
-}
-
-// Animation 5: Conway's Game of Life & Floating CELL LIFE Badge
-void renderAnimLife() {
-    if (!s_lifeInit) {
-        lifeSeed();
-    }
-    // ~10 generations per second at 30 FPS
-    if (++s_lifeFrame >= 3) {
-        s_lifeFrame = 0;
-        lifeStep();
-    }
-
-    for (uint8_t y = 0; y < LIFE_H; ++y) {
-        uint64_t row = s_life[y];
-        if (row == 0) continue;
-        for (uint8_t x = 0; x < LIFE_W; ++x) {
-            if ((row >> x) & 1ULL) {
-                s_display.fillRect(x * 2, y * 2, 2, 2, OLED_COLOR_WHITE);
+            if (on) {
+                buf[x + (y >> 3) * SCREEN_WIDTH] |= 1 << (y & 7);
             }
         }
     }
@@ -1130,7 +1129,7 @@ const ScreensaverAnim kScreensaverAnims[NUM_SCREENSAVER_ANIMS] = {
     {renderAnimOscilloscope, "HALL FLUX"},
     {renderAnimSynthGrid,    "DRIFT GRID"},
     {renderAnimRipples,      "MAG PULSE"},
-    {renderAnimLife,         "CELL LIFE"},
+    {renderAnimLava,         "LAVA LAMP"},
 };
 
 // Blends two frames with a dithered diagonal wipe sweeping from top-left to bottom-right.
