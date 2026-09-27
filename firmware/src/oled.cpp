@@ -66,6 +66,19 @@ void discardGridLatches() {
     }
 }
 
+// Display-only travel readout: 0.1mm resolution with hysteresis so ADC noise
+// (a few hundredths of a mm) doesn't make the digits flicker at rest.
+static float s_shownTravel[NUM_KEYS] = {0};
+float displayTravelMm(uint8_t keyIdx, float mm) {
+    float& shown = s_shownTravel[keyIdx];
+    if (mm < 0.05f) {
+        shown = 0.0f;
+    } else if (fabsf(mm - shown) > 0.07f) {
+        shown = roundf(mm * 10.0f) / 10.0f;
+    }
+    return shown;
+}
+
 // Animation 0: 3D Warp Starfield & Floating Badge
 struct Star {
     int16_t x, y, z;
@@ -258,7 +271,7 @@ void renderSafeZoneScreen() {
         HallKey& k = HallManager::getKey((uint8_t)lastKey);
         s_display.print(k.getLabel());
         s_display.print(":");
-        s_display.print(k.getTravelMm(), 2);
+        s_display.print(displayTravelMm((uint8_t)lastKey, k.getTravelMm()), 1);
         s_display.print("mm");
 
         int16_t barW = (int16_t)((k.getTravelMm() / 4.0f) * 122.0f);
@@ -595,8 +608,8 @@ void renderFullScreen() {
         s_display.setTextColor(OLED_COLOR_WHITE);
         s_display.setTextSize(1);
         s_display.setCursor(3, 53);
-        s_display.print(currentTravel, 2);
-        s_display.print("mm"); // spans X: 3..37
+        s_display.print(displayTravelMm((uint8_t)lastKey, currentTravel), 1);
+        s_display.print("mm"); // spans X: 3..31
 
         // 6-Stage Motec Tachometer with Angled Speed Chevrons /// (X: 41..63, Y: 52..59)
         int8_t activeSegs = (int8_t)((currentTravel / 4.0f) * 6.0f);
