@@ -71,6 +71,8 @@ def prefix_device() -> ctypes.CDLL:
         "pd_engine_actuation": ([], f), "pd_engine_rt_sens": ([], f), "pd_engine_rt_enabled": ([], i),
         "pd_active_layer": ([], i), "pd_stored_actuation": ([], f), "pd_key_code": ([i, i], i),
         "pd_key_label": ([i, i, ctypes.c_char_p], None),
+        "pd_is_pressed": ([i], i), "pd_set_travel": ([i, f], None),
+        "eeprom_fake_cut_next_commit": ([ctypes.c_int32], None), "eeprom_fake_power_on": ([], None),
     })
     lib.boot = lib.pd_boot
     lib.run = lib.pd_loop
@@ -78,13 +80,25 @@ def prefix_device() -> ctypes.CDLL:
     lib.engine_rt_sens = lib.pd_engine_rt_sens
     lib.engine_rt_enabled = lib.pd_engine_rt_enabled
     lib.active_layer = lib.pd_active_layer
+    lib.is_pressed = lib.pd_is_pressed
+    lib.set_travel = lib.pd_set_travel
+    lib.arm_power_cut = lib.eeprom_fake_cut_next_commit
+    lib.power_on = lib.eeprom_fake_power_on
+    lib.reset_flash = lib.eeprom_fake_erase
+    lib.flash_writes = lib.eeprom_fake_commits     # sector erase+program cycles
+
+    def write_legacy_image(image: bytes, _lib=lib):
+        sector = _lib.eeprom_fake_sector()
+        for n, b in enumerate(image):
+            sector[n] = b
+    lib.write_legacy_image = write_legacy_image
     lib.revision = "prefix"
     _libs["prefix"] = lib
     return lib
 
 
 CURRENT_FIRMWARE = [
-    "main.cpp", "commands.cpp", "config.cpp", "config_persist_eeprom_v1.cpp", "hall.cpp", "encoder.cpp",
+    "main.cpp", "commands.cpp", "config.cpp", "config_persist_ab.cpp", "settings_store.cpp", "hall.cpp", "encoder.cpp",
     "encoder_menu.cpp", "keycodes.cpp", "keyboard_output.cpp", "keyboard_output_hal_device.cpp",
     "calibration.cpp", "protocol.cpp", "line_reader.cpp", "json_writer.cpp", "tx_queue.cpp", "timing.cpp",
 ]
@@ -94,7 +108,7 @@ def current_device() -> ctypes.CDLL:
     if "current" in _libs:
         return _libs["current"]
     hb.require_compiler()
-    sources = hb.firmware_sources(*CURRENT_FIRMWARE) +         hb.host_sources(*COMMON_FAKES, "oled_stub.cpp", "vdev_harness.cpp") + hb.keyboard_library_sources()
+    sources = hb.firmware_sources(*CURRENT_FIRMWARE) +         hb.host_sources(*COMMON_FAKES, "fake_flash.cpp", "oled_stub.cpp", "vdev_harness.cpp") + hb.keyboard_library_sources()
     path = hb.build("device_current", sources, hb.keyboard_include_dirs())
     lib = ctypes.CDLL(str(path))
     _bind(lib, _COMMON_SIGS)
@@ -106,7 +120,13 @@ def current_device() -> ctypes.CDLL:
         "vd_output_enabled": ([], i), "vd_is_pressed": ([i], i), "vd_encoder_apply": ([i, i], i),
         "oled_stub_wakes": ([], ctypes.c_uint32), "oled_stub_page": ([], i),
         "vd_normalize_label": ([ctypes.c_char_p, ctypes.c_char_p], i),
+        "vd_cal_key_plausible": ([i, i, i], i),
         "usbfake_host_state": ([ctypes.POINTER(ctypes.c_uint8)], None),
+        "ff_reset": ([], None), "ff_power_on": ([], None), "ff_cut_after_program_bytes": ([ctypes.c_int32], None),
+        "ff_cut_during_next_erase": ([ctypes.c_int32], None), "ff_fail_program": ([ctypes.c_int32, ctypes.c_int32], None),
+        "ff_read_flip": ([i, i, i], None), "ff_flip_bits": ([i, i, i], None),
+        "ff_sector": ([i], ctypes.POINTER(ctypes.c_uint8)), "ff_legacy": ([], ctypes.POINTER(ctypes.c_uint8)),
+        "ff_erase_count": ([i], ctypes.c_uint32), "ff_program_bytes": ([], ctypes.c_uint32),
     })
     lib.boot = lib.vd_boot
     lib.run = lib.vd_loop
@@ -114,6 +134,18 @@ def current_device() -> ctypes.CDLL:
     lib.engine_rt_sens = lib.vd_engine_rt_sens
     lib.engine_rt_enabled = lib.vd_engine_rt_enabled
     lib.active_layer = lib.vd_active_layer
+    lib.is_pressed = lib.vd_is_pressed
+    lib.set_travel = lib.vd_set_travel
+    lib.arm_power_cut = lib.ff_cut_after_program_bytes
+    lib.power_on = lib.ff_power_on
+    lib.reset_flash = lib.ff_reset
+    lib.flash_writes = lambda _lib=lib: _lib.ff_erase_count(0) + _lib.ff_erase_count(1)   # sector erase+program cycles
+
+    def write_legacy_image(image: bytes, _lib=lib):
+        sector = _lib.ff_legacy()
+        for n, b in enumerate(image):
+            sector[n] = b
+    lib.write_legacy_image = write_legacy_image
     lib.revision = "current"
     _libs["current"] = lib
     return lib

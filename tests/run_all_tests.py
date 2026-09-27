@@ -70,6 +70,7 @@ UNCLASSIFIED = "unclassified"
 # (module, class regex or None, method regex or None, scope); first match wins
 SCOPE_RULES: List[Tuple[str, Optional[str], Optional[str], str]] = [
     ("test_build", None, None, ARTIFACTS),
+    ("test_flash_layout", None, None, ARTIFACTS),
     ("test_challenger2_verification", None, r"^test_0[1-4]_", ARTIFACTS),
     ("test_challenger2_verification", None, None, SOURCE),
     ("test_dsp_harness", None, None, SYNTHETIC),
@@ -85,6 +86,7 @@ SCOPE_RULES: List[Tuple[str, Optional[str], Optional[str], str]] = [
     ("test_timing", None, None, COMPILED),
     ("test_virtual_device", None, None, COMPILED),
     ("test_protocol_device", None, None, COMPILED),
+    ("test_persistence_device", None, None, COMPILED),
     ("test_build_info_script", None, None, TOOLING),
     ("test_configurator_js", None, None, BROWSER),
     ("test_configurator", None, None, SOURCE),
@@ -97,12 +99,13 @@ REQUIRED_SUITES: List[Tuple[str, Tuple[str, ...]]] = [
     ("DSP model (synthetic)", ("test_dsp_harness",)),
     ("firmware parity (compiled)", ("test_firmware_parity",)),
     ("keyboard output (compiled)", ("test_keyboard_output",)),
-    ("calibration (compiled)", ("test_calibration",)),
-    ("settings store (compiled)", ("test_settings_store",)),
+    ("calibration (compiled)", ("test_calibration", "test_persistence_device")),
+    ("settings store (compiled)", ("test_settings_store", "test_persistence_device")),
     ("protocol/parser (compiled)", ("test_protocol_core",)),
     ("virtual device integration (compiled)", ("test_virtual_device", "test_protocol_device")),
     ("configurator JS (headless Chrome)", ("test_configurator_js",)),
     ("build + artifacts", ("test_build",)),
+    ("flash layout (build artifacts)", ("test_flash_layout",)),
     ("docs/contract consistency", (r"test_docs\w*", r"test_contract\w*")),
 ]
 

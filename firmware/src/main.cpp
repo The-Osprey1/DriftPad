@@ -8,6 +8,7 @@
 #include "config.h"
 #include "keyboard_output.h"
 #include "commands.h"
+#include "calibration.h"
 #include "protocol.h"
 #include "timing.h"
 
@@ -87,14 +88,20 @@ void setup() {
     oledInit();
 
     commands::init(s_tx, s_timing);
+    s_encoderSavePending = false;
+    s_hostConnected = false;
     s_tx.clear();
     s_tx.resetStats();
     s_lineReader.reset();
     s_timing.reset();
 
-    // Let the sensors settle, then zero every key at its current reading
+    // Let the sensors settle, then restore calibration against a fresh rest measurement: keys
+    // held at power-up keep their stored rest and are suppressed, small drift is re-zeroed.
+    // Without valid calibration every key is zeroed where it is (legacy) and output stays off.
     delay(150);
-    HallManager::calibrateAllRestBaselines(64);
+    uint16_t rest[NUM_KEYS];
+    HallManager::measureRest(rest, calib::BOOT_SAMPLES);
+    commands::onBoot(Calibration::applyAtBoot(configGet().calibration, rest));
 
     oledUpdate(true);
     commands::queueBootEvent();

@@ -10,9 +10,8 @@
  * config.cpp owns the settings model (validation, mutators, dirty tracking); a persistence backend
  * only turns a DeviceSettings into flash contents and back.
  *
- * Current backend: src/config_persist_eeprom_v1.cpp - the single-sector v1 EEPROM image the
- * firmware has always used (see legacy_settings_v1.h). It holds actuation, RT settings, the active
- * layer and the keymaps; calibration and boot output are not part of that image.
+ * Backend: src/config_persist_ab.cpp - two A/B flash sectors (settings_store.h), with read-only
+ * migration from the legacy v1 EEPROM image. It stores every DeviceSettings field.
  */
 
 // Loads the stored settings into `out` (validated and, where needed, repaired: out-of-range values

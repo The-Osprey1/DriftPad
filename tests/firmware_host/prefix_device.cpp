@@ -18,10 +18,12 @@ void loop();
 
 extern "C" {
 
+// Power cycle: the firmware starts again from setup(). Flash (settings) and the physical key
+// positions (the mux inputs) are kept; USB re-enumerates; time keeps moving forward (static state
+// that setup() does not initialise would otherwise see the clock run backwards).
 void pd_boot() {
-    host_clock_set_us(1000000);
+    host_clock_advance_us(1000000);
     usbfake_reset();
-    mux_fake_set_all(2048);
     serial_fake_reset();
     setup();
 }
@@ -46,4 +48,13 @@ void  pd_key_label(int layer, int key, char* out5) {
 
 }
 
+}
+
+extern "C" int pd_is_pressed(int key) { return HallManager::getKey((uint8_t)key).isPressed() ? 1 : 0; }
+
+extern "C" void mux_fake_set(uint8_t channel, uint16_t value);
+
+extern "C" void pd_set_travel(int key, float mm) {
+    float raw = 2048.0f + mm * 250.0f;
+    mux_fake_set(KEY_MUX_CHANNELS[key], (uint16_t)(raw + 0.5f));
 }

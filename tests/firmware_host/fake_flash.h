@@ -27,11 +27,9 @@
 
 #include <cstdint>
 
-#if defined(_WIN32)
-#define FF_API extern "C" __declspec(dllexport)
-#else
-#define FF_API extern "C" __attribute__((visibility("default")))
-#endif
+// Plain extern "C": host test DLLs rely on MinGW exporting every global symbol, which it only
+// does while no object uses __declspec(dllexport)
+#define FF_API extern "C"
 
 FF_API void     ff_reset();
 FF_API void     ff_power_on();

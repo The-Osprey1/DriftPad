@@ -141,6 +141,8 @@ def _base_flags(kind: str, shared: bool) -> List[str]:
         flags += ["-shared"]
         if os.name != "nt":
             flags += ["-fPIC"]
+        # Windows: MinGW exports every global symbol of the DLL (the C ABI test hooks) as long as
+        # no object uses __declspec(dllexport); host fakes must not use it
     if kind == "gcc" and os.name == "nt":
         flags += ["-static-libgcc", "-static-libstdc++"]
     return flags

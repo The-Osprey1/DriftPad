@@ -83,10 +83,10 @@ def sc_request_id_is_echoed(d: dh.Device) -> Tuple[Any, Any]:
 
 def sc_setting_changes_do_not_write_flash(d: dh.Device) -> Tuple[Any, Any]:
     """A slider drag sends many SET commands; none of them may commit flash (only SAVE does)."""
-    before = d.lib.eeprom_fake_commits()
+    before = d.lib.flash_writes()
     for i in range(10):
         d.replies(f"SET_ACTUATION {1.20 + 0.05 * i:.2f}")
-    return d.lib.eeprom_fake_commits() - before, 0
+    return d.lib.flash_writes() - before, 0
 
 
 DEFECT_SCENARIOS = [
@@ -131,7 +131,7 @@ class TestProtocolDevice(unittest.TestCase):
         cls.lib = dh.current_device()
 
     def setUp(self):
-        self.lib.eeprom_fake_erase()
+        self.lib.reset_flash()
         self.d = dh.Device(self.lib)
 
     def one(self, line: str) -> dict:
@@ -144,7 +144,7 @@ class TestProtocolDevice(unittest.TestCase):
     def test_regression_scenarios_are_correct(self):
         for scenario in DEFECT_SCENARIOS:
             with self.subTest(scenario=scenario.__name__):
-                self.lib.eeprom_fake_erase()
+                self.lib.reset_flash()
                 observed, correct = scenario(dh.Device(self.lib))
                 self.assertEqual(observed, correct)
 
@@ -291,10 +291,10 @@ class TestProtocolDevice(unittest.TestCase):
         self.one("SET_LAYER 1")
         before = self.d.config()
         self.assertTrue(before["dirty"])
-        commits = self.lib.eeprom_fake_commits()
+        commits = self.lib.flash_writes()
         saved = self.one("SAVE")
         self.assertEqual((saved["status"], saved["persisted"], saved["dirty"]), ("ok", True, False))
-        self.assertEqual(self.lib.eeprom_fake_commits(), commits + 1)
+        self.assertEqual(self.lib.flash_writes(), commits + 1)
         after = dh.Device(self.lib).config()     # power cycle over the same flash
         for k in ("actuation", "rt_sens", "rt_enabled", "active_layer", "layers"):
             self.assertEqual(after[k], before[k], k)
@@ -318,11 +318,11 @@ class TestProtocolDevice(unittest.TestCase):
     def test_reset_applies_defaults_without_saving(self):
         self.one("SET_ACTUATION 2.00")
         self.one("SAVE")
-        commits = self.lib.eeprom_fake_commits()
+        commits = self.lib.flash_writes()
         r = self.one("RESET")
         self.assertEqual((r["applied"], r["persisted"], r["dirty"]), (True, False, True))
         self.assertEqual(self.d.config()["actuation"], 1.2)
-        self.assertEqual(self.lib.eeprom_fake_commits(), commits)
+        self.assertEqual(self.lib.flash_writes(), commits)
 
     def test_saving_unchanged_settings_still_verifies(self):
         self.one("SAVE")
@@ -342,8 +342,11 @@ class TestProtocolDevice(unittest.TestCase):
         self.assertEqual(self._host(), (0, frozenset()))
         self.lib.vd_set_travel(1, 0.0)
         self.d.run(300)
+        # Uncalibrated: normal enabling is refused (prototype safety); FORCE is for bench tests
         r = self.one("SET_HID 1")
-        self.assertEqual((r["hid_output"], r["output"]["enabled"]), (True, True))
+        self.assertEqual((r["status"], r["code"], r["calibration"]), ("error", "calibration_required", "missing"))
+        r = self.one("SET_HID 1 FORCE")
+        self.assertEqual((r["hid_output"], r["output"]["enabled"], r["output"]["reason"]), (True, True, "forced"))
         self.lib.vd_set_travel(1, 2.5)
         self.d.run(300)
         self.assertEqual(self._host(), (0, frozenset({0x24})))   # usage of '7'
@@ -355,7 +358,7 @@ class TestProtocolDevice(unittest.TestCase):
         self.one("SET_HID 0")
 
     def test_bootsel_replies_before_rebooting_and_drops_output(self):
-        self.one("SET_HID 1")
+        self.one("SET_HID 1 FORCE")
         r = self.one("BOOTSEL")
         self.assertTrue(r["bootsel"])
         self.assertEqual(self.lib.rp2040_fake_bootloader_requests(), 1)
@@ -394,7 +397,7 @@ class TestProtocolDevice(unittest.TestCase):
         self.assertEqual([c["offset"] for c in chunks], list(range(0, 1000, 100)))
 
     def test_sim_is_reported_and_never_types(self):
-        self.one("SET_HID 1")
+        self.one("SET_HID 1 FORCE")
         r = self.one("SIM 4 3.00")
         self.assertEqual((r["type"], r["key"], r["pressed"]), ("sim_event", 4, True))
         self.d.run(200)

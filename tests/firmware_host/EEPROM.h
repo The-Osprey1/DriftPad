@@ -10,7 +10,8 @@
 #include <cstring>
 
 extern "C" uint8_t* eeprom_fake_sector();      // 4096 bytes, memory-mapped flash stand-in
-extern "C" void eeprom_fake_note_commit();
+// Erase the sector, then program `size` bytes (the real commit()); honours injected power cuts
+extern "C" void eeprom_fake_commit(const uint8_t* data, size_t size);
 
 class EEPROMClass {
 public:
@@ -41,9 +42,7 @@ public:
     bool commit() {
         if (_size == 0) return false;
         if (!_dirty) return true;
-        memcpy(eeprom_fake_sector(), _data, _size);   // real library: erase 4 KB, program _size
-        memset(eeprom_fake_sector() + _size, 0xFF, 4096 - _size);
-        eeprom_fake_note_commit();
+        eeprom_fake_commit(_data, _size);   // real library: erase 4 KB, program _size
         _dirty = false;
         return true;
     }

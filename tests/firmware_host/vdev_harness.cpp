@@ -23,10 +23,12 @@ void loop();
 extern "C" {
 
 // Power-on: fresh RAM state for the host fakes, flash (EEPROM sector) kept
+// Power cycle: the firmware starts again from setup(). Flash (settings) and the physical key
+// positions (the mux inputs) are kept; USB re-enumerates; time keeps moving forward (static state
+// that setup() does not initialise would otherwise see the clock run backwards).
 void vd_boot() {
-    host_clock_set_us(1000000);
+    host_clock_advance_us(1000000);
     usbfake_reset();
-    mux_fake_set_all(2048);
     serial_fake_reset();
     setup();
 }
@@ -58,4 +60,9 @@ int   vd_encoder_apply(int page, int delta) { return encoderMenuApply((MenuMode)
 
 extern "C" int vd_normalize_label(const char* in, char* out5) {
     return configNormalizeLabel(in, out5) ? 1 : 0;
+}
+
+extern "C" int vd_cal_key_plausible(int rest, int range, int polarity) {
+    KeyCalibration k = { (uint16_t)rest, (uint16_t)range, (int8_t)polarity, 0 };
+    return calibrationKeyPlausible(k) ? 1 : 0;
 }

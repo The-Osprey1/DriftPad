@@ -2,6 +2,7 @@
 #define COMMANDS_H
 
 #include <cstdint>
+#include "calibration.h"
 #include "protocol.h"
 #include "timing.h"
 #include "tx_queue.h"
@@ -17,10 +18,15 @@ namespace commands {
 
 void init(proto::TxQueue& tx, Timing& timing);
 
+// After calibration was restored at power-up: records the report (INFO) and decides keyboard
+// output. Output starts enabled only with valid calibration and boot output (standalone mode) on;
+// keys held at power-up are suppressed until they are seen at rest.
+void onBoot(const BootReport& report);
+
 const proto::CommandDef* table();
 uint8_t tableSize();
 
-// Once per scan, after HallManager::updateAll(): feeds an active RAW capture
+// Once per scan, after HallManager::updateAll(): feeds guided calibration and RAW capture
 void onScan();
 
 // Background slice: at most one telemetry frame or one RAW chunk, only if the TX queue has room

@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "build_info.h"
+#include "calibration.h"
 #include "config.h"
 #include "hall.h"
 #include "keyboard_output.h"
@@ -40,6 +41,12 @@ int8_t   s_rawKey = -1;
 bool     s_rawCapturing = false;
 
 bool s_bootselRequested = false;
+
+// Calibration: what power-up found, and the output state to restore after a guided session
+BootReport s_boot = { CalState::Missing, 0, 0, 0, 0 };
+bool       s_calSession = false;
+bool       s_outputBeforeCal = false;
+KeyboardOutput::Reason s_reasonBeforeCal = KeyboardOutput::Reason::DisabledDefault;
 
 char s_eventBuf[proto::MAX_EVENT_LEN];
 proto::EventWriter s_events(s_eventBuf, sizeof(s_eventBuf));
@@ -98,6 +105,54 @@ void writeLimit(JsonWriter& w, const char* key, uint16_t lo, uint16_t hi, uint16
     w.endObject();
 }
 
+CalState currentCalState() {
+    if (Calibration::isActive()) return CalState::InProgress;
+    return calibrationEvaluate(configGet().calibration);
+}
+
+KeyboardOutput::Reason disabledReasonFor(CalState st) {
+    switch (st) {
+        case CalState::Missing:    return KeyboardOutput::Reason::CalibrationMissing;
+        case CalState::Invalid:    return KeyboardOutput::Reason::CalibrationInvalid;
+        case CalState::InProgress: return KeyboardOutput::Reason::CalibrationInProgress;
+        default:                   return KeyboardOutput::Reason::DisabledDefault;
+    }
+}
+
+void writeCalibration(JsonWriter& w) {
+    const CalibrationData& cal = configGet().calibration;
+    uint8_t plausible = 0;
+    if (cal.state == (uint8_t)CalState::Valid) {
+        for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+            if (calibrationKeyPlausible(cal.keys[i])) plausible++;
+        }
+    }
+    w.key("calibration").beginObject();
+    w.key("state").str(calStateName(currentCalState()));
+    w.key("keys_valid").u32(plausible);
+    writeKeyList(w, "held_at_boot", s_boot.heldMask);
+    writeKeyList(w, "drift", s_boot.driftMask);
+    writeKeyList(w, "faults", HallManager::faultMask());
+    w.endObject();
+}
+
+void writeCalProgress(JsonWriter& w) {
+    Calibration::Progress p = Calibration::progress();
+    w.key("phase").str(Calibration::phaseName(p.phase));
+    writeKeyList(w, "rest_ok", p.restOkMask);
+    writeKeyList(w, "rest_failed", p.restFailedMask);
+    writeKeyList(w, "travel_done", p.travelDoneMask);
+    w.key("elapsed_ms").u32(p.elapsedMs);
+}
+
+// Ends a guided session that did not finish: the previous output state comes back (keys that are
+// down stay suppressed until released, see KeyboardOutput::setEnabled)
+void endCalibrationSession() {
+    if (!s_calSession) return;
+    s_calSession = false;
+    KeyboardOutput::setEnabled(s_outputBeforeCal, s_reasonBeforeCal);
+}
+
 // Mutating replies: the effective state after the change, not the request's text
 void writeApplied(JsonWriter& w) {
     w.key("applied").boolean(true);
@@ -141,7 +196,8 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     w.key("build_date").str(build_info::BUILD_DATE);
     w.key("features").beginArray();
     static const char* const FEATURES[] = { "keymap", "layers", "rapid_trigger", "telemetry", "timing",
-                                            "raw", "sim", "display" };
+                                            "raw", "sim", "display", "guided_calibration", "boot_output",
+                                            "settings_ab" };
     for (const char* f : FEATURES) w.str(f);
     w.endArray();
     w.key("limits").beginObject();
@@ -155,9 +211,7 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     w.key("line_max").u32(limits::LINE_MAX_LEN);
     w.key("stream_hz_max").u32(limits::STREAM_HZ_MAX);
     w.endObject();
-    w.key("calibration").beginObject();
-    w.key("state").str(calStateName((CalState)configGet().calibration.state));
-    w.endObject();
+    writeCalibration(w);
     writeOutput(w);
     writeSettingsState(w);
     w.key("uptime_ms").u32(millis());
@@ -209,6 +263,7 @@ HandlerResult cmdStatus(const Args&, Reply& r, void*) {
     }
     w.endArray();
     writeOutput(w);
+    w.key("calibration").beginObject().key("state").str(calStateName(currentCalState())).endObject();
     w.key("sim_mask").u32(HallManager::simMask());
     w.key("dirty").boolean(configIsDirty());
     return HandlerResult::Done;
@@ -324,11 +379,26 @@ HandlerResult cmdSetHid(const Args& a, Reply& r, void*) {
     bool on;
     ParseResult pr = proto::parseBool(a[0], on);
     if (pr != ParseResult::Ok) return badValue(r, pr, "SET_HID takes 0 or 1");
-    if (a.count > 1 && !proto::keywordIs(a[1], "force")) {
+    const bool force = a.count > 1;
+    if (force && !proto::keywordIs(a[1], "force")) {
         r.error(err::BAD_REQUEST, "the only option is FORCE");
         return HandlerResult::Done;
     }
-    KeyboardOutput::setEnabled(on, on ? KeyboardOutput::Reason::Enabled : KeyboardOutput::Reason::UserDisabled);
+    if (Calibration::isActive()) {
+        r.error(err::BUSY, "keyboard output stays off while calibration runs (CAL FINISH or CAL CANCEL)");
+        return HandlerResult::Done;
+    }
+    const CalState cal = currentCalState();
+    if (on && cal != CalState::Valid && !force) {
+        JsonWriter& w = r.error(err::CALIBRATION_REQUIRED,
+                                "calibrate first (CAL START), or add FORCE for bench testing");
+        w.key("calibration").str(calStateName(cal));
+        return HandlerResult::Done;
+    }
+    KeyboardOutput::Reason reason = !on ? KeyboardOutput::Reason::UserDisabled
+                                  : (cal == CalState::Valid ? KeyboardOutput::Reason::Enabled
+                                                            : KeyboardOutput::Reason::Forced);
+    KeyboardOutput::setEnabled(on, reason);
     JsonWriter& w = r.ok();
     w.key("hid_output").boolean(KeyboardOutput::isEnabled());   // v1 field
     writeOutput(w);
@@ -349,6 +419,7 @@ HandlerResult cmdSave(const Args&, Reply& r, void*) {
     }
     JsonWriter& w = r.ok();
     w.key("persisted").boolean(true).key("dirty").boolean(configIsDirty());
+    w.key("slot").str(sr.slot == 0 ? "a" : "b").key("seq").u32(sr.seq);
     w.key("duration_ms").u32((sr.durationUs + 500) / 1000);
     return HandlerResult::Done;
 }
@@ -364,23 +435,140 @@ HandlerResult cmdRevert(const Args&, Reply& r, void*) {
     return HandlerResult::Done;
 }
 
-HandlerResult cmdReset(const Args&, Reply& r, void*) {
+HandlerResult cmdReset(const Args& a, Reply& r, void*) {
     wakeDisplay();
-    configResetUser();
+    const bool all = a.count == 1;
+    if (all && !proto::keywordIs(a[0], "all")) {
+        r.error(err::BAD_REQUEST, "use RESET or RESET ALL");
+        return HandlerResult::Done;
+    }
+    if (Calibration::isActive()) {
+        r.error(err::BUSY, "calibration is running (CAL FINISH or CAL CANCEL first)");
+        return HandlerResult::Done;
+    }
+    if (all) {
+        // Calibration is cleared too: output goes off, the sensing keeps its running baselines
+        configResetAll();
+        KeyboardOutput::setEnabled(false, KeyboardOutput::Reason::CalibrationMissing);
+    } else {
+        configResetUser();
+    }
     JsonWriter& w = r.ok();
+    w.key("all").boolean(all);
     w.key("applied").boolean(true).key("persisted").boolean(!configIsDirty()).key("dirty").boolean(configIsDirty());
     return HandlerResult::Done;
 }
 
 HandlerResult cmdCalibrate(const Args&, Reply& r, void*) {
     wakeDisplay();
-    // Legacy re-zero: every key's rest := its current reading. Outputs are released first because
-    // the state machines restart from the new zero.
-    KeyboardOutput::releaseAll(HallManager::pressedMask());
-    HallManager::calibrateAllRestBaselines(128);
+    if (Calibration::isActive()) {
+        r.error(err::BUSY, "guided calibration is running");
+        return HandlerResult::Done;
+    }
+    // Quick rest re-zero (v1 CALIBRATE): keys must be untouched. With valid calibration, polarity
+    // and range are kept and a key found off rest in its press direction refuses the whole update.
+    uint16_t rest[NUM_KEYS];
+    HallManager::measureRest(rest, calib::BOOT_SAMPLES);
+    CalibrationData data = configGet().calibration;
+    uint16_t offRest = 0;
+    const uint16_t pressed = HallManager::pressedMask();
+    KeyboardOutput::releaseAll(pressed);
+    if (!Calibration::quickRestRecalibrate(data, rest, offRest)) {
+        JsonWriter& w = r.error(err::KEYS_NOT_AT_REST, "release every key and try again");
+        writeKeyList(w, "keys", offRest);
+        return HandlerResult::Done;
+    }
+    const bool valid = calibrationEvaluate(data) == CalState::Valid;
+    if (valid) configSetCalibration(data);
     JsonWriter& w = r.ok();
-    w.key("applied").boolean(true).key("persisted").boolean(false);
-    w.key("msg").str("rest baselines re-zeroed from the current readings (keys must be untouched); not stored");
+    w.key("applied").boolean(true);
+    w.key("persisted").boolean(!configIsDirty()).key("dirty").boolean(configIsDirty());
+    w.key("calibration").str(calStateName(currentCalState()));
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdCal(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    const uint32_t now = millis();
+    if (proto::keywordIs(a[0], "start")) {
+        if (Calibration::isActive()) {
+            r.error(err::BUSY, "calibration is already running");
+            return HandlerResult::Done;
+        }
+        s_outputBeforeCal = KeyboardOutput::isEnabled();
+        s_reasonBeforeCal = KeyboardOutput::reason();
+        // Nothing may type while keys are pressed on purpose
+        KeyboardOutput::setEnabled(false, KeyboardOutput::Reason::CalibrationInProgress);
+        HallManager::simClearAll();
+        Calibration::begin(now);
+        s_calSession = true;
+        JsonWriter& w = r.ok();
+        w.key("phase").str("rest").key("rest_ms").u32(calib::REST_PHASE_MS);
+        return HandlerResult::Done;
+    }
+    if (proto::keywordIs(a[0], "status")) {
+        JsonWriter& w = r.ok();
+        w.key("type").str("cal");
+        writeCalProgress(w);
+        return HandlerResult::Done;
+    }
+    if (proto::keywordIs(a[0], "cancel")) {
+        Calibration::cancel();
+        endCalibrationSession();
+        JsonWriter& w = r.ok();
+        w.key("phase").str("cancelled");
+        writeOutput(w);
+        return HandlerResult::Done;
+    }
+    if (proto::keywordIs(a[0], "finish")) {
+        CalibrationData data;
+        uint16_t missing = 0;
+        if (!Calibration::isActive() || !Calibration::finish(data, missing)) {
+            JsonWriter& w = r.error(err::CALIBRATION_INCOMPLETE,
+                                    "every key must be pressed to the bottom and released once");
+            writeKeyList(w, "missing", missing);
+            w.key("phase").str(Calibration::phaseName(Calibration::progress().phase));
+            return HandlerResult::Done;
+        }
+        ConfigStatus st = configSetCalibration(data);
+        if (st != ConfigStatus::Ok) {
+            configError(r, st, "measured calibration failed validation");
+            endCalibrationSession();
+            return HandlerResult::Done;
+        }
+        // The new zero points apply now; keys still off rest stay silent until released
+        const uint16_t offRest = Calibration::applyRuntime(data, HallManager::lastRaw());
+        s_calSession = false;
+        if (s_outputBeforeCal) {
+            KeyboardOutput::setEnabled(true, KeyboardOutput::Reason::Enabled);
+        } else {
+            KeyboardOutput::setEnabled(false, s_reasonBeforeCal == KeyboardOutput::Reason::CalibrationMissing ||
+                                                  s_reasonBeforeCal == KeyboardOutput::Reason::CalibrationInvalid
+                                              ? KeyboardOutput::Reason::DisabledDefault : s_reasonBeforeCal);
+        }
+        for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+            if (offRest & (1u << i)) KeyboardOutput::suppressUntilRelease(i, true);
+        }
+        JsonWriter& w = r.ok();
+        w.key("applied").boolean(true);
+        w.key("persisted").boolean(!configIsDirty()).key("dirty").boolean(configIsDirty());
+        w.key("calibration").beginObject().key("state").str(calStateName(currentCalState())).endObject();
+        writeOutput(w);
+        return HandlerResult::Done;
+    }
+    r.error(err::BAD_REQUEST, "use CAL START, CAL STATUS, CAL FINISH or CAL CANCEL");
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetBootOutput(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    bool on;
+    ParseResult pr = proto::parseBool(a[0], on);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "SET_BOOT_OUTPUT takes 0 or 1");
+    configSetBootOutput(on);
+    JsonWriter& w = r.ok();
+    w.key("boot_output").boolean(configGet().bootOutput);
+    writeApplied(w);
     return HandlerResult::Done;
 }
 
@@ -388,6 +576,10 @@ HandlerResult cmdCalibrate(const Args&, Reply& r, void*) {
 
 HandlerResult cmdSim(const Args& a, Reply& r, void*) {
     wakeDisplay();
+    if (Calibration::isActive()) {
+        r.error(err::BUSY, "calibration is running");
+        return HandlerResult::Done;
+    }
     if (a.count == 1) {
         if (!proto::keywordIs(a[0], "off")) {
             r.error(err::BAD_REQUEST, "use SIM <key> <mm>, SIM <key> OFF or SIM OFF");
@@ -546,8 +738,10 @@ const proto::CommandDef TABLE[] = {
     { "SET_HID",       "HID|OUTPUT", 1, 2, cmdSetHid },
     { "SAVE",          nullptr,   0, 0, cmdSave },
     { "REVERT",        nullptr,   0, 0, cmdRevert },
-    { "RESET",         nullptr,   0, 0, cmdReset },
+    { "RESET",         nullptr,   0, 1, cmdReset },
     { "CALIBRATE",     nullptr,   0, 0, cmdCalibrate },
+    { "CAL",           nullptr,   1, 1, cmdCal },
+    { "SET_BOOT_OUTPUT", nullptr, 1, 1, cmdSetBootOutput },
     { "SIM",           nullptr,   1, 2, cmdSim },
     { "SCAN_RATE",     nullptr,   0, 0, cmdScanRate },
     { "TIMING",        nullptr,   0, 1, cmdTiming },
@@ -607,18 +801,48 @@ void init(proto::TxQueue& tx, Timing& timing) {
     s_rawKey = -1;
     s_rawCount = s_rawSent = 0;
     s_bootselRequested = false;
+    s_calSession = false;
+    Calibration::reset();
+}
+
+void onBoot(const BootReport& report) {
+    s_boot = report;
+    if (report.state == CalState::Valid && configGet().bootOutput) {
+        KeyboardOutput::setEnabled(true, KeyboardOutput::Reason::Enabled);
+        for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+            if (report.heldMask & (1u << i)) KeyboardOutput::suppressUntilRelease(i, true);
+        }
+    } else {
+        KeyboardOutput::setEnabled(false, report.state == CalState::Valid ? KeyboardOutput::Reason::DisabledDefault
+                                                                          : disabledReasonFor(report.state));
+    }
 }
 
 const proto::CommandDef* table() { return TABLE; }
 uint8_t tableSize() { return (uint8_t)(sizeof(TABLE) / sizeof(TABLE[0])); }
 
 void onScan() {
+    if (Calibration::isActive()) {
+        Timing::Scoped t(*s_timing, Timing::Op::Calibration);
+        Calibration::onScan(HallManager::lastRaw(), millis());
+    }
     if (s_rawCapturing && s_rawCount < RAW_CAPTURE_LEN) {
         s_raw[s_rawCount++] = HallManager::lastRaw()[(uint8_t)s_rawKey];
     }
 }
 
 void service(uint32_t nowMs) {
+    if (Calibration::takeEvent()) {
+        JsonWriter& w = s_events.begin("cal");
+        writeCalProgress(w);
+        s_events.send(*s_tx);
+        // A session that ended on its own (rest phase failed, inactivity timeout) gives the
+        // keyboard back as it was
+        if (!Calibration::isActive() && Calibration::progress().phase != Calibration::Phase::Done) {
+            endCalibrationSession();
+        }
+        return;
+    }
     if (s_rawCapturing && s_rawSent < s_rawCount &&
         (s_rawCount == RAW_CAPTURE_LEN || (uint16_t)(s_rawCount - s_rawSent) >= RAW_CHUNK)) {
         if (sendRawChunk() && s_rawSent == RAW_CAPTURE_LEN) s_rawCapturing = false;
@@ -640,6 +864,7 @@ void queueBootEvent() {
     w.key("device").str(build_info::DEVICE).key("fw").str(build_info::FW_VERSION);
     w.key("protocol").u32(build_info::PROTOCOL).key("build").str(build_info::BUILD_ID);
     w.key("settings_source").str(settingsSourceName(configLoadReport().source));
+    w.key("calibration").str(calStateName(currentCalState()));
     w.key("output_enabled").boolean(KeyboardOutput::isEnabled());
     s_events.send(*s_tx);
 }

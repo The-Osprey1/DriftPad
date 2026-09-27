@@ -170,3 +170,10 @@ FF_API uint32_t ff_program_bytes() { return g_programBytes; }
 FF_API uint32_t ff_bad_program_calls() { return g_badProgramCalls; }
 FF_API uint32_t ff_clock_us() { return g_clockUs; }
 FF_API void ff_set_clock_us(uint32_t us) { g_clockUs = us; }
+
+namespace {
+// A factory-fresh device: every flash byte reads 0xFF before any test touches it
+struct ErasedAtLoad {
+    ErasedAtLoad() { ff_reset(); }
+} s_erasedAtLoad;
+}
