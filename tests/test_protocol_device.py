@@ -132,6 +132,11 @@ class TestProtocolDevice(unittest.TestCase):
 
     def setUp(self):
         self.lib.reset_flash()
+        # An untouched pad: every sensor at its rest reading. The mux fake powers up at 0, which
+        # the firmware rightly treats as railed sensors; without this the result would depend on
+        # key positions an earlier test left behind in the shared library.
+        for k in range(16):
+            self.lib.set_travel(k, 0.0)
         self.d = dh.Device(self.lib)
 
     def one(self, line: str) -> dict:
