@@ -16,8 +16,8 @@ Snapshot of the master runner output from that run:
 ======================================================================================
   Platform       : Windows (x86_64) // Python 3.12.10
   Framework      : Python unittest (Standard Library)
-  Total Tests    : 25 Executed
-  Pass Rate      : 100.0% (25 Passed, 0 Failed, 0 Errors, 0 Skipped)
+  Total Tests    : 43 Executed
+  Pass Rate      : 100.0% (40 Passed, 0 Failed, 0 Errors, 3 Skipped)
   Execution Time : ~2.84 seconds (including full PlatformIO firmware compilation)
   Overall Status : VERIFIED READY FOR MILESTONE M2 & FULL ACCEPTANCE
 ======================================================================================
@@ -33,7 +33,7 @@ Run these from the repository root:
 ```bash
 python tests/run_all_tests.py
 ```
-*Executes all 25 test cases across all tiers, formatting a real-time status matrix with timing and status.*
+*Executes all 43 test cases across all tiers, including the ADV adversarial and CH2 verification suites, formatting a real-time status matrix with timing and status. The 3 skips are the firmware parity classes, which need `g++` or `clang++` on PATH; with a compiler they expand into the full TC and ADV suites run against the real `hall.cpp`.*
 
 ### 2.2 Individual Subsystem Runners
 ```bash
@@ -96,12 +96,19 @@ The suite is partitioned into four distinct validation tiers:
 
 ## 5. Mathematical & Algorithmic Derivations
 
-### 5.1 Velocity-Adaptive Low-Pass Filter
-To prevent chattering under 60Hz electromagnetic interference ($\pm 20$ ADC counts) while eliminating phase lag during esports-speed strokes:
-$$v_{est}[k] = \left| ADC_{input}[k] - ADC_{filt}[k-1] \right|$$
-$$\alpha[k] = \alpha_{min} + (\alpha_{max} - \alpha_{min}) \cdot \min\left(1.0, \frac{v_{est}[k]}{V_{thresh}}\right)$$
-$$ADC_{filt}[k] = ADC_{filt}[k-1] + \alpha[k] \cdot \left(ADC_{input}[k] - ADC_{filt}[k-1]\right)$$
-Where $\alpha_{min} = 0.25$, $\alpha_{max} = 0.95$, and $V_{thresh} = 2.0\text{ counts}$. At rest ($v_{est} \approx 0$), strong smoothing suppresses 60Hz ripple; during stroke motion, $\alpha \to 0.95$, yielding near-instant response ($< 1.0\text{ms}$ latency).
+### 5.1 60 Hz Comb Filter and Adaptive Smoothing
+A 60 Hz period is 16.67 samples at the 1 kHz scan, so samples 8 and 9 back, weighted 2/3 : 1/3, sit half a period behind and cancel the 60 Hz component when averaged with the current sample:
+$$c[n] = \tfrac{1}{2}\left(ADC[n] + \tfrac{2}{3}ADC[n-8] + \tfrac{1}{3}ADC[n-9]\right)$$
+Each sample then updates $ADC_{filt} \mathrel{+}= \alpha\,(target - ADC_{filt})$, with the target and $\alpha$ picked by state:
+
+| State | Target | $\alpha$ |
+|---|---|---|
+| Pressed and moving up by more than 1.5 counts (RT release), unless $d_0 \cdot d_8 < -2$ says it is EMI | raw | 0.95 |
+| Unpressed and moving fast ($|\Delta ADC| > 10$ or $|d_0| > 22$ counts) | raw | 0.95 |
+| Held: more than 30 samples in the current state | $c[n]$ | 0.25 |
+| Otherwise (state just changed) | raw | 0.90 |
+
+Here $d_0 = ADC[n] - ADC_{filt}$ and $d_8$ is the same deviation 8 samples earlier. Held keys get the comb filter and strong smoothing; motion and releases bypass it for low latency.
 
 ### 5.2 Dynamic Rapid Trigger Peak/Valley Ratchet
 - **Actuation Rule (`!isPressed`):**
@@ -118,10 +125,11 @@ Where $\alpha_{min} = 0.25$, $\alpha_{max} = 0.95$, and $V_{thresh} = 2.0\text{ 
 
 ### 5.3 Auto-Zero Resting Baseline Drift Integrator
 To track ambient thermal and power supply drift up to $\pm 100\text{ counts}$ within $500\text{ms}$ ($200\text{ counts/second}$) without false triggering:
-- **Active condition:** $x_{calc} < 0.15\text{mm}$ and `!isPressed`.
-- **Integrator:**
-  $$\Delta_{step} = \text{sign}(ADC_{filt} - ADC_{rest}) \cdot \min\left(step_{max}, \max\left(1.0, \lceil \beta \cdot |ADC_{filt} - ADC_{rest}| \rceil\right)\right)$$
-  With $\beta = 0.10$ and $step_{max} = 2.0\text{ counts/sample}$, the baseline tracks drift smoothly with residual steady-state error $< 1.0\text{ counts}$ and max travel during drift $< 0.005\text{mm}$.
+- **Active condition:** $x_{calc} < 0.20\text{mm}$, a slow average of travel ($x_{drift} \mathrel{+}= 0.05(x_{calc} - x_{drift})$) below $0.15\text{mm}$, `!isPressed`, and no fast motion while polarity is still undetected.
+- **Integrator:** the error is low-pass filtered first, $e \mathrel{+}= 0.04\,(ADC_{filt} - ADC_{rest} - e)$, then, once $|e| > 0.01$:
+  $$\Delta_{step} = \text{sign}(e) \cdot \min\left(step_{max}, \max\left(0.1, \beta \cdot |e|\right)\right)$$
+  With $\beta = 0.20$ and $step_{max} = 2.0\text{ counts/sample}$ (`BETA`, `MAX_STEP` in `hall.h`), TC-11/TC-12 require tracking error $\le 5$ counts at 500 ms and $\le 2$ counts at steady state, with travel staying under the $0.20\text{mm}$ top deadzone throughout.
+- **Stationary step recovery:** a key that has never actuated this stroke, shows no finger contact, and sits still between $0.20$ and $0.80\text{mm}$ for 400 samples is treated as a rest offset and re-zeroed (ADV-04). A key resting there right after a keypress is not, since that is likely a finger (ADV-05).
 
 ---
 
@@ -145,10 +153,10 @@ To track ambient thermal and power supply drift up to $\pm 100\text{ counts}$ wi
 | [`tests/test_build.py`](../tests/test_build.py) | PlatformIO build and UF2 / ELF / BIN checks |
 | [`tests/test_config_schema.py`](../tests/test_config_schema.py) | Serial protocol, keymap schema and configurator checks |
 | [`tests/test_firmware_parity.py`](../tests/test_firmware_parity.py) | Compiles `firmware/src/hall.cpp` for the host, runs the TC and ADV suites against it, and requires identical key events to the Python model. Skipped when no `g++`/`clang++` is on PATH |
-| [`tests/test_adversarial_m2.py`](../tests/test_adversarial_m2.py) | Extra adversarial cases (chatter under noise, baseline lockout, OLED bounds). Not part of the master runner |
-| [`tests/test_challenger2_verification.py`](../tests/test_challenger2_verification.py) | Firmware binary layout and serial command coverage checks. Not part of the master runner |
+| [`tests/test_adversarial_m2.py`](../tests/test_adversarial_m2.py) | Adversarial cases `ADV-01`..`ADV-05` (chatter at the RT floor under EMI and noise, auto-zero lockout) on the Python model |
+| [`tests/test_challenger2_verification.py`](../tests/test_challenger2_verification.py) | `CH2-01`..`CH2-07`: firmware binary layout, RAM/flash budgets and serial command coverage |
 
-Run the last two directly, for example `python -m unittest tests.test_adversarial_m2`.
+All of them run from `tests/run_all_tests.py`.
 
 ## 8. Known Open Issues
 
