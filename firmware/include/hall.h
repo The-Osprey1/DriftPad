@@ -83,6 +83,8 @@ public:
     static float getRtSensitivity() { return s_rtPressMm; }
 
 private:
+    bool runRapidTrigger();
+
     uint8_t _keyIndex;
     uint8_t _muxChannel;
     uint8_t _hidKeyCode;

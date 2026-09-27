@@ -284,7 +284,12 @@ bool HallKey::update(uint16_t rawAdc) {
         _pressSamples = 0;
     }
 
-    // 7. Rapid Trigger State Machine
+    return runRapidTrigger();
+}
+
+// 7. Rapid Trigger state machine on the current _travelMm. Shared by real samples and SIM
+// injection so simulated presses behave exactly like physical ones.
+bool HallKey::runRapidTrigger() {
     bool stateChanged = false;
     float countResMm = SWITCH_TOTAL_TRAVEL_MM / _dynamicRange;
     float quantTol = 0.85f * countResMm;
@@ -363,75 +368,7 @@ bool HallKey::injectSimulatedTravel(float mm) {
     if (mm < 0.0f) mm = 0.0f;
     if (mm > SWITCH_TOTAL_TRAVEL_MM) mm = SWITCH_TOTAL_TRAVEL_MM;
     _travelMm = mm;
-
-    bool stateChanged = false;
-    float countResMm = SWITCH_TOTAL_TRAVEL_MM / _dynamicRange;
-    float quantTol = 0.85f * countResMm;
-
-    if (!_isPressed) {
-        bool shouldActuate = false;
-
-        if (!_everActuated) {
-            if (_travelMm >= s_actuationPointMm) {
-                shouldActuate = true;
-            }
-        } else {
-            if (s_rtEnabled) {
-                if ((_travelMm - _valleyDepthMm >= s_rtPressMm - quantTol) && (_travelMm > TOP_DEADZONE_MM)) {
-                    shouldActuate = true;
-                }
-            } else {
-                if (_travelMm >= s_actuationPointMm) {
-                    shouldActuate = true;
-                }
-            }
-        }
-
-        if (shouldActuate) {
-            _isPressed = true;
-            _pressCount++;
-            _everActuated = true;
-            _peakDepthMm = _travelMm;
-            if (s_enableHidOutput) {
-                Keyboard.press(_hidKeyCode);
-            }
-            stateChanged = true;
-        } else {
-            if (_travelMm < _valleyDepthMm) {
-                _valleyDepthMm = _travelMm;
-            }
-            if (_travelMm <= TOP_DEADZONE_MM) {
-                _everActuated = false;
-                _valleyDepthMm = 0.0f;
-            }
-        }
-    } else {
-        if (_travelMm > _peakDepthMm) {
-            _peakDepthMm = _travelMm;
-        }
-
-        bool shouldRelease = false;
-
-        if (_travelMm <= TOP_DEADZONE_MM) {
-            shouldRelease = true;
-        } else if (s_rtEnabled && (_peakDepthMm - _travelMm >= s_rtReleaseMm - quantTol)) {
-            shouldRelease = true;
-        } else if (!s_rtEnabled && (_travelMm < (s_actuationPointMm - 0.20f))) {
-            shouldRelease = true;
-        }
-
-        if (shouldRelease) {
-            _isPressed = false;
-            _releaseCount++;
-            _valleyDepthMm = _travelMm;
-            if (s_enableHidOutput) {
-                Keyboard.release(_hidKeyCode);
-            }
-            stateChanged = true;
-        }
-    }
-
-    return stateChanged;
+    return runRapidTrigger();
 }
 
 void HallManager::init() {

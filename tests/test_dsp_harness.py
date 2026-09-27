@@ -290,7 +290,10 @@ class HallKeyDSP:
                 self.unpressed_samples += 1
             self.press_samples = 0
 
-        # 7. Rapid Trigger State Machine
+        return self._run_rapid_trigger()
+
+    def _run_rapid_trigger(self) -> bool:
+        """7. Rapid Trigger state machine on the current travel (mirrors HallKey::runRapidTrigger)."""
         state_changed = False
         count_res_mm = self.SWITCH_TOTAL_TRAVEL_MM / self.dynamic_range
         quant_tol = 0.85 * count_res_mm
@@ -345,54 +348,9 @@ class HallKeyDSP:
         return state_changed
 
     def inject_simulated_travel(self, mm: float) -> bool:
-        """Bypass ADC acquisition and directly inject physical travel depth."""
+        """Bypass ADC acquisition and run the shared Rapid Trigger logic on an injected travel."""
         self.travel_mm = max(0.0, min(self.SWITCH_TOTAL_TRAVEL_MM, mm))
-        state_changed = False
-        count_res_mm = self.SWITCH_TOTAL_TRAVEL_MM / self.dynamic_range
-        quant_tol = 0.85 * count_res_mm
-
-        if not self.is_pressed:
-            should_actuate = False
-            if not self.ever_actuated:
-                if self.travel_mm >= self.actuation_point_mm:
-                    should_actuate = True
-            else:
-                if self.rt_enabled:
-                    if (self.travel_mm - self.valley_depth_mm >= self.rt_press_mm - quant_tol) and (self.travel_mm > self.TOP_DEADZONE_MM):
-                        should_actuate = True
-                else:
-                    if self.travel_mm >= self.actuation_point_mm:
-                        should_actuate = True
-
-            if should_actuate:
-                self.is_pressed = True
-                self.ever_actuated = True
-                self.peak_depth_mm = self.travel_mm
-                state_changed = True
-            else:
-                if self.travel_mm < self.valley_depth_mm:
-                    self.valley_depth_mm = self.travel_mm
-                if self.travel_mm <= self.TOP_DEADZONE_MM:
-                    self.ever_actuated = False
-                    self.valley_depth_mm = 0.0
-        else:
-            if self.travel_mm > self.peak_depth_mm:
-                self.peak_depth_mm = self.travel_mm
-
-            should_release = False
-            if self.travel_mm <= self.TOP_DEADZONE_MM:
-                should_release = True
-            elif self.rt_enabled and (self.peak_depth_mm - self.travel_mm >= self.rt_release_mm - quant_tol):
-                should_release = True
-            elif not self.rt_enabled and (self.travel_mm < self.actuation_point_mm - 0.20):
-                should_release = True
-
-            if should_release:
-                self.is_pressed = False
-                self.valley_depth_mm = self.travel_mm
-                state_changed = True
-
-        return state_changed
+        return self._run_rapid_trigger()
 
 
 # ============================================================================
