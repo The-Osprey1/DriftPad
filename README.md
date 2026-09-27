@@ -69,6 +69,8 @@ pio run -t upload        # flash over USB
 
 The build output lands in `firmware/.pio/build/pico/`. You can also hold **BOOTSEL** while plugging in the Pico and copy `firmware.uf2` onto the drive that appears.
 
+On Windows, `pio run -t upload` fails unless picotool's WinUSB driver is installed (via Zadig). `python tools/flash.py COM3` avoids that: it builds, reboots the board into BOOTSEL over serial and copies the UF2 for you.
+
 ### 2. Configure it
 
 Open [`configurator/index.html`](configurator/index.html) in Chrome, Edge or Opera (WebSerial is required), click **Connect DriftPad** and pick the board's serial port. From there you can remap keys, change actuation and Rapid Trigger settings, switch layers and save to flash.
