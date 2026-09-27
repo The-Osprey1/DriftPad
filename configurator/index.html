@@ -97,6 +97,22 @@
             box-shadow: 0 0 12px var(--accent-glow);
         }
 
+        /* Animation picker joined to the Screensaver button */
+        .btn-group {
+            display: flex;
+        }
+
+        .btn-group select.btn {
+            border-radius: 8px 0 0 8px;
+            border-right: none;
+            padding-right: 10px;
+            color-scheme: dark;
+        }
+
+        .btn-group select.btn + .btn {
+            border-radius: 0 8px 8px 0;
+        }
+
         .btn-primary {
             background: linear-gradient(135deg, #00f2fe, #4facfe);
             color: #000;
@@ -381,7 +397,18 @@
             <button id="connectBtn" class="btn btn-primary" onclick="toggleConnect()">Connect DriftPad</button>
             <a class="btn" href="keymap.html" style="text-decoration: none;">Keymap Editor</a>
             <button id="hidBtn" class="btn" onclick="toggleHid()">Enable HID Output</button>
-            <button class="btn" onclick="sendCommand('SCREENSAVER')">Screensaver</button>
+            <div class="btn-group">
+                <select id="animSelect" class="btn" title="Screensaver animation">
+                    <option value="-1">Cycle all</option>
+                    <option value="0">Starfield</option>
+                    <option value="1">Cyber rain</option>
+                    <option value="2">Oscilloscope</option>
+                    <option value="3">Synthwave grid</option>
+                    <option value="4">Magnetic ripples</option>
+                    <option value="5">Lava lamp</option>
+                </select>
+                <button class="btn" onclick="playScreensaver()">Screensaver</button>
+            </div>
             <button class="btn" onclick="saveToFlash()">Save to Flash</button>
             <button class="btn" onclick="sendCommand('BOOTSEL')">Bootloader</button>
             <button class="btn" style="color: var(--red); border-color: rgba(239,68,68,0.4);" onclick="factoryReset()">Reset</button>
@@ -650,6 +677,11 @@
                 txt.textContent = "Disconnected";
                 btn.textContent = "Connect DriftPad";
             }
+        }
+
+        // ANIM <n> picks the animation and starts the screensaver; -1 cycles through all six
+        function playScreensaver() {
+            sendCommand('ANIM ' + document.getElementById('animSelect').value);
         }
 
         async function sendCommand(cmd) {
