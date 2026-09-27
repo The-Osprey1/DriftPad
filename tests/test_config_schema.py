@@ -239,11 +239,26 @@ class TestConfigSchema(unittest.TestCase):
 
     def test_offline_zero_external_dependencies(self):
         """Verifies configurator/index.html operates 100% offline with zero external CDN dependencies."""
-        self.assertTrue(
-            self.configurator_path.is_file(),
-            f"Missing configurator at {self.configurator_path}"
-        )
-        html_content = self.configurator_path.read_text(encoding="utf-8")
+        self._assert_offline(self.configurator_path)
+
+    def test_keymap_editor_offline(self):
+        """Verifies configurator/keymap.html operates 100% offline with zero external CDN dependencies."""
+        self._assert_offline(self.configurator_path.with_name("keymap.html"))
+
+    def test_keymap_editor_defaults_match_firmware(self):
+        """The keymap editor's default Layer 0 must match setDefaultKeymaps() in config.cpp."""
+        editor = self.configurator_path.with_name("keymap.html").read_text(encoding="utf-8")
+        firmware = (self.root_dir / "firmware" / "src" / "config.cpp").read_text(encoding="utf-8")
+        l0_block = firmware.split("const LayerKey l0", 1)[1].split("};", 1)[0]
+        fw_labels = re.findall(r'\{\s*[^,]+,\s*"([^"]*)"\s*\}', l0_block)
+        editor_block = editor.split("const DEFAULTS = [", 1)[1].split("]],", 1)[0] + "]"
+        editor_labels = re.findall(r'\[[^,\[\]]+,"([^"]*)"\]', editor_block)
+        self.assertEqual(len(fw_labels), 16)
+        self.assertEqual(editor_labels, fw_labels)
+
+    def _assert_offline(self, path):
+        self.assertTrue(path.is_file(), f"Missing configurator at {path}")
+        html_content = path.read_text(encoding="utf-8")
 
         # Scan for external URLs in src, href, @import, url(...)
         src_href_matches = re.findall(
@@ -265,7 +280,7 @@ class TestConfigSchema(unittest.TestCase):
         all_external = src_href_matches + css_url_matches + import_matches
         self.assertEqual(
             len(all_external), 0,
-            f"Found external network dependencies in configurator/index.html:\n" + "\n".join(all_external)
+            f"Found external network dependencies in {path.name}:\n" + "\n".join(all_external)
         )
 
     def test_tc14_webserial_protocol_commands(self):

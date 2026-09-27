@@ -49,7 +49,7 @@ DriftPad is a custom Hall-effect macropad built around analog magnetic key sensi
 | [`firmware/`](firmware) | PlatformIO project for the RP2040 (Arduino core by Earle Philhower) |
 | [`firmware/src/`](firmware/src) | `hall.cpp` sensing and Rapid Trigger, `oled.cpp` display UI, `config.cpp` flash settings and keymaps, `encoder.cpp`, `mux.cpp`, `main.cpp` serial command handler |
 | [`firmware/include/pins.h`](firmware/include/pins.h) | Pin assignments and key to multiplexer channel map |
-| [`configurator/`](configurator) | Single-file WebSerial configurator (`index.html`) |
+| [`configurator/`](configurator) | WebSerial configurator (`index.html`) and visual keymap editor (`keymap.html`) |
 | [`tests/`](tests) | Python test harness: DSP model, build checks and configurator protocol |
 | [`tools/`](tools) | OLED renderers, design concept generator and a live demo script |
 | [`docs/`](docs) | Documentation, OLED design concepts and rendered screenshots |
@@ -72,6 +72,8 @@ The build output lands in `firmware/.pio/build/pico/`. You can also hold **BOOTS
 ### 2. Configure it
 
 Open [`configurator/index.html`](configurator/index.html) in Chrome, Edge or Opera (WebSerial is required), click **Connect DriftPad** and pick the board's serial port. From there you can remap keys, change actuation and Rapid Trigger settings, switch layers and save to flash.
+
+To remap keys, open [`configurator/keymap.html`](configurator/keymap.html) (also linked from the configurator). It shows the pad as it physically sits, with the display and knob on top and the 4×4 grid below. Click a key, then pick what it sends or press the key on your keyboard. You can also give it a 4-character OLED label. Edits are saved in the browser, and **Write to device** sends only the keys that changed. Layer 0 defaults to the printed layout (Esc, 7 8 9, Macro1–4 on F13–F16, 0, Enter). You can export and import keymaps as JSON.
 
 Any serial terminal at 115200 baud works too. See the [serial command reference](docs/serial-protocol.md).
 
