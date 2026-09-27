@@ -1411,6 +1411,28 @@ void setup1() {
     s_core1Running = true;
 }
 
+// A key counts as activity when it is pressed or has moved since the last check. A key
+// parked at a small resting offset is not activity, otherwise it would hold the display
+// awake forever and the screensaver and sleep timeouts would never run.
+constexpr float ACTIVITY_MOVE_MM = 0.15f;
+float s_activityRefTravel[NUM_KEYS] = {0};
+
+bool keysShowActivity() {
+    bool active = false;
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        HallKey& k = HallManager::getKey(i);
+        float mm = k.getTravelMm();
+        if (fabsf(mm - s_activityRefTravel[i]) > ACTIVITY_MOVE_MM) {
+            s_activityRefTravel[i] = mm;
+            active = true;
+        }
+        if (k.isPressed()) {
+            active = true;
+        }
+    }
+    return active;
+}
+
 void loop1() {
     s_core1Running = true;
 
@@ -1422,8 +1444,7 @@ void loop1() {
     uint32_t now = millis();
 
     // Check activity for auto-wake / auto-screensaver (45s idle) / auto-sleep (1 hour idle)
-    int8_t activeKey = HallManager::getLastActiveKey();
-    if (activeKey >= 0 && (HallManager::getKey((uint8_t)activeKey).isPressed() || HallManager::getKey((uint8_t)activeKey).getTravelMm() > 0.20f)) {
+    if (keysShowActivity()) {
         oledWake();
     } else {
         uint32_t idleMs = now - s_lastActivityTime;
