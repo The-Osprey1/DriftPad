@@ -2,6 +2,7 @@
 #include "pins.h"
 #include "hall.h"
 #include "config.h"
+#include "encoder_menu.h"
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -496,9 +497,9 @@ void renderMenuOverlay() {
             break;
         }
         case MenuMode::ADJUST_ACTUATION: {
-            // Encoder range is 0.3mm to 3.6mm
-            drawValueWithUnit(String(HallKey::getActuationPoint(), 1).c_str(), "mm", 26);
-            drawMenuSlider((HallKey::getActuationPoint() - 0.3f) / (3.6f - 0.3f), 4);
+            drawValueWithUnit(String(HallKey::getActuationPoint(), 2).c_str(), "mm", 26);
+            drawMenuSlider((HallKey::getActuationPoint() - limits::cmmToMm(limits::ACTUATION_MIN_CMM)) /
+                           (limits::cmmToMm(limits::ACTUATION_MAX_CMM) - limits::cmmToMm(limits::ACTUATION_MIN_CMM)), 4);
             break;
         }
         case MenuMode::TOGGLE_RT: {
@@ -1270,22 +1271,7 @@ void oledInit() {
 
     delay(100);
 
-    Serial.println(F("[OLED] Scanning I2C bus on GP0 (SDA) / GP1 (SCL)..."));
-    uint8_t count = 0;
-    for (uint8_t addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        uint8_t err = Wire.endTransmission();
-        if (err == 0) {
-            Serial.printf("[OLED] I2C ACK received from device at address 0x%02X\n", addr);
-            count++;
-        }
-    }
-    if (count == 0) {
-        Serial.println(F("[OLED] WARNING: No I2C devices ACKed on GP0/GP1!"));
-    }
-
     bool ok = initDisplayHardware();
-    Serial.printf("[OLED] initDisplayHardware: %s\n", ok ? "SUCCESS" : "FAILED");
 
     if (ok) {
         s_display.clearDisplay();
@@ -1364,43 +1350,9 @@ bool oledAdjustCurrentSetting(int32_t delta) {
     s_menuLastActive = millis();
     s_lastActivityTime = millis();
 
-    DeviceSettings& cfg = configGet();
-
-    switch (s_currentMenu) {
-        case MenuMode::ADJUST_RT: {
-            float val = HallKey::getRtSensitivity() + (delta * 0.05f);
-            HallKey::setRtSensitivity(val);
-            cfg.rtSensMm = HallKey::getRtSensitivity();
-            break;
-        }
-        case MenuMode::ADJUST_ACTUATION: {
-            float val = HallKey::getActuationPoint() + (delta * 0.10f);
-            if (val < 0.3f) val = 0.3f;
-            if (val > 3.6f) val = 3.6f;
-            HallKey::setActuationPoint(val);
-            cfg.actuationMm = val;
-            break;
-        }
-        case MenuMode::TOGGLE_RT: {
-            bool nextState = !HallKey::isRapidTrigger();
-            HallKey::setRapidTrigger(nextState);
-            cfg.rtEnabled = nextState;
-            break;
-        }
-        case MenuMode::CYCLE_LAYER: {
-            int8_t l = (int8_t)cfg.activeLayer + (delta > 0 ? 1 : -1);
-            if (l < 0) l = NUM_LAYERS - 1;
-            if (l >= NUM_LAYERS) l = 0;
-            cfg.activeLayer = (uint8_t)l;
-            configApplyToHardware();
-            break;
-        }
-        default:
-            s_forceRender = true;
-            return false;
-    }
+    bool changed = encoderMenuApply(s_currentMenu, delta);
     s_forceRender = true;
-    return true;
+    return changed;
 }
 
 void oledUpdate(bool force) {
@@ -1503,7 +1455,6 @@ void loop1() {
 }
 
 void oledTestPattern() {
-    Serial.println(F("[OLED] Running direct test pattern from Core 0..."));
     mutex_enter_blocking(&s_wireMutex);
     s_display.clearDisplay();
     s_display.fillRect(0, 25, 128, 39, OLED_COLOR_WHITE);
@@ -1516,22 +1467,20 @@ void oledTestPattern() {
     s_display.fillRect(0, 0, 128, 25, OLED_COLOR_BLACK);
     s_display.display();
     mutex_exit(&s_wireMutex);
-    Serial.println(F("[OLED] Test pattern pushed to display!"));
 }
 
-void oledScanBus() {
+uint8_t oledScanBus(uint8_t* found, uint8_t max) {
     mutex_enter_blocking(&s_wireMutex);
-    Serial.println(F("[I2C] Scanning I2C bus on GP0 (SDA) / GP1 (SCL)..."));
     uint8_t count = 0;
     for (uint8_t addr = 1; addr < 127; addr++) {
         Wire.beginTransmission(addr);
         if (Wire.endTransmission() == 0) {
-            Serial.printf("[I2C] Found device at address 0x%02X\n", addr);
+            if (count < max) found[count] = addr;
             count++;
         }
     }
-    Serial.printf("[I2C] Scan complete: %d device(s) found.\n", count);
     mutex_exit(&s_wireMutex);
+    return count;
 }
 
 void oledSetFullScreen(bool enabled) {

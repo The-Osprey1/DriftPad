@@ -175,8 +175,10 @@ class TestChallenger2Adversarial(unittest.TestCase):
         boot2_size = sections.get(".boot2", {}).get("size", 0)
         total_flash = text_size + rodata_size + boot2_size
 
-        # RAM budget: total static RAM <= 32KB (RP2040 has 264KB, we want < 15%)
-        self.assertLess(total_ram, 32 * 1024, f"Static RAM usage too high: {total_ram} bytes")
+        # RAM budget: static RAM <= 40 KB of the RP2040's 264 KB. A guard against unintended growth,
+        # not a hardware limit. It includes on purpose the 8 KB serial TX ring and the 3 KB reply
+        # buffer (firmware/include/tx_queue.h) that keep a slow host from ever blocking the scan.
+        self.assertLess(total_ram, 40 * 1024, f"Static RAM usage too high: {total_ram} bytes")
         # Flash budget: total firmware code <= 256KB (RP2040 has 2MB, we want < 15%)
         self.assertLess(total_flash, 256 * 1024, f"Flash footprint too high: {total_flash} bytes")
 
@@ -185,16 +187,15 @@ class TestChallenger2Adversarial(unittest.TestCase):
         self.assertIn(".stack1_dummy", sections, "Core 1 stack section missing")
 
     def test_05_config_schema_and_crc32_integrity(self):
-        """Verifies config schema constants, CRC32 algorithm, and corruption detection."""
-        # Read config.h and config.cpp
-        config_h = (FIRMWARE_DIR / "include" / "config.h").read_text(encoding="utf-8")
-        config_cpp = (FIRMWARE_DIR / "src" / "config.cpp").read_text(encoding="utf-8")
+        """The v1 settings image constants and its CRC-32 (zlib-compatible) as the firmware reads them."""
+        legacy_h = (FIRMWARE_DIR / "include" / "legacy_settings_v1.h").read_text(encoding="utf-8")
+        limits_h = (FIRMWARE_DIR / "include" / "settings_limits.h").read_text(encoding="utf-8")
 
-        self.assertIn("CONFIG_MAGIC   = 0x44524654", config_h)
-        self.assertIn("CONFIG_VERSION = 1", config_h)
-        self.assertIn("NUM_LAYERS     = 3", config_h)
+        self.assertIn("CONFIG_MAGIC   = 0x44524654", legacy_h)
+        self.assertIn("CONFIG_VERSION = 1", legacy_h)
+        self.assertIn("NUM_LAYERS    = 3", limits_h)
 
-        # Test CRC32 polynomial calculation equivalence with zlib
+        # Same reflected CRC-32 as legacy_v1::crc32(), checked against zlib
         payload = b"DRIFTPAD_TEST_SETTINGS_PAYLOAD_1234567890"
         crc_custom = 0xFFFFFFFF
         for b in payload:
@@ -202,38 +203,37 @@ class TestChallenger2Adversarial(unittest.TestCase):
             for _ in range(8):
                 crc_custom = (crc_custom >> 1) ^ (0xEDB88320 & (-(crc_custom & 1)))
         crc_custom = (~crc_custom) & 0xFFFFFFFF
+        self.assertEqual(crc_custom, zlib.crc32(payload) & 0xFFFFFFFF, "CRC-32 does not match zlib")
 
-        self.assertEqual(crc_custom, zlib.crc32(payload) & 0xFFFFFFFF, "Custom CRC32 does not match standard zlib CRC32!")
-
-        # Single bit corruption test
         corrupted = bytearray(payload)
         corrupted[10] ^= 0x01
-        self.assertNotEqual(zlib.crc32(payload), zlib.crc32(corrupted), "CRC32 failed to detect single-bit corruption!")
+        self.assertNotEqual(zlib.crc32(payload), zlib.crc32(corrupted), "CRC-32 missed a single-bit error")
 
     def test_06_oled_safe_zone_and_concurrency_guards(self):
-        """Adversarially validates safe-zone display rendering (Y: 25..63) and multicore initialization sequence."""
+        """Safe-zone display rendering (rows 0..24 cleared) and the core 1 start-up order."""
         oled_cpp = (FIRMWARE_DIR / "src" / "oled.cpp").read_text(encoding="utf-8")
 
-        # Defensive clear must be present
         self.assertIn("s_display.fillRect(0, 0, 128, 25, OLED_COLOR_BLACK);", oled_cpp,
                       "Defensive clear of rows 0..24 is missing from oled.cpp!")
 
-        # Multicore race condition check: s_initialized = true must occur AFTER splash display
+        # s_initialized = true must come after the splash screen's display() completes
         init_pos = oled_cpp.find("s_initialized = true;")
         display_pos = oled_cpp.find("s_display.display();", oled_cpp.find("initDisplayHardware"))
         self.assertGreater(init_pos, display_pos,
-                           "Concurrency Hazard: s_initialized is set before splash screen s_display.display() completes!")
+                           "s_initialized is set before the splash screen display() completes")
 
     def test_07_serial_command_protocol_coverage(self):
-        """Verifies main.cpp handles all expected serial protocol commands."""
-        main_cpp = (FIRMWARE_DIR / "src" / "main.cpp").read_text(encoding="utf-8")
-
-        required_commands = [
-            "PING", "GET_CONFIG", "STATUS", "SET_ACTUATION ", "SET_RT_SENS ",
-            "SET_RT_ENABLE ", "SET_LAYER ", "SET_KEY ", "SIM ", "STREAM ", "SAVE", "RESET"
+        """Every v1 command is still in the firmware's command table (backwards compatibility)."""
+        commands_cpp = (FIRMWARE_DIR / "src" / "commands.cpp").read_text(encoding="utf-8")
+        table = commands_cpp[commands_cpp.index("const proto::CommandDef TABLE[]"):]
+        v1_commands = [
+            "PING", "GET_CONFIG", "STATUS", "SET_ACTUATION", "SET_RT_SENS", "SET_RT_ENABLE", "SET_LAYER",
+            "SET_KEY", "SIM", "STREAM", "SAVE", "RESET", "CALIBRATE", "SCAN_RATE", "RAW", "SET_HID",
+            "FULLSCREEN", "SCREENSAVER", "ANIM", "SLEEP", "WAKE", "OLED_SCAN", "OLED_TEST", "BOOTSEL",
         ]
-        for cmd in required_commands:
-            self.assertIn(f'"{cmd}', main_cpp, f"Missing serial command handler for '{cmd}' in main.cpp")
+        for cmd in v1_commands:
+            self.assertIn(f'{{ "{cmd}",', table, f"v1 command {cmd} missing from the command table")
+        self.assertIn('"HID|OUTPUT"', table, "SET_HID aliases missing")
 
 
 if __name__ == "__main__":

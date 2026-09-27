@@ -1,20 +1,23 @@
 """
-test_config_schema.py - WebSerial Configuration Protocol, 3-Layer Schema, and Zero-CDN Verification.
+test_config_schema.py - GET_CONFIG / profile schema validators and configurator offline checks.
 
-Authoritative References:
-- ORIGINAL_REQUEST.md: Requirements R2 (Web Configurator Expansion), Acceptance Criteria
-- spec_verification_harness.md: Section 8 (Web Configurator Verification), TC-14, TC-15
-- PROJECT.md: Milestone M1 Test Suite Harness
+Scope: Python checks of data formats and configurator source files. TC-14 validates the GET_CONFIG
+reply of the real firmware (host-compiled); the protocol itself is tested end to end in
+tests/test_protocol_device.py.
 
-Pure Python 3 standard library: zero external pip dependencies.
+Pure Python 3 standard library.
 """
 
 import json
 import re
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 # ============================================================================
@@ -100,132 +103,6 @@ def validate_profile_json(data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     return validate_get_config_payload(settings_copy)
 
 
-class MockSerialCommandParser:
-    """
-    Parser modeling the RP2040 firmware USB CDC Serial command parser (main.cpp).
-    """
-
-    def __init__(self):
-        self.actuation_point_mm: float = 1.20
-        self.rt_sens_mm: float = 0.20
-        self.rt_enabled: bool = True
-        self.active_layer: int = 0
-        self.layers: List[List[Dict[str, Any]]] = [
-            [{"idx": i, "code": 65 + i, "label": f"K{i}"} for i in range(16)]
-            for _ in range(3)
-        ]
-
-    def execute_command(self, cmd_line: str) -> Dict[str, Any]:
-        line = cmd_line.strip()
-        if not line:
-            return {"status": "error", "msg": "Empty command"}
-
-        tokens = line.split()
-        verb = tokens[0].upper()
-
-        if verb == "PING":
-            return {"status": "pong"}
-
-        elif verb == "GET_CONFIG":
-            return {
-                "type": "config",
-                "actuation": self.actuation_point_mm,
-                "rt_sens": self.rt_sens_mm,
-                "rt_enabled": self.rt_enabled,
-                "active_layer": self.active_layer,
-                "layers": self.layers
-            }
-
-        elif verb == "SET_ACTUATION":
-            if len(tokens) < 2:
-                return {"status": "error", "msg": "Missing value"}
-            try:
-                val = float(tokens[1])
-            except ValueError:
-                return {"status": "error", "msg": "Invalid float"}
-            if not (0.25 <= val <= 3.80):
-                return {"status": "error", "msg": "Actuation out of range [0.25, 3.80]"}
-            self.actuation_point_mm = val
-            return {"status": "ok", "msg": f"Actuation set to {val:.2f} mm"}
-
-        elif verb == "SET_RT_SENS":
-            if len(tokens) < 2:
-                return {"status": "error", "msg": "Missing value"}
-            try:
-                val = float(tokens[1])
-            except ValueError:
-                return {"status": "error", "msg": "Invalid float"}
-            if not (0.10 <= val <= 2.00):
-                return {"status": "error", "msg": "RT sensitivity out of range [0.10, 2.00]"}
-            self.rt_sens_mm = val
-            return {"status": "ok", "msg": f"RT sensitivity set to {val:.2f} mm"}
-
-        elif verb == "SET_RT_ENABLE":
-            if len(tokens) < 2:
-                return {"status": "error", "msg": "Missing value"}
-            val = tokens[1]
-            if val not in ("0", "1"):
-                return {"status": "error", "msg": "Value must be 0 or 1"}
-            self.rt_enabled = (val == "1")
-            return {"status": "ok", "msg": f"Rapid Trigger {'ENABLED' if self.rt_enabled else 'DISABLED'}"}
-
-        elif verb == "SET_LAYER":
-            if len(tokens) < 2:
-                return {"status": "error", "msg": "Missing value"}
-            try:
-                val = int(tokens[1])
-            except ValueError:
-                return {"status": "error", "msg": "Invalid layer index"}
-            if not (0 <= val <= 2):
-                return {"status": "error", "msg": "Layer must be 0, 1, or 2"}
-            self.active_layer = val
-            return {"status": "ok", "msg": f"Active layer set to {val}"}
-
-        elif verb == "SET_KEY":
-            if len(tokens) < 5:
-                return {"status": "error", "msg": "Usage: SET_KEY <layer> <key> <code> <label>"}
-            try:
-                layer = int(tokens[1])
-                key = int(tokens[2])
-                code = int(tokens[3])
-                label = tokens[4][:4].upper()
-            except ValueError:
-                return {"status": "error", "msg": "Invalid parameters"}
-
-            if not (0 <= layer <= 2) or not (0 <= key <= 15) or not (0 <= code <= 255):
-                return {"status": "error", "msg": "Parameter out of range"}
-
-            self.layers[layer][key] = {"idx": key, "code": code, "label": label}
-            return {"status": "ok", "msg": f"Key L{layer}:K{key} updated"}
-
-        elif verb == "SIM":
-            if len(tokens) < 3:
-                return {"status": "error", "msg": "Usage: SIM <key> <mm>"}
-            try:
-                key = int(tokens[1])
-                mm = float(tokens[2])
-            except ValueError:
-                return {"status": "error", "msg": "Invalid SIM parameters"}
-            if not (0 <= key <= 15) or not (0.0 <= mm <= 4.0):
-                return {"status": "error", "msg": "SIM parameter out of range"}
-            return {"status": "ok", "msg": f"Injected {mm:.2f}mm on key {key}"}
-
-        elif verb in ("SAVE", "RESET"):
-            return {"status": "ok", "msg": f"Command {verb} executed"}
-
-        elif verb == "STREAM":
-            if len(tokens) < 2 or tokens[1] not in ("0", "1"):
-                return {"status": "error", "msg": "Usage: STREAM <0|1>"}
-            return {"status": "ok", "msg": f"Telemetry streaming {'enabled' if tokens[1] == '1' else 'disabled'}"}
-
-        else:
-            return {"status": "error", "msg": f"Unknown command: {verb}"}
-
-
-# ============================================================================
-# Test Suite: TestConfigSchema
-# ============================================================================
-
 class TestConfigSchema(unittest.TestCase):
     """
     Validates WebSerial configuration format, profile JSON backup/restore,
@@ -283,74 +160,14 @@ class TestConfigSchema(unittest.TestCase):
             f"Found external network dependencies in {path.name}:\n" + "\n".join(all_external)
         )
 
-    def test_tc14_webserial_protocol_commands(self):
-        """TC-14: Validates WebSerial line-oriented command parser and parameter validation."""
-        parser = MockSerialCommandParser()
-
-        # 1. PING
-        res = parser.execute_command("PING\n")
-        self.assertEqual(res.get("status"), "pong")
-
-        # 2. GET_CONFIG
-        cfg = parser.execute_command("GET_CONFIG")
-        valid, err = validate_get_config_payload(cfg)
-        self.assertTrue(valid, f"GET_CONFIG payload invalid: {err}")
-
-        # 3. SET_ACTUATION valid & invalid
-        res = parser.execute_command("SET_ACTUATION 1.75")
-        self.assertEqual(res["status"], "ok")
-        self.assertEqual(parser.actuation_point_mm, 1.75)
-
-        res_err = parser.execute_command("SET_ACTUATION 4.50")  # > 3.80mm
-        self.assertEqual(res_err["status"], "error")
-
-        res_err2 = parser.execute_command("SET_ACTUATION 0.20")  # < 0.25mm (below deadzone buffer)
-        self.assertEqual(res_err2["status"], "error")
-
-        # 4. SET_RT_SENS valid & invalid
-        res = parser.execute_command("SET_RT_SENS 0.12")
-        self.assertEqual(res["status"], "ok")
-        self.assertEqual(parser.rt_sens_mm, 0.12)
-
-        res_err = parser.execute_command("SET_RT_SENS 0.05")  # < 0.10mm floor
-        self.assertEqual(res_err["status"], "error")
-
-        res_err2 = parser.execute_command("SET_RT_SENS 2.50")  # > 2.00mm
-        self.assertEqual(res_err2["status"], "error")
-
-        # 5. SET_RT_ENABLE
-        res = parser.execute_command("SET_RT_ENABLE 0")
-        self.assertEqual(res["status"], "ok")
-        self.assertFalse(parser.rt_enabled)
-        res = parser.execute_command("SET_RT_ENABLE 1")
-        self.assertEqual(res["status"], "ok")
-        self.assertTrue(parser.rt_enabled)
-
-        # 6. SET_LAYER
-        res = parser.execute_command("SET_LAYER 2")
-        self.assertEqual(res["status"], "ok")
-        self.assertEqual(parser.active_layer, 2)
-
-        res_err = parser.execute_command("SET_LAYER 3")
-        self.assertEqual(res_err["status"], "error")
-
-        # 7. SET_KEY
-        res = parser.execute_command("SET_KEY 1 5 119 W")
-        self.assertEqual(res["status"], "ok")
-        self.assertEqual(parser.layers[1][5]["code"], 119)
-        self.assertEqual(parser.layers[1][5]["label"], "W")
-
-        # 8. SIM
-        res = parser.execute_command("SIM 0 2.45")
-        self.assertEqual(res["status"], "ok")
-
-        # 9. STREAM
-        res = parser.execute_command("STREAM 1")
-        self.assertEqual(res["status"], "ok")
-
-        # 10. SAVE and RESET
-        self.assertEqual(parser.execute_command("SAVE")["status"], "ok")
-        self.assertEqual(parser.execute_command("RESET")["status"], "ok")
+    def test_tc14_real_get_config_payload_matches_schema(self):
+        """TC-14: the GET_CONFIG reply of the real firmware (whole image on the host) satisfies the
+        schema validator; the protocol itself is covered by tests/test_protocol_device.py."""
+        import device_host as dh
+        device = dh.Device(dh.current_device())
+        payload = device.config()
+        valid, err = validate_get_config_payload(payload)
+        self.assertTrue(valid, f"firmware GET_CONFIG does not match the schema: {err}")
 
     def test_tc15_profile_json_backup_restore_roundtrip(self):
         """TC-15: 3-layer export and restore round-trip schema test with 100% parameter fidelity."""

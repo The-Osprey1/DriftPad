@@ -75,8 +75,8 @@ struct SaveResult {
     uint32_t    durationUs;
 };
 
-// Loads settings (newest valid A/B record, else legacy v1 migration, else defaults) and applies
-// them. Calibration boot handling is done separately by Calibration::applyAtBoot().
+// Loads the stored settings (config_persist.h; factory defaults when nothing valid is stored) and
+// applies them to the sensing engine.
 void configInit();
 
 const DeviceSettings& configGet();
@@ -98,6 +98,7 @@ void configResetAll();    // configResetUser() + calibration cleared (Missing)
 
 SaveResult configSave();
 bool configRevert();      // reload from flash; false if flash holds nothing valid (RAM unchanged)
+                          // (fields the backend does not store keep their RAM values)
 
 // Label rule shared with the configurator (tests/fixtures/label_vectors.json):
 // a-z uppercased; 1..4 chars; printable ASCII 0x21..0x7E except '"', '\\', '@'.

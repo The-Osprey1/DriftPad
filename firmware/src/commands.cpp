@@ -1,0 +1,655 @@
+#include "commands.h"
+
+#include <Arduino.h>
+#include <cstring>
+
+#include "build_info.h"
+#include "config.h"
+#include "hall.h"
+#include "keyboard_output.h"
+#include "oled.h"
+#include "settings_limits.h"
+
+namespace commands {
+namespace {
+
+using proto::Args;
+using proto::HandlerResult;
+using proto::JsonWriter;
+using proto::ParseResult;
+using proto::Reply;
+namespace err = proto::err;
+
+proto::TxQueue* s_tx = nullptr;
+Timing*         s_timing = nullptr;
+
+// Telemetry subscription (STREAM)
+bool     s_streaming = false;
+uint8_t  s_streamHz = limits::STREAM_HZ_DEFAULT;
+uint32_t s_nextFrameMs = 0;
+uint32_t s_frameSeq = 0;
+uint32_t s_framesDropped = 0;
+
+// RAW <key>: one second of one key's raw samples at the scan rate, sent in chunks
+constexpr uint16_t RAW_CAPTURE_LEN = 1000;
+constexpr uint16_t RAW_CHUNK = 100;
+uint16_t s_raw[RAW_CAPTURE_LEN];
+uint16_t s_rawCount = 0;
+uint16_t s_rawSent = 0;
+int8_t   s_rawKey = -1;
+bool     s_rawCapturing = false;
+
+bool s_bootselRequested = false;
+
+char s_eventBuf[proto::MAX_EVENT_LEN];
+proto::EventWriter s_events(s_eventBuf, sizeof(s_eventBuf));
+
+// Any command except the display-idle ones counts as user activity for the OLED, as in v1
+void wakeDisplay() {
+    oledWake();
+}
+
+void writeKeyList(JsonWriter& w, const char* key, uint16_t mask) {
+    w.key(key).beginArray();
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        if (mask & (1u << i)) w.u32(i);
+    }
+    w.endArray();
+}
+
+const char* deliveryName(KeyboardOutput::Delivery d) {
+    switch (d) {
+        case KeyboardOutput::Delivery::Confirmed: return "confirmed";
+        case KeyboardOutput::Delivery::InFlight:  return "in_flight";
+        case KeyboardOutput::Delivery::Pending:   return "pending";
+    }
+    return "pending";
+}
+
+void writeOutput(JsonWriter& w) {
+    KeyboardOutput::Stats st = KeyboardOutput::stats();
+    w.key("output").beginObject();
+    w.key("enabled").boolean(KeyboardOutput::isEnabled());
+    w.key("reason").str(KeyboardOutput::reasonName(KeyboardOutput::reason()));
+    writeKeyList(w, "active_keys", KeyboardOutput::activeKeysMask());
+    writeKeyList(w, "suppressed_keys", KeyboardOutput::suppressedKeysMask());
+    w.key("overflow").u32(st.overflowBlocked);
+    w.key("delivery").str(deliveryName(KeyboardOutput::deliveryState()));
+    w.endObject();
+}
+
+void writeSettingsState(JsonWriter& w) {
+    const LoadReport& lr = configLoadReport();
+    w.key("settings").beginObject();
+    w.key("dirty").boolean(configIsDirty());
+    w.key("source").str(settingsSourceName(lr.source));
+    w.key("seq").u32(configSettingsSeq());
+    w.key("load_errors").beginArray();
+    for (uint16_t bit = 1; bit != 0; bit <<= 1) {
+        if (lr.errors & bit) w.str(loadErrorName(bit));
+    }
+    w.endArray();
+    w.endObject();
+}
+
+void writeLimit(JsonWriter& w, const char* key, uint16_t lo, uint16_t hi, uint16_t def) {
+    w.key(key).beginObject();
+    w.key("min").mm(lo).key("max").mm(hi).key("default").mm(def).key("step").mm(limits::UI_STEP_CMM);
+    w.endObject();
+}
+
+// Mutating replies: the effective state after the change, not the request's text
+void writeApplied(JsonWriter& w) {
+    w.key("applied").boolean(true);
+    w.key("persisted").boolean(!configIsDirty());
+    w.key("dirty").boolean(configIsDirty());
+}
+
+HandlerResult badValue(Reply& r, ParseResult pr, const char* msg) {
+    r.error(pr, msg);
+    return HandlerResult::Done;
+}
+
+HandlerResult rangeError(Reply& r, ParseResult pr, const char* what, uint16_t lo, uint16_t hi) {
+    JsonWriter& w = r.error(pr, what);
+    if (pr == ParseResult::OutOfRange) w.key("min").mm(lo).key("max").mm(hi);
+    return HandlerResult::Done;
+}
+
+HandlerResult configError(Reply& r, ConfigStatus st, const char* msg) {
+    r.error(configStatusCode(st), msg);
+    return HandlerResult::Done;
+}
+
+// ---- queries ---------------------------------------------------------------------------------
+
+HandlerResult cmdPing(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    r.ok().key("type").str("pong");
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdInfo(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    JsonWriter& w = r.ok();
+    w.key("type").str("info");
+    w.key("device").str(build_info::DEVICE);
+    w.key("hw").str(build_info::HARDWARE);
+    w.key("fw").str(build_info::FW_VERSION);
+    w.key("protocol").u32(build_info::PROTOCOL);
+    w.key("build").str(build_info::BUILD_ID);
+    w.key("build_date").str(build_info::BUILD_DATE);
+    w.key("features").beginArray();
+    static const char* const FEATURES[] = { "keymap", "layers", "rapid_trigger", "telemetry", "timing",
+                                            "raw", "sim", "display" };
+    for (const char* f : FEATURES) w.str(f);
+    w.endArray();
+    w.key("limits").beginObject();
+    writeLimit(w, "actuation", limits::ACTUATION_MIN_CMM, limits::ACTUATION_MAX_CMM, limits::ACTUATION_DEFAULT_CMM);
+    writeLimit(w, "rt_sens", limits::RT_SENS_MIN_CMM, limits::RT_SENS_MAX_CMM, limits::RT_SENS_DEFAULT_CMM);
+    w.key("layers").u32(NUM_LAYERS);
+    w.key("keys").u32(NUM_KEYS);
+    w.key("label_max").u32(limits::LABEL_MAX_LEN);
+    w.key("label_chars").str("printable ASCII except \" \\ @");
+    w.key("code_max").u32(limits::CODE_MAX);
+    w.key("line_max").u32(limits::LINE_MAX_LEN);
+    w.key("stream_hz_max").u32(limits::STREAM_HZ_MAX);
+    w.endObject();
+    w.key("calibration").beginObject();
+    w.key("state").str(calStateName((CalState)configGet().calibration.state));
+    w.endObject();
+    writeOutput(w);
+    writeSettingsState(w);
+    w.key("uptime_ms").u32(millis());
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdGetConfig(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    const DeviceSettings& c = configGet();
+    JsonWriter& w = r.ok();
+    w.key("type").str("config");
+    w.key("actuation").mm(c.actuationCmm);
+    w.key("rt_sens").mm(c.rtSensCmm);
+    w.key("rt_enabled").boolean(c.rtEnabled);
+    w.key("active_layer").u32(c.activeLayer);
+    w.key("boot_output").boolean(c.bootOutput);
+    w.key("dirty").boolean(configIsDirty());
+    w.key("settings_seq").u32(configSettingsSeq());
+    w.key("layers").beginArray();
+    for (uint8_t l = 0; l < NUM_LAYERS; ++l) {
+        w.beginArray();
+        for (uint8_t k = 0; k < NUM_KEYS; ++k) {
+            w.beginObject();
+            w.key("idx").u32(k).key("code").u32(c.keymaps[l][k].hidCode);
+            w.key("label").str(c.keymaps[l][k].label);
+            w.endObject();
+        }
+        w.endArray();
+    }
+    w.endArray();
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdStatus(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    JsonWriter& w = r.ok();
+    w.key("type").str("status");
+    w.key("active_layer").u32(configGet().activeLayer);
+    w.key("last_key").i32(HallManager::getLastActiveKey());
+    w.key("keys").beginArray();
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        HallKey& k = HallManager::getKey(i);
+        w.beginObject();
+        w.key("idx").u32(i);
+        w.key("pressed").boolean(k.isPressed());
+        w.key("travel").mm((int32_t)(k.getTravelMm() * 100.0f + 0.5f));
+        w.key("label").str(k.getLabel());
+        w.endObject();
+    }
+    w.endArray();
+    writeOutput(w);
+    w.key("sim_mask").u32(HallManager::simMask());
+    w.key("dirty").boolean(configIsDirty());
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdStream(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    bool on;
+    ParseResult pr = proto::parseBool(a[0], on);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "STREAM takes 0 or 1");
+    uint8_t hz = limits::STREAM_HZ_DEFAULT;
+    if (a.count > 1) {
+        uint32_t v;
+        pr = proto::parseUint(a[1], 1, limits::STREAM_HZ_MAX, v);
+        if (pr != ParseResult::Ok) {
+            JsonWriter& w = r.error(pr, "rate must be 1 to the maximum stream rate");
+            if (pr == ParseResult::OutOfRange) w.key("min").u32(1).key("max").u32(limits::STREAM_HZ_MAX);
+            return HandlerResult::Done;
+        }
+        hz = (uint8_t)v;
+    }
+    s_streaming = on;
+    s_streamHz = hz;
+    s_nextFrameMs = millis();
+    r.ok().key("streaming").boolean(s_streaming).key("hz").u32(s_streamHz);
+    return HandlerResult::Done;
+}
+
+// ---- settings --------------------------------------------------------------------------------
+
+HandlerResult cmdSetActuation(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    uint16_t cmm;
+    ParseResult pr = proto::parseCmm(a[0], limits::ACTUATION_MIN_CMM, limits::ACTUATION_MAX_CMM, cmm);
+    if (pr != ParseResult::Ok) {
+        return rangeError(r, pr, "actuation must be a distance in mm with at most 2 decimals, within the limits",
+                          limits::ACTUATION_MIN_CMM, limits::ACTUATION_MAX_CMM);
+    }
+    ConfigStatus st = configSetActuationCmm(cmm);
+    if (st != ConfigStatus::Ok) return configError(r, st, "actuation rejected");
+    JsonWriter& w = r.ok();
+    w.key("actuation").mm(configGet().actuationCmm);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetRtSens(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    uint16_t cmm;
+    ParseResult pr = proto::parseCmm(a[0], limits::RT_SENS_MIN_CMM, limits::RT_SENS_MAX_CMM, cmm);
+    if (pr != ParseResult::Ok) {
+        return rangeError(r, pr, "RT sensitivity must be a distance in mm with at most 2 decimals, within the limits",
+                          limits::RT_SENS_MIN_CMM, limits::RT_SENS_MAX_CMM);
+    }
+    ConfigStatus st = configSetRtSensCmm(cmm);
+    if (st != ConfigStatus::Ok) return configError(r, st, "RT sensitivity rejected");
+    JsonWriter& w = r.ok();
+    w.key("rt_sens").mm(configGet().rtSensCmm);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetRtEnable(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    bool on;
+    ParseResult pr = proto::parseBool(a[0], on);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "SET_RT_ENABLE takes 0 or 1");
+    configSetRtEnabled(on);
+    JsonWriter& w = r.ok();
+    w.key("rt_enabled").boolean(configGet().rtEnabled);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetLayer(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    uint32_t layer;
+    ParseResult pr = proto::parseUint(a[0], 0, NUM_LAYERS - 1, layer);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "layer must be 0, 1 or 2");
+    ConfigStatus st = configSetActiveLayer((uint8_t)layer);
+    if (st != ConfigStatus::Ok) return configError(r, st, "layer rejected");
+    JsonWriter& w = r.ok();
+    w.key("active_layer").u32(configGet().activeLayer);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetKey(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    uint32_t layer, key, code;
+    ParseResult pr = proto::parseUint(a[0], 0, NUM_LAYERS - 1, layer);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "layer must be 0, 1 or 2");
+    pr = proto::parseUint(a[1], 0, NUM_KEYS - 1, key);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "key must be 0 to 15");
+    pr = proto::parseUint(a[2], 0, limits::CODE_MAX, code);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "code must be 0 to 255");
+    const char* label = a.count > 3 ? a[3] : nullptr;
+    ConfigStatus st = configSetKey((uint8_t)layer, (uint8_t)key, (uint8_t)code, label);
+    if (st == ConfigStatus::InvalidLabel) {
+        return configError(r, st, "label must be 1-4 printable ASCII characters, not \" \\ or @");
+    }
+    if (st == ConfigStatus::InvalidCode) return configError(r, st, "code produces no keyboard output");
+    if (st != ConfigStatus::Ok) return configError(r, st, "key update rejected");
+    const LayerKey& lk = configGet().keymaps[layer][key];
+    JsonWriter& w = r.ok();
+    w.key("layer").u32(layer).key("key").u32(key).key("code").u32(lk.hidCode).key("label").str(lk.label);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetHid(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    bool on;
+    ParseResult pr = proto::parseBool(a[0], on);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "SET_HID takes 0 or 1");
+    if (a.count > 1 && !proto::keywordIs(a[1], "force")) {
+        r.error(err::BAD_REQUEST, "the only option is FORCE");
+        return HandlerResult::Done;
+    }
+    KeyboardOutput::setEnabled(on, on ? KeyboardOutput::Reason::Enabled : KeyboardOutput::Reason::UserDisabled);
+    JsonWriter& w = r.ok();
+    w.key("hid_output").boolean(KeyboardOutput::isEnabled());   // v1 field
+    writeOutput(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSave(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    SaveResult sr;
+    {
+        Timing::Scoped t(*s_timing, Timing::Op::Save);
+        sr = configSave();
+    }
+    if (!sr.ok) {
+        JsonWriter& w = r.error(sr.errorCode, "settings were not saved; the previous flash contents are unchanged or lost (see docs)");
+        w.key("persisted").boolean(false).key("dirty").boolean(configIsDirty());
+        return HandlerResult::Done;
+    }
+    JsonWriter& w = r.ok();
+    w.key("persisted").boolean(true).key("dirty").boolean(configIsDirty());
+    w.key("duration_ms").u32((sr.durationUs + 500) / 1000);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdRevert(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    if (!configRevert()) {
+        r.error(err::NOT_ALLOWED, "no saved settings to revert to");
+        return HandlerResult::Done;
+    }
+    JsonWriter& w = r.ok();
+    w.key("applied").boolean(true).key("persisted").boolean(!configIsDirty()).key("dirty").boolean(configIsDirty());
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdReset(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    configResetUser();
+    JsonWriter& w = r.ok();
+    w.key("applied").boolean(true).key("persisted").boolean(!configIsDirty()).key("dirty").boolean(configIsDirty());
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdCalibrate(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    // Legacy re-zero: every key's rest := its current reading. Outputs are released first because
+    // the state machines restart from the new zero.
+    KeyboardOutput::releaseAll(HallManager::pressedMask());
+    HallManager::calibrateAllRestBaselines(128);
+    JsonWriter& w = r.ok();
+    w.key("applied").boolean(true).key("persisted").boolean(false);
+    w.key("msg").str("rest baselines re-zeroed from the current readings (keys must be untouched); not stored");
+    return HandlerResult::Done;
+}
+
+// ---- diagnostics -----------------------------------------------------------------------------
+
+HandlerResult cmdSim(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    if (a.count == 1) {
+        if (!proto::keywordIs(a[0], "off")) {
+            r.error(err::BAD_REQUEST, "use SIM <key> <mm>, SIM <key> OFF or SIM OFF");
+            return HandlerResult::Done;
+        }
+        HallManager::simClearAll();
+        r.ok().key("sim_mask").u32(HallManager::simMask());
+        return HandlerResult::Done;
+    }
+    uint32_t key;
+    ParseResult pr = proto::parseUint(a[0], 0, NUM_KEYS - 1, key);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "key must be 0 to 15");
+    if (proto::keywordIs(a[1], "off")) {
+        HallManager::simClear((uint8_t)key);
+        r.ok().key("key").u32(key).key("sim_mask").u32(HallManager::simMask());
+        return HandlerResult::Done;
+    }
+    uint16_t cmm;
+    pr = proto::parseCmm(a[1], 0, 400, cmm);
+    if (pr != ParseResult::Ok) return rangeError(r, pr, "travel must be 0.00 to 4.00 mm", 0, 400);
+    HallManager::simSet((uint8_t)key, limits::cmmToMm(cmm), millis());
+    HallKey& k = HallManager::getKey((uint8_t)key);
+    JsonWriter& w = r.ok();
+    w.key("type").str("sim_event");
+    w.key("key").u32(key);
+    w.key("travel").mm((int32_t)(k.getTravelMm() * 100.0f + 0.5f));
+    w.key("pressed").boolean(k.isPressed());
+    w.key("sim_mask").u32(HallManager::simMask());
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdScanRate(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    JsonWriter& w = r.ok();
+    w.key("type").str("scan_rate");
+    s_timing->writeScanRateFields(w, true);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdTiming(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    if (a.count == 1) {
+        if (!proto::keywordIs(a[0], "reset")) {
+            r.error(err::BAD_REQUEST, "use TIMING or TIMING RESET");
+            return HandlerResult::Done;
+        }
+        s_timing->reset();
+        r.ok().key("reset").boolean(true);
+        return HandlerResult::Done;
+    }
+    JsonWriter& w = r.ok();
+    w.key("type").str("timing");
+    s_timing->writeTimingFields(w, millis(), s_tx);
+    w.key("telemetry_dropped").u32(s_framesDropped);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdRaw(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    uint32_t key;
+    ParseResult pr = proto::parseUint(a[0], 0, NUM_KEYS - 1, key);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "key must be 0 to 15");
+    s_rawKey = (int8_t)key;
+    s_rawCount = 0;
+    s_rawSent = 0;
+    s_rawCapturing = true;
+    r.ok().key("key").u32(key).key("samples").u32(RAW_CAPTURE_LEN).key("rate_hz").u32(1000);
+    return HandlerResult::Done;
+}
+
+// ---- display (v1 behaviour; the display itself is not part of the protocol contract) --------
+
+HandlerResult cmdFullscreen(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    if (a.count == 0) {
+        oledSetFullScreen(!oledIsFullScreen());
+    } else {
+        bool on;
+        ParseResult pr = proto::parseBool(a[0], on);
+        if (pr != ParseResult::Ok) return badValue(r, pr, "FULLSCREEN takes 0 or 1");
+        oledSetFullScreen(on);
+    }
+    r.ok().key("fullscreen").boolean(oledIsFullScreen());
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdScreensaver(const Args&, Reply& r, void*) {
+    oledTriggerScreensaver();
+    r.ok().key("screensaver").boolean(true);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdAnim(const Args& a, Reply& r, void*) {
+    int32_t idx = -1;   // no argument: cycle through all animations
+    if (a.count == 1) {
+        uint32_t v;
+        ParseResult pr = proto::parseUint(a[0], 0, OLED_ANIM_COUNT - 1, v);
+        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 5 (omit it to cycle)");
+        idx = (int32_t)v;
+    }
+    oledSetScreensaverAnim((int8_t)idx);
+    oledTriggerScreensaver();
+    r.ok().key("anim").i32(idx);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSleep(const Args&, Reply& r, void*) {
+    oledSleep();
+    r.ok().key("sleep").boolean(true);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdWake(const Args&, Reply& r, void*) {
+    oledWake();
+    r.ok().key("wake").boolean(true);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdOledTest(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    oledTestPattern();
+    r.ok().key("display").str("test_pattern");
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdOledScan(const Args&, Reply& r, void*) {
+    wakeDisplay();
+    uint8_t found[16];
+    uint8_t n = oledScanBus(found, sizeof(found));
+    JsonWriter& w = r.ok();
+    w.key("devices").beginArray();
+    for (uint8_t i = 0; i < n && i < sizeof(found); ++i) w.u32(found[i]);
+    w.endArray();
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdBootsel(const Args&, Reply& r, void*) {
+    // The reply is flushed by main before the reboot (see main.cpp)
+    KeyboardOutput::setEnabled(false, KeyboardOutput::Reason::UserDisabled);
+    s_bootselRequested = true;
+    r.ok().key("bootsel").boolean(true);
+    return HandlerResult::Done;
+}
+
+const proto::CommandDef TABLE[] = {
+    { "PING",          nullptr,   0, 0, cmdPing },
+    { "INFO",          "HELLO",   0, 0, cmdInfo },
+    { "GET_CONFIG",    nullptr,   0, 0, cmdGetConfig },
+    { "STATUS",        nullptr,   0, 0, cmdStatus },
+    { "STREAM",        nullptr,   1, 2, cmdStream },
+    { "SET_ACTUATION", nullptr,   1, 1, cmdSetActuation },
+    { "SET_RT_SENS",   nullptr,   1, 1, cmdSetRtSens },
+    { "SET_RT_ENABLE", nullptr,   1, 1, cmdSetRtEnable },
+    { "SET_LAYER",     nullptr,   1, 1, cmdSetLayer },
+    { "SET_KEY",       nullptr,   3, 4, cmdSetKey },
+    { "SET_HID",       "HID|OUTPUT", 1, 2, cmdSetHid },
+    { "SAVE",          nullptr,   0, 0, cmdSave },
+    { "REVERT",        nullptr,   0, 0, cmdRevert },
+    { "RESET",         nullptr,   0, 0, cmdReset },
+    { "CALIBRATE",     nullptr,   0, 0, cmdCalibrate },
+    { "SIM",           nullptr,   1, 2, cmdSim },
+    { "SCAN_RATE",     nullptr,   0, 0, cmdScanRate },
+    { "TIMING",        nullptr,   0, 1, cmdTiming },
+    { "RAW",           nullptr,   1, 1, cmdRaw },
+    { "FULLSCREEN",    nullptr,   0, 1, cmdFullscreen },
+    { "SCREENSAVER",   nullptr,   0, 0, cmdScreensaver },
+    { "ANIM",          nullptr,   0, 1, cmdAnim },
+    { "SLEEP",         nullptr,   0, 0, cmdSleep },
+    { "WAKE",          nullptr,   0, 0, cmdWake },
+    { "OLED_TEST",     nullptr,   0, 0, cmdOledTest },
+    { "OLED_SCAN",     nullptr,   0, 0, cmdOledScan },
+    { "BOOTSEL",       nullptr,   0, 0, cmdBootsel },
+};
+
+void sendTelemetry(uint32_t nowMs) {
+    Timing::Scoped t(*s_timing, Timing::Op::Telemetry);
+    JsonWriter& w = s_events.begin("telemetry");
+    w.key("seq").u32(s_frameSeq++);
+    w.key("t").u32(nowMs);
+    w.key("layer").u32(configGet().activeLayer);
+    w.key("pressed").u32(HallManager::pressedMask());
+    w.key("active").u32(KeyboardOutput::activeKeysMask());
+    w.key("sim").u32(HallManager::simMask());
+    w.key("travel").beginArray();
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        w.i32((int32_t)(HallManager::getKey(i).getTravelMm() * 100.0f + 0.5f));
+    }
+    w.endArray();
+    w.key("dirty").boolean(configIsDirty());
+    if (!s_events.send(*s_tx)) s_framesDropped++;
+}
+
+bool sendRawChunk() {
+    uint16_t n = (uint16_t)(s_rawCount - s_rawSent);
+    if (n > RAW_CHUNK) n = RAW_CHUNK;
+    JsonWriter& w = s_events.begin("raw");
+    w.key("key").u32((uint32_t)s_rawKey).key("rate_hz").u32(1000);
+    w.key("offset").u32(s_rawSent).key("total").u32(RAW_CAPTURE_LEN);
+    w.key("samples").beginArray();
+    for (uint16_t i = 0; i < n; ++i) w.u32(s_raw[s_rawSent + i]);
+    w.endArray();
+    if (!s_events.send(*s_tx)) return false;   // retried on a later slice
+    s_rawSent = (uint16_t)(s_rawSent + n);
+    return true;
+}
+
+} // namespace
+
+void init(proto::TxQueue& tx, Timing& timing) {
+    s_tx = &tx;
+    s_timing = &timing;
+    s_streaming = false;
+    s_streamHz = limits::STREAM_HZ_DEFAULT;
+    s_frameSeq = 0;
+    s_framesDropped = 0;
+    s_rawCapturing = false;
+    s_rawKey = -1;
+    s_rawCount = s_rawSent = 0;
+    s_bootselRequested = false;
+}
+
+const proto::CommandDef* table() { return TABLE; }
+uint8_t tableSize() { return (uint8_t)(sizeof(TABLE) / sizeof(TABLE[0])); }
+
+void onScan() {
+    if (s_rawCapturing && s_rawCount < RAW_CAPTURE_LEN) {
+        s_raw[s_rawCount++] = HallManager::lastRaw()[(uint8_t)s_rawKey];
+    }
+}
+
+void service(uint32_t nowMs) {
+    if (s_rawCapturing && s_rawSent < s_rawCount &&
+        (s_rawCount == RAW_CAPTURE_LEN || (uint16_t)(s_rawCount - s_rawSent) >= RAW_CHUNK)) {
+        if (sendRawChunk() && s_rawSent == RAW_CAPTURE_LEN) s_rawCapturing = false;
+        return;
+    }
+    if (s_streaming && (int32_t)(nowMs - s_nextFrameMs) >= 0) {
+        s_nextFrameMs = nowMs + 1000u / s_streamHz;
+        sendTelemetry(nowMs);
+    }
+}
+
+void onHostDisconnected() {
+    s_streaming = false;
+    s_rawCapturing = false;
+}
+
+void queueBootEvent() {
+    JsonWriter& w = s_events.begin("boot");
+    w.key("device").str(build_info::DEVICE).key("fw").str(build_info::FW_VERSION);
+    w.key("protocol").u32(build_info::PROTOCOL).key("build").str(build_info::BUILD_ID);
+    w.key("settings_source").str(settingsSourceName(configLoadReport().source));
+    w.key("output_enabled").boolean(KeyboardOutput::isEnabled());
+    s_events.send(*s_tx);
+}
+
+bool streaming() { return s_streaming; }
+
+bool takeBootselRequest() {
+    bool r = s_bootselRequested;
+    s_bootselRequested = false;
+    return r;
+}
+
+} // namespace commands

@@ -30,7 +30,8 @@ void oledCycleMenu();
 // Returns true if a setting changed (false when the input only woke the display)
 bool oledAdjustCurrentSetting(int32_t delta);
 void oledTestPattern();
-void oledScanBus();
+// Probes every I2C address; fills `found` with the ones that ACK (at most `max`), returns the count
+uint8_t oledScanBus(uint8_t* found, uint8_t max);
 void oledSetFullScreen(bool enabled);
 bool oledIsFullScreen();
 void oledTriggerScreensaver();
@@ -38,6 +39,7 @@ bool oledIsScreensaverActive();
 void oledWake();
 void oledSleep();
 bool oledIsSleeping();
-void oledSetScreensaverAnim(int8_t animIdx);
+void oledSetScreensaverAnim(int8_t animIdx);   // -1 cycles through all of them
+constexpr int8_t OLED_ANIM_COUNT = 6;
 
 #endif // OLED_H
