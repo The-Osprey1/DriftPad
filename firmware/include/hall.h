@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cmath>
 #include "pins.h"
+#include "calibration.h"
 
 /**
  * @file hall.h
@@ -14,6 +15,9 @@
  * - Dynamic baseline auto-zero tracking with low-pass motion conditioning.
  * - Magnetic polarity auto-detection and dynamic range auto-ranging.
  * - Rapid Trigger with directional hysteresis and quantization deadband tolerance.
+ *
+ * HallKey never talks to USB. HallManager::updateAll() routes each key's press/release edges to
+ * KeyboardOutput (keyboard_output.h), which owns the keyboard report.
  */
 
 struct HallKeyConfig {
@@ -56,6 +60,25 @@ public:
     uint8_t getPressCount() const { return _pressCount; }
     uint8_t getReleaseCount() const { return _releaseCount; }
 
+    // Calibration (calibration.cpp). applyCalibration() sets rest, polarity and range only;
+    // callers seed the filters and reset the state machine explicitly. A calibrated range below
+    // the DSP's 600-count floor in update() still maps travel over 600 counts.
+    void applyCalibration(const KeyCalibration& cal);
+    KeyCalibration exportCalibration() const;
+    // Legacy start: polarity unknown (auto-detected on the first 150-count excursion), 1000-count range
+    void resetCalibration();
+    int8_t getPolarity() const;        // +1 raw rises when pressed, -1 falls, 0 not known yet
+    uint16_t getRangeCounts() const;   // |bottom - rest| in ADC counts
+
+    // Starts the filters, EMI history and drift trackers at `raw`, so the next update() sees no
+    // step. Rest, polarity, range and the Rapid Trigger state are left alone.
+    void seedFilters(uint16_t raw);
+    // Rapid Trigger state -> released, travel 0. A key that was pressed counts one release, so
+    // the monotonic press/release counters stay paired for the display.
+    void resetStateMachine();
+    // Released and within the top dead zone: the condition that ends a stroke in runRapidTrigger()
+    bool isAtRest() const { return !_isPressed && _travelMm <= TOP_DEADZONE_MM; }
+
     // Settings
     static void setActuationPoint(float mm) {
         if (mm < 0.25f) mm = 0.25f;
@@ -83,6 +106,8 @@ public:
     static float getRtSensitivity() { return s_rtPressMm; }
 
 private:
+    friend struct HallKeyTestAccess;   // host tests only (tests/firmware_host/hall_shim.cpp)
+
     bool runRapidTrigger();
 
     uint8_t _keyIndex;
@@ -152,18 +177,49 @@ private:
 class HallManager {
 public:
     static void init();
+    // Legacy zeroing: every key's rest := its current reading (polarity and range kept)
     static void calibrateAllRestBaselines(uint16_t samplesPerKey = 64);
+    // Blocking rest measurement: rounded mean of `samples` sweeps of all 16 keys (16 mux reads
+    // plus a 50 us pause per sweep). Used at boot and by CALIBRATE; keys are not updated.
+    static void measureRest(uint16_t out[NUM_KEYS], uint16_t samples);
+
+    // One scan: reads all 16 raw samples (kept for lastRaw()), runs each key and routes its
+    // edges to KeyboardOutput with the key's current code (captured there at the press).
+    // Simulated keys are not fed real samples and never reach KeyboardOutput; faulted keys run
+    // but are not routed. Suppressed keys seen at rest are reported with KeyboardOutput::onAtRest().
     static void updateAll();
+    static const uint16_t* lastRaw();
 
     static HallKey& getKey(uint8_t index) { return s_keys[index]; }
     static uint8_t getPressedCount();
     static int8_t getLastActiveKey();
-    static void setHidEnabled(bool en);
-    static bool isHidEnabled();
+    static uint16_t pressedMask();     // keys whose state machine is pressed (simulated included)
+
+    // Simulation override (SIM command). simSet() puts a key in sim mode (its keyboard output is
+    // released first) and injects `mm` of travel. Sim mode ends with simClear()/simClearAll() or
+    // SIM_TIMEOUT_MS after the key's last simSet() (simService()). On exit the filters restart
+    // from the current reading, the state machine is released and the key's output is
+    // suppressed until it is seen at rest, so a physically held key cannot fire.
+    static constexpr uint32_t SIM_TIMEOUT_MS = 3000;
+    static bool simSet(uint8_t key, float mm, uint32_t nowMs);
+    static void simClear(uint8_t key);
+    static void simClearAll();
+    static void simService(uint32_t nowMs);
+    static uint16_t simMask();
+
+    // Keys with railed sensor readings (set by Calibration::applyAtBoot/applyRuntime): they keep
+    // running for display but their edges never reach KeyboardOutput.
+    static void setFaultMask(uint16_t mask);
+    static uint16_t faultMask();
 
 private:
     static HallKey s_keys[NUM_KEYS];
     static int8_t s_lastActiveKey;
+    static uint16_t s_lastRaw[NUM_KEYS];
+    static uint16_t s_routedMask;      // keys KeyboardOutput currently sees as pressed
+    static uint16_t s_simMask;
+    static uint32_t s_simLastMs[NUM_KEYS];
+    static uint16_t s_faultMask;
 };
 
 #endif // HALL_H

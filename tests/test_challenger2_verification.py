@@ -5,6 +5,7 @@ Milestone M2 Iteration 3: Firmware DSP Robustness, PlatformIO Build, UF2 & ELF I
 
 import os
 import struct
+import sys
 import zlib
 import re
 import unittest
@@ -12,10 +13,23 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 FIRMWARE_DIR = ROOT_DIR / "firmware"
-BUILD_DIR = FIRMWARE_DIR / ".pio" / "build" / "pico"
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import build_state  # noqa: E402
+
+# CH2-01..04 inspect the artifacts of the build that ran earlier in this process (TC-13 in
+# test_build.py) and fail when there was none; they never read binaries left by an older build.
+BUILD_DIR = build_state.build_dir()
 UF2_PATH = BUILD_DIR / "firmware.uf2"
 ELF_PATH = BUILD_DIR / "firmware.elf"
 BIN_PATH = BUILD_DIR / "firmware.bin"
+
+
+def _fresh_artifacts(testcase, *names):
+    """Build evidence for CH2-01..04: every named artifact comes from this run's build."""
+    rec = build_state.require_fresh_build(testcase)
+    return [build_state.check_artifact(testcase, rec, n) for n in names]
 
 RP2040_FLASH_START = 0x10000000
 RP2040_FLASH_SIZE  = 2 * 1024 * 1024  # 2MB
@@ -32,6 +46,7 @@ class TestChallenger2Adversarial(unittest.TestCase):
 
     def test_01_all_build_artifacts_present(self):
         """Verify presence and non-zero size of UF2, ELF, and BIN artifacts."""
+        _fresh_artifacts(self, "firmware.uf2", "firmware.elf", "firmware.bin")
         self.assertTrue(UF2_PATH.is_file(), f"UF2 binary missing at {UF2_PATH}")
         self.assertTrue(ELF_PATH.is_file(), f"ELF binary missing at {ELF_PATH}")
         self.assertTrue(BIN_PATH.is_file(), f"BIN binary missing at {BIN_PATH}")
@@ -46,6 +61,7 @@ class TestChallenger2Adversarial(unittest.TestCase):
 
     def test_02_uf2_exhaustive_all_block_validation(self):
         """Adversarially validates ALL blocks in firmware.uf2 for magic numbers, sequence, addresses, and family ID."""
+        _fresh_artifacts(self, "firmware.uf2")
         with open(UF2_PATH, "rb") as f:
             data = f.read()
 
@@ -86,6 +102,7 @@ class TestChallenger2Adversarial(unittest.TestCase):
 
     def test_03_elf_headers_and_segment_isolation(self):
         """Adversarially validates ELF headers, 32-bit ARM machine type, entry point, and program segments."""
+        _fresh_artifacts(self, "firmware.elf")
         with open(ELF_PATH, "rb") as f:
             elf = f.read()
 
@@ -128,6 +145,7 @@ class TestChallenger2Adversarial(unittest.TestCase):
 
     def test_04_memory_footprint_and_budgets(self):
         """Verifies static RAM and Flash budgets meet strict production thresholds."""
+        _fresh_artifacts(self, "firmware.elf")
         with open(ELF_PATH, "rb") as f:
             elf = f.read()
 

@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "comment": "Exact inputs of the DriftPad firmware build. tools/check_toolchain.py compares the installed PlatformIO packages with this file; CI installs the platform at 'platform.commit' and builds with a copy of platformio.ini pinned to it (see .github/workflows/ci.yml). Update this file together with platformio.ini, never separately.",
+  "env": "pico",
+  "platformio_core": {
+    "version": "6.2.0"
+  },
+  "platform": {
+    "name": "raspberrypi",
+    "repo": "https://github.com/maxgerhardt/platform-raspberrypi.git",
+    "commit": "5d4561a05e3b212660ac6fdd3fbfb328d1988aa1",
+    "version": "1.20.0"
+  },
+  "framework": {
+    "package": "framework-arduinopico",
+    "repo": "https://github.com/earlephilhower/arduino-pico.git",
+    "commit": "fd65f6d4ab168d4bb181a3709738fe353ac93585",
+    "describe": "6.1.0-4-gfd65f6d4",
+    "package_version": "1.60100.0"
+  },
+  "toolchain": {
+    "package": "toolchain-rp2040-earlephilhower",
+    "version": "5.160100.260719",
+    "gcc": "16.1.0",
+    "archives": {
+      "windows_amd64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/x86_64-w64-mingw32.arm-none-eabi-78c24be.260719.zip",
+      "linux_x86_64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/x86_64-linux-gnu.arm-none-eabi-78c24be.260719.tar.gz",
+      "linux_aarch64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/aarch64-linux-gnu.arm-none-eabi-78c24be.260719.tar.gz",
+      "darwin_x86_64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/x86_64-apple-darwin20.4.arm-none-eabi-78c24be.260719.tar.gz",
+      "darwin_arm64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/aarch64-apple-darwin20.4.arm-none-eabi-78c24be.260719.tar.gz"
+    }
+  },
+  "tools": [
+    {
+      "package": "tool-pioasm-rp2040-earlephilhower",
+      "version": "5.160100.260719",
+      "archives": {
+        "windows_amd64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/x86_64-w64-mingw32.pioasm-98a542c1.260719.zip",
+        "linux_x86_64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/x86_64-linux-gnu.pioasm-98a542c1.260719.tar.gz"
+      }
+    },
+    {
+      "package": "tool-picotool-rp2040-earlephilhower",
+      "version": "5.160100.260719",
+      "archives": {
+        "windows_amd64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/x86_64-w64-mingw32.picotool-6f6458d.260719.zip",
+        "linux_x86_64": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/5.0.0/x86_64-linux-gnu.picotool-6f6458d.260719.tar.gz"
+      }
+    },
+    {
+      "package": "tool-scons",
+      "version": "4.41101.0",
+      "enforce": false,
+      "comment": "installed by PlatformIO Core itself (requirement ~4.41101.0); reported, not enforced"
+    }
+  ],
+  "libraries": [
+    {"owner": "adafruit", "name": "Adafruit SSD1306", "version": "2.5.17"},
+    {"owner": "adafruit", "name": "Adafruit SH110X", "version": "2.1.15"},
+    {"owner": "adafruit", "name": "Adafruit GFX Library", "version": "1.12.6"},
+    {"owner": "adafruit", "name": "Adafruit BusIO", "version": "1.17.4"}
+  ],
+  "framework_libraries": [
+    {"name": "Keyboard", "dir": "Keyboard", "version": "1.0.3"},
+    {"name": "Wire", "dir": "Wire", "version": "1.0"},
+    {"name": "SPI", "dir": "SPI", "version": "1.0"},
+    {"name": "tusb-hid", "dir": "tusb-hid", "version": "1.0.0"},
+    {"name": "EEPROM", "dir": "EEPROM", "version": "1.0"}
+  ]
+}

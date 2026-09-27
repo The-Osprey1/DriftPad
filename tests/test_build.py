@@ -1,166 +1,139 @@
 """
-test_build.py - Automated PlatformIO Build Verification for DriftPad RP2040 Firmware.
+test_build.py - PlatformIO build of the DriftPad RP2040 firmware and checks of what THIS build produced.
 
-Authoritative References:
-- ORIGINAL_REQUEST.md: "PlatformIO project builds cleanly (`python -m platformio run`) producing a valid `.pio/build/pico/firmware.uf2` with zero build errors."
-- spec_verification_harness.md: Section 7 (Build Verification Specification), TC-13
+TC-13 builds the firmware (`pio` from PATH, else `<python> -m platformio`) after deleting the
+previous firmware.elf/.bin/.uf2 and build_manifest.json, and records the evidence in
+tests/build_state.py. The artifact tests (TC-B1..TC-B4) then require that evidence: they fail if
+the build did not run (or failed) in this process, if an artifact predates the build start, or if
+its sha256 differs from the manifest written by the build. They never validate cached binaries.
+
+Test methods are numbered so the build runs first under plain `python -m unittest` too.
+
+Options (see build_state.py for the full list):
+  --clean / DRIFTPAD_CLEAN_BUILD=1   run `pio run -t clean` before building
+  DRIFTPAD_FIRMWARE_DIR=<dir>        build a copy of firmware/ instead of the repository's
+  DRIFTPAD_RELEASE=1                 missing manifest, dirty build or build id mismatch fail
+
+Usage:
+    python -m unittest -v tests.test_build
+    python tests/test_build.py --clean
 
 Pure Python 3 standard library: zero external pip dependencies.
 """
 
 import os
-import shutil
 import struct
-import subprocess
 import sys
 import unittest
 from pathlib import Path
 
+TESTS_DIR = Path(__file__).resolve().parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
+import build_state  # noqa: E402
+
+UF2_MAGIC_START0 = 0x0A324655
+UF2_MAGIC_START1 = 0x9E5D5157
+UF2_MAGIC_END = 0x0AB16F30
+RP2040_FAMILY_ID = 0xE48BFF56
+
 
 class TestPlatformIOBuild(unittest.TestCase):
-    """
-    Automated PlatformIO RP2040 firmware build verification.
-    """
+    """Builds the firmware once, then checks the artifacts that build produced."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.root_dir = Path(__file__).resolve().parent.parent
-        cls.firmware_dir = cls.root_dir / "firmware"
-        cls.build_dir = cls.firmware_dir / ".pio" / "build" / "pico"
-        cls.uf2_path = cls.build_dir / "firmware.uf2"
-        cls.elf_path = cls.build_dir / "firmware.elf"
-        cls.bin_path = cls.build_dir / "firmware.bin"
+    def test_00_tc13_platformio_build(self):
+        """TC-13: `pio run` in the firmware directory exits 0 and reports [SUCCESS]."""
+        fw = build_state.firmware_dir()
+        self.assertTrue((fw / "platformio.ini").is_file(), f"Missing platformio.ini in {fw}")
 
-    def test_tc13_platformio_clean_build(self):
-        """TC-13: Execute 'python -m platformio run' (or 'pio run') in firmware/ and assert exit code 0."""
-        self.assertTrue(
-            self.firmware_dir.is_dir(),
-            f"Firmware directory does not exist: {self.firmware_dir}"
-        )
-        self.assertTrue(
-            (self.firmware_dir / "platformio.ini").is_file(),
-            "Missing platformio.ini in firmware directory"
-        )
+        rec = build_state.run_build()
+        if rec.skipped_reason:
+            self.skipTest(rec.skipped_reason)
 
-        cmd = [sys.executable, "-m", "platformio", "run"]
-        try:
-            result = subprocess.run(
-                cmd,
-                cwd=str(self.firmware_dir),
-                capture_output=True,
-                text=True
-            )
-            # If the platformio module is missing from the active Python environment, fall back to 'pio' on PATH
-            if result.returncode != 0 and (
-                "No module named platformio" in result.stderr
-                or "No module named platformio" in result.stdout
-            ):
-                pio_path = shutil.which("pio") or "pio"
-                result = subprocess.run(
-                    [pio_path, "run"],
-                    cwd=str(self.firmware_dir),
-                    capture_output=True,
-                    text=True
-                )
-        except (FileNotFoundError, OSError):
-            pio_path = shutil.which("pio") or "pio"
-            result = subprocess.run(
-                [pio_path, "run"],
-                cwd=str(self.firmware_dir),
-                capture_output=True,
-                text=True
-            )
+        header = (f"build of {rec.firmware_dir} via {rec.pio_how}"
+                  f"{' (clean)' if rec.clean else ''}")
+        if rec.clean and rec.clean_returncode not in (None, 0):
+            self.fail(f"{header}: `pio run -t clean` failed with exit {rec.clean_returncode}\n{rec.output_tail}")
+        self.assertEqual(rec.returncode, 0,
+                         f"{header}: PlatformIO exited {rec.returncode}\n{rec.output_tail}")
+        self.assertTrue(rec.success_marker, f"{header}: output did not report [SUCCESS]\n{rec.output_tail}")
 
-        self.assertEqual(
-            result.returncode, 0,
-            f"PlatformIO build failed with return code {result.returncode}.\n"
-            f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-        )
-        self.assertIn("SUCCESS", result.stdout, "Build output did not report [SUCCESS]")
+        for w in rec.warnings:
+            print(f"\n  [build warning] {w}", file=sys.stderr)
+        if build_state.release_mode():
+            problems = list(rec.release_problems)
+            if build_state.using_foreign_firmware_dir():
+                problems.append(f"DRIFTPAD_FIRMWARE_DIR points at {rec.firmware_dir}, not this repository")
+            if problems:
+                self.fail("Build not release-qualified:\n  - " + "\n  - ".join(problems))
 
-    def test_firmware_uf2_artifact_exists_and_non_empty(self):
-        """Verifies that .pio/build/pico/firmware.uf2 exists and is non-empty."""
-        self.assertTrue(
-            self.uf2_path.is_file(),
-            f"Expected firmware.uf2 binary at {self.uf2_path}, but file was not found."
-        )
-        file_size = self.uf2_path.stat().st_size
-        self.assertGreater(
-            file_size, 0,
-            f"firmware.uf2 exists but is empty (0 bytes)."
-        )
-        # Expected size range: between 100 KB and 1 MB
-        self.assertGreaterEqual(
-            file_size, 100 * 1024,
-            f"firmware.uf2 size ({file_size} bytes) is suspiciously small for RP2040 image."
-        )
-        self.assertLessEqual(
-            file_size, 2 * 1024 * 1024,
-            f"firmware.uf2 size ({file_size} bytes) exceeds RP2040 Flash partition limit (2MB)."
-        )
+    def test_01_uf2_artifact_from_this_build(self):
+        """TC-B1: firmware.uf2 was produced by this run's build and has a plausible size."""
+        rec = build_state.require_fresh_build(self)
+        path = build_state.check_artifact(self, rec, "firmware.uf2")
+        size = path.stat().st_size
+        self.assertGreaterEqual(size, 100 * 1024, f"firmware.uf2 size ({size} bytes) is suspiciously small")
+        self.assertLessEqual(size, 2 * 2 * 1024 * 1024,
+                             f"firmware.uf2 size ({size} bytes) cannot fit 2 MB of flash")
+        self.assertEqual(size % 512, 0, "UF2 files are a whole number of 512-byte blocks")
 
-    def test_firmware_elf_and_bin_artifacts(self):
-        """Verifies that .pio/build/pico/firmware.elf and firmware.bin exist and are non-empty."""
-        self.assertTrue(self.elf_path.is_file(), f"Missing {self.elf_path}")
-        self.assertGreater(self.elf_path.stat().st_size, 0)
+    def test_02_elf_and_bin_artifacts_from_this_build(self):
+        """TC-B2: firmware.elf and firmware.bin were produced by this run's build."""
+        rec = build_state.require_fresh_build(self)
+        for name in ("firmware.elf", "firmware.bin"):
+            path = build_state.check_artifact(self, rec, name)
+            self.assertGreater(path.stat().st_size, 0, f"{name} is empty")
 
-        self.assertTrue(self.bin_path.is_file(), f"Missing {self.bin_path}")
-        self.assertGreater(self.bin_path.stat().st_size, 0)
-
-    def test_uf2_binary_header_and_magic_numbers(self):
-        """Verifies UF2 512-byte block format, magic numbers, and RP2040 family ID."""
-        self.assertTrue(self.uf2_path.is_file())
-        with open(self.uf2_path, "rb") as f:
+    def test_03_uf2_header_and_magic_numbers(self):
+        """TC-B3: first UF2 block has the UF2 magics, 256-byte payload and the RP2040 family ID."""
+        rec = build_state.require_fresh_build(self)
+        path = build_state.check_artifact(self, rec, "firmware.uf2")
+        with open(path, "rb") as f:
             header = f.read(512)
-
         self.assertEqual(len(header), 512, "First UF2 block must be exactly 512 bytes")
 
-        # Unpack UF2 header:
-        # uint32 magicStart0 (0x0A324655)
-        # uint32 magicStart1 (0x9E5D5157)
-        # uint32 flags
-        # uint32 targetAddr
-        # uint32 payloadSize (typically 256)
-        # uint32 blockNo
-        # uint32 numBlocks
-        # uint32 familyID (RP2040: 0xe48bff56)
-        (
-            magic_start0,
-            magic_start1,
-            flags,
-            target_addr,
-            payload_size,
-            block_no,
-            num_blocks,
-            family_id
-        ) = struct.unpack("<IIIIIIII", header[:32])
-
+        (magic_start0, magic_start1, _flags, _target_addr, payload_size, _block_no, num_blocks,
+         family_id) = struct.unpack("<IIIIIIII", header[:32])
         magic_end = struct.unpack("<I", header[508:512])[0]
 
-        UF2_MAGIC_START0 = 0x0A324655
-        UF2_MAGIC_START1 = 0x9E5D5157
-        UF2_MAGIC_END = 0x0AB16F30
-        RP2040_FAMILY_ID = 0xE48BFF56
-
-        self.assertEqual(
-            magic_start0, UF2_MAGIC_START0,
-            f"Invalid UF2 magicStart0: {hex(magic_start0)} != {hex(UF2_MAGIC_START0)}"
-        )
-        self.assertEqual(
-            magic_start1, UF2_MAGIC_START1,
-            f"Invalid UF2 magicStart1: {hex(magic_start1)} != {hex(UF2_MAGIC_START1)}"
-        )
-        self.assertEqual(
-            magic_end, UF2_MAGIC_END,
-            f"Invalid UF2 magicEnd: {hex(magic_end)} != {hex(UF2_MAGIC_END)}"
-        )
-        self.assertEqual(
-            family_id, RP2040_FAMILY_ID,
-            f"Invalid target family ID: {hex(family_id)} != {hex(RP2040_FAMILY_ID)} (RP2040)"
-        )
+        self.assertEqual(magic_start0, UF2_MAGIC_START0, f"Invalid UF2 magicStart0: {hex(magic_start0)}")
+        self.assertEqual(magic_start1, UF2_MAGIC_START1, f"Invalid UF2 magicStart1: {hex(magic_start1)}")
+        self.assertEqual(magic_end, UF2_MAGIC_END, f"Invalid UF2 magicEnd: {hex(magic_end)}")
+        self.assertEqual(family_id, RP2040_FAMILY_ID, f"Invalid family ID {hex(family_id)} (RP2040 expected)")
         self.assertEqual(payload_size, 256, f"Expected 256 payload bytes per UF2 block, got {payload_size}")
         self.assertGreater(num_blocks, 0, "UF2 block count must be > 0")
 
+    def test_04_build_manifest_matches_artifacts(self):
+        """TC-B4: build_manifest.json was written by this build and hashes exactly these artifacts."""
+        rec = build_state.require_fresh_build(self)
+        if rec.manifest_error:
+            self.fail(rec.manifest_error)
+        if rec.manifest is None:
+            msg = (f"no {build_state.MANIFEST_NAME} in {rec.build_dir}: the build_info.py post-build step "
+                   "is not part of this build, so artifacts are not tied to a build id")
+            if build_state.release_mode():
+                self.fail(msg)
+            self.skipTest(msg)
+
+        manifest_path = Path(rec.manifest_path)
+        self.assertGreaterEqual(manifest_path.stat().st_mtime, rec.started_at - build_state.MTIME_TOLERANCE_S,
+                                f"{manifest_path.name} predates this run's build")
+        errors = build_state.manifest_consistency_errors(rec.manifest, rec.artifacts)
+        self.assertEqual(errors, [], "Manifest does not describe the artifacts of this build:\n  - "
+                         + "\n  - ".join(errors))
+        self.assertEqual(rec.manifest.get("env"), build_state.PIO_ENV)
+
+        head = (rec.git or {}).get("commit")
+        if head is not None and rec.manifest.get("git_commit") != head:
+            msg = f"manifest git_commit {rec.manifest.get('git_commit')} != checkout HEAD {head}"
+            if build_state.release_mode():
+                self.fail(msg)
+            print(f"\n  [build warning] {msg}", file=sys.stderr)
+
 
 if __name__ == "__main__":
+    if "--clean" in sys.argv:
+        sys.argv.remove("--clean")
+        os.environ[build_state.ENV_CLEAN] = "1"
     unittest.main(verbosity=2)
