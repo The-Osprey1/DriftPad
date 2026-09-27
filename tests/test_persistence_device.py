@@ -209,7 +209,7 @@ class TestPersistence(unittest.TestCase):
             r = self.one("SAVE")
             self.assertEqual((r["status"], r["persisted"], r["dirty"]), ("ok", True, False))
             seen.append((r["slot"], r["seq"]))
-        self.assertEqual(seen, [("a", 1), ("b", 2), ("a", 3), ("b", 4)])
+        self.assertEqual(seen, [("slot_a", 1), ("slot_b", 2), ("slot_a", 3), ("slot_b", 4)])
         info = self.reboot().replies("INFO")[0]
         self.assertEqual((info["settings"]["source"], info["settings"]["seq"]), ("slot_b", 4))
         self.assertEqual(self.d.config()["actuation"], 1.6)
@@ -308,11 +308,11 @@ class TestPersistence(unittest.TestCase):
         self.assertIn("slot_b_newer_schema", info["settings"]["load_errors"])
         self.one("SET_ACTUATION 2.50")
         r = self.one("SAVE")
-        self.assertEqual(r["slot"], "a")                # the newer record is not overwritten...
+        self.assertEqual(r["slot"], "slot_a")           # the newer record is not overwritten...
         self.assertEqual(self.sector(1), newer)
         self.assertGreater(r["seq"], 7)
         self.one("SET_ACTUATION 3.00")
-        self.assertEqual(self.one("SAVE")["slot"], "b") # ...until the user saves a second time
+        self.assertEqual(self.one("SAVE")["slot"], "slot_b")  # ...until the user saves a second time
 
     # -- migration ----------------------------------------------------------------------------
 
@@ -455,6 +455,12 @@ class TestCalibrationLifecycle(unittest.TestCase):
         r = self.one("CAL CANCEL")
         self.assertEqual((r["phase"], r["output"]["enabled"], r["output"]["reason"]), ("cancelled", True, "forced"))
         self.assertEqual(self.one("INFO")["calibration"]["state"], "missing")
+        # With no run active there is nothing to finish (not "incomplete" with an empty list)
+        r = self.one("CAL FINISH")
+        self.assertEqual((r["code"], r["phase"], "missing" in r), ("not_allowed", "cancelled", False))
+        # Cancelling again is harmless and leaves the output as it is
+        r = self.one("CAL CANCEL")
+        self.assertEqual((r["status"], r["output"]["reason"]), ("ok", "forced"))
 
     def test_noisy_rest_fails_the_rest_phase_and_restores_output(self):
         self.one("SET_HID 1 FORCE")

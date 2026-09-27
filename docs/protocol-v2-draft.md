@@ -35,7 +35,7 @@ calibration change and must be feature-detected through `INFO.features`.
 | `PING` | `type:"pong"` |
 | `INFO` (alias `HELLO`) | `type:"info", device:"DriftPad", hw, fw, protocol:2, build, build_date, features[], limits{actuation{min,max,default,step}, rt_sens{...}, layers, keys, label_max, label_chars, code_max, line_max, stream_hz_max}, calibration{state}, output{enabled, reason, active_keys[], suppressed_keys[], overflow, delivery}, settings{dirty, source, seq, load_errors[]}, uptime_ms` |
 | `GET_CONFIG` | `type:"config", actuation, rt_sens, rt_enabled, active_layer, boot_output, dirty, settings_seq, layers[3][16]{idx, code, label}` |
-| `STATUS` | `type:"status", active_layer, last_key, keys[16]{idx, pressed, travel, label}, output{...}, sim_mask, dirty` |
+| `STATUS` | `type:"status", active_layer, last_key, keys[16]{idx, pressed, travel, label}, output{...}, calibration{state}, sim_mask, dirty` |
 | `STREAM <0|1> [hz]` | `streaming, hz`; then `{"type":"telemetry","seq","t","layer","pressed"(bitmask),"active"(bitmask),"sim"(bitmask),"travel"[16 × cmm ints],"dirty"}` at `hz` (default 30, max 60). Streaming stops when the host closes the port. |
 | `SET_ACTUATION <mm>` | `actuation` + applied/persisted/dirty |
 | `SET_RT_SENS <mm>` | `rt_sens` + applied/persisted/dirty |
@@ -46,7 +46,7 @@ calibration change and must be feature-detected through `INFO.features`.
 | `SAVE` | `persisted:true, dirty:false, duration_ms`, or error `flash_error`/`flash_verify_failed` with `persisted:false` |
 | `REVERT` | `applied, persisted, dirty` — reloads the saved settings; `not_allowed` when nothing is saved |
 | `RESET` | `applied:true, persisted:false, dirty:true` — factory keymaps and settings, not saved |
-| `CALIBRATE` | legacy re-zero of every key's rest reading; `applied:true, persisted:false` |
+| `CALIBRATE` | quick re-zero of every key's rest reading; `applied, persisted, dirty, calibration` (state name), or `keys_not_at_rest` with `keys:[...]` |
 | `SIM <key> <mm>` / `SIM <key> OFF` / `SIM OFF` | `type:"sim_event", key, travel, pressed, sim_mask` — simulated keys never produce keyboard output |
 | `SCAN_RATE` | `type:"scan_rate", hz, max_gap_us` |
 | `TIMING [RESET]` | `type:"timing", ...` |
@@ -65,16 +65,18 @@ Present only when `INFO.features` contains `guided_calibration` / `boot_output` 
 - `INFO.calibration`: `{"state":"valid|missing|invalid|in_progress","keys_valid":n,"held_at_boot":[keys],"drift":[keys],"faults":[keys]}`.
 - `INFO.output.reason`: `enabled`, `disabled_default`, `calibration_missing`, `calibration_invalid`,
   `calibration_in_progress`, `user_disabled`, `forced`.
-- `SET_HID 1` without `FORCE` → error `calibration_required` unless calibration is valid.
+- `SET_HID 1` without `FORCE` → error `calibration_required` (with `calibration`: the state name) unless calibration is valid.
 - `SET_BOOT_OUTPUT <bool>` → `boot_output` + applied/persisted/dirty. With it on and calibration
   valid, keyboard output starts enabled at power-up (keys held at power-up stay suppressed until
   released).
-- `RESET ALL` → like `RESET`, and calibration becomes `missing` (keyboard output disabled).
+- `RESET ALL` → like `RESET`, and calibration becomes `missing` (keyboard output disabled). Both report `all`.
 - `CAL START` → `{"phase":"rest","rest_ms":500}`; keyboard output is suspended.
   Events: `{"type":"cal","phase":"rest|travel|done|failed|cancelled","rest_ok":[keys],"rest_failed":[keys],"travel_done":[keys],"elapsed_ms":n}`.
   Rest phase: keys untouched for 500 ms. Travel phase: press each key fully and release it.
 - `CAL STATUS` → `type:"cal"` with the same fields.
-- `CAL FINISH` → `applied:true, persisted:false, dirty:true, calibration{state:"valid"}` or error
-  `calibration_incomplete` with `missing:[keys]`. Save with `SAVE`.
-- `CAL CANCEL` → `phase:"cancelled"`; the previous calibration and output state are restored.
-- `SAVE` additionally reports `slot` and `seq`; `INFO.settings.source` becomes `slot_a|slot_b|legacy_v1|defaults`.
+- `CAL FINISH` → `applied:true, persisted:false, dirty:true, calibration{state:"valid"}, output{...}`, or error
+  `calibration_incomplete` with `missing:[keys]` and `phase` while a run is not complete, or error
+  `not_allowed` with `phase` when no run is active. Save with `SAVE`.
+- `CAL CANCEL` → `phase:"cancelled", output{...}`; the previous calibration and output state are
+  restored. Accepted (and harmless) when no run is active.
+- `SAVE` additionally reports `slot` (`slot_a|slot_b`, the same names as `INFO.settings.source`) and `seq`; `INFO.settings.source` becomes `slot_a|slot_b|legacy_v1|defaults`.

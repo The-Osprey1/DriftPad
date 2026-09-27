@@ -419,7 +419,8 @@ HandlerResult cmdSave(const Args&, Reply& r, void*) {
     }
     JsonWriter& w = r.ok();
     w.key("persisted").boolean(true).key("dirty").boolean(configIsDirty());
-    w.key("slot").str(sr.slot == 0 ? "a" : "b").key("seq").u32(sr.seq);
+    // Same names as INFO.settings.source, so a client can compare the two directly.
+    w.key("slot").str(settingsSourceName(sr.slot == 0 ? SettingsSource::SlotA : SettingsSource::SlotB)).key("seq").u32(sr.seq);
     w.key("duration_ms").u32((sr.durationUs + 500) / 1000);
     return HandlerResult::Done;
 }
@@ -523,7 +524,13 @@ HandlerResult cmdCal(const Args& a, Reply& r, void*) {
     if (proto::keywordIs(a[0], "finish")) {
         CalibrationData data;
         uint16_t missing = 0;
-        if (!Calibration::isActive() || !Calibration::finish(data, missing)) {
+        if (!Calibration::isActive()) {
+            // Nothing to finish (never started, cancelled, failed or already finished)
+            JsonWriter& w = r.error(err::NOT_ALLOWED, "no calibration is running; start one with CAL START");
+            w.key("phase").str(Calibration::phaseName(Calibration::progress().phase));
+            return HandlerResult::Done;
+        }
+        if (!Calibration::finish(data, missing)) {
             JsonWriter& w = r.error(err::CALIBRATION_INCOMPLETE,
                                     "every key must be pressed to the bottom and released once");
             writeKeyList(w, "missing", missing);
