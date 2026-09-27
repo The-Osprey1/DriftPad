@@ -8,6 +8,7 @@
 #include "keyboard_output.h"
 #include "encoder_menu.h"
 #include "pins.h"
+#include "display_link.h"
 
 extern "C" void host_clock_set_us(uint64_t us);
 extern "C" void host_clock_advance_us(uint64_t us);
@@ -60,6 +61,15 @@ int   vd_encoder_apply(int page, int delta) { return encoderMenuApply((MenuMode)
 
 extern "C" int vd_normalize_label(const char* in, char* out5) {
     return configNormalizeLabel(in, out5) ? 1 : 0;
+}
+
+// What core 1 would draw: the newest published display snapshot (1), or 0 before the first publish
+extern "C" int vd_display_snapshot(display_link::Snapshot* out) {
+    return display_link::read(*out) ? 1 : 0;
+}
+extern "C" void vd_display_stats(uint32_t out[4]) {
+    display_link::Stats s = display_link::stats();
+    out[0] = s.published; out[1] = s.reads; out[2] = s.retries; out[3] = s.staleFrames;
 }
 
 extern "C" int vd_cal_key_plausible(int rest, int range, int polarity) {

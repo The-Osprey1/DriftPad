@@ -56,7 +56,8 @@ public:
     // Simulation / testing injection
     bool injectSimulatedTravel(float mm);
 
-    // Cross-core edge counters for lock-free display rendering (Core 0 writes, Core 1 reads)
+    // Edge counters (monotonic modulo 256). Core 0 copies them into the display snapshot
+    // (display_publish.cpp); core 1 never reads a HallKey.
     uint8_t getPressCount() const { return _pressCount; }
     uint8_t getReleaseCount() const { return _releaseCount; }
 

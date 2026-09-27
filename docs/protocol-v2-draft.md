@@ -51,7 +51,7 @@ calibration change and must be feature-detected through `INFO.features`.
 | `SCAN_RATE` | `type:"scan_rate", hz, max_gap_us` |
 | `TIMING [RESET]` | `type:"timing", ...` |
 | `RAW <key>` | `key, samples:1000, rate_hz`; then `{"type":"raw","key","rate_hz","offset","total","samples"[<=100]}` events |
-| `FULLSCREEN [bool]`, `SCREENSAVER`, `ANIM [0-5]`, `SLEEP`, `WAKE`, `OLED_TEST`, `OLED_SCAN` | display state fields; `OLED_SCAN` → `devices[]` |
+| `FULLSCREEN [bool]`, `SCREENSAVER`, `ANIM [0-5]`, `SLEEP`, `WAKE`, `OLED_TEST`, `OLED_SCAN` | display state fields, answered at once (the display core applies them within a frame). `OLED_TEST` (pattern shown for 2 s) and `OLED_SCAN` (`devices[]`, at most 8, plus `more` when others answered) reply once the display core has done it; error `display_timeout` after 1.5 s. Other commands are answered meanwhile; a second deferred command gets `busy`. |
 | `BOOTSEL` | `bootsel:true`, then the device reboots into its USB bootloader |
 
 Label rule (firmware and configurator must agree; vectors in `tests/fixtures/label_vectors.json`):

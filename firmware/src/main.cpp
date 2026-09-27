@@ -5,6 +5,7 @@
 #include "hall.h"
 #include "encoder.h"
 #include "oled.h"
+#include "display_publish.h"
 #include "config.h"
 #include "keyboard_output.h"
 #include "commands.h"
@@ -44,10 +45,16 @@ SerialRx   s_rx;
 SerialSink s_sink;
 bool       s_hostConnected = false;
 
-// Encoder edits are saved once the knob has been still this long, so a spin costs one flash write
+// Encoder edits are saved once the knob has been still this long, so a spin costs one flash write.
+// A save pauses scanning and USB for the flash erase and program (see docs/scheduling.md), so it
+// also waits until no key has changed state for KEYS_QUIET_MS: never in the middle of typing. A
+// key held down without changing does not delay it.
 constexpr uint32_t ENCODER_SAVE_DELAY_MS = 3000;
+constexpr uint32_t KEYS_QUIET_MS = 1000;
 bool s_encoderSavePending = false;
 uint32_t s_lastEncoderEdit = 0;
+uint16_t s_lastPressedMask = 0;
+uint32_t s_lastKeyChange = 0;
 
 void serviceHostConnection() {
     bool connected = (bool)Serial;
@@ -89,6 +96,8 @@ void setup() {
 
     commands::init(s_tx, s_timing);
     s_encoderSavePending = false;
+    s_lastPressedMask = 0;
+    s_lastKeyChange = millis();
     s_hostConnected = false;
     s_tx.clear();
     s_tx.resetStats();
@@ -103,7 +112,7 @@ void setup() {
     HallManager::measureRest(rest, calib::BOOT_SAMPLES);
     commands::onBoot(Calibration::applyAtBoot(configGet().calibration, rest));
 
-    oledUpdate(true);
+    displayPublish();   // core 1 keeps the splash until the first snapshot
     commands::queueBootEvent();
     s_nextScanUs = micros();
 }
@@ -123,9 +132,18 @@ void loop() {
         HallManager::updateAll();
         commands::onScan();
         s_timing.scanEnd(micros());
+        {
+            Timing::Scoped t(s_timing, Timing::Op::Publish);
+            displayPublish();
+        }
     }
 
     uint32_t nowMs = millis();
+    const uint16_t pressed = HallManager::pressedMask();
+    if (pressed != s_lastPressedMask) {
+        s_lastPressedMask = pressed;
+        s_lastKeyChange = nowMs;
+    }
 
     KeyboardOutput::service();
     HallManager::simService(nowMs);
@@ -153,7 +171,8 @@ void loop() {
     if (encoderWasClicked()) {
         oledCycleMenu();
     }
-    if (s_encoderSavePending && (nowMs - s_lastEncoderEdit) >= ENCODER_SAVE_DELAY_MS) {
+    if (s_encoderSavePending && (nowMs - s_lastEncoderEdit) >= ENCODER_SAVE_DELAY_MS &&
+        (nowMs - s_lastKeyChange) >= KEYS_QUIET_MS) {
         s_encoderSavePending = false;
         Timing::Scoped t(s_timing, Timing::Op::Save);
         configSave();
@@ -165,6 +184,4 @@ void loop() {
         ledState = !ledState;
         digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
     }
-
-    oledUpdate(false);
 }

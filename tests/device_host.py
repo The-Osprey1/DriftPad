@@ -101,15 +101,32 @@ CURRENT_FIRMWARE = [
     "main.cpp", "commands.cpp", "config.cpp", "config_persist_ab.cpp", "settings_store.cpp", "hall.cpp", "encoder.cpp",
     "encoder_menu.cpp", "keycodes.cpp", "keyboard_output.cpp", "keyboard_output_hal_device.cpp",
     "calibration.cpp", "protocol.cpp", "line_reader.cpp", "json_writer.cpp", "tx_queue.cpp", "timing.cpp",
+    "display_link.cpp", "display_publish.cpp",
 ]
 
 
 def current_device() -> ctypes.CDLL:
-    if "current" in _libs:
-        return _libs["current"]
+    return _whole_image("current", hb.FIRMWARE_SRC / "main.cpp")
+
+
+def device_with_main_from(revision: str, shim_header: Path) -> ctypes.CDLL:
+    """The current firmware with main.cpp (the scheduler loop) as it was at `revision`, to show a
+    scheduling defect on the loop that had it. `shim_header` is force-included to declare what
+    that main.cpp still calls and the current headers no longer provide."""
+    root = hb.revision_files(revision, ["firmware/src/main.cpp"])
+    return _whole_image(f"main@{revision}", root / "firmware" / "src" / "main.cpp",
+                        extra_flags=("-include", str(shim_header)))
+
+
+def _whole_image(key: str, main_source: Path, extra_flags=()) -> ctypes.CDLL:
+    if key in _libs:
+        return _libs[key]
     hb.require_compiler()
-    sources = hb.firmware_sources(*CURRENT_FIRMWARE) +         hb.host_sources(*COMMON_FAKES, "fake_flash.cpp", "oled_stub.cpp", "vdev_harness.cpp") + hb.keyboard_library_sources()
-    path = hb.build("device_current", sources, hb.keyboard_include_dirs())
+    modules = [n for n in CURRENT_FIRMWARE if n != "main.cpp"]
+    sources = [main_source] + hb.firmware_sources(*modules) + \
+        hb.host_sources(*COMMON_FAKES, "fake_flash.cpp", "oled_stub.cpp", "vdev_harness.cpp") + hb.keyboard_library_sources()
+    name = "device_current" if key == "current" else "device_" + "".join(c if c.isalnum() else "_" for c in key)
+    path = hb.build(name, sources, hb.keyboard_include_dirs(), extra_flags=extra_flags)
     lib = ctypes.CDLL(str(path))
     _bind(lib, _COMMON_SIGS)
     f, i = ctypes.c_float, ctypes.c_int
@@ -118,7 +135,9 @@ def current_device() -> ctypes.CDLL:
         "vd_engine_actuation": ([], f), "vd_engine_rt_sens": ([], f), "vd_engine_rt_enabled": ([], i),
         "vd_active_layer": ([], i), "vd_engine_code": ([i], i), "vd_dirty": ([], i),
         "vd_output_enabled": ([], i), "vd_is_pressed": ([i], i), "vd_encoder_apply": ([i, i], i),
-        "oled_stub_wakes": ([], ctypes.c_uint32), "oled_stub_page": ([], i),
+        "oled_stub_wakes": ([], ctypes.c_uint32), "oled_stub_page": ([], i), "oled_stub_stall": ([i], None),
+        "vd_display_snapshot": ([ctypes.c_void_p], i), "vd_display_stats": ([ctypes.c_void_p], None),
+        "pin_fake_set": ([i, i], None),
         "vd_normalize_label": ([ctypes.c_char_p, ctypes.c_char_p], i),
         "vd_cal_key_plausible": ([i, i, i], i),
         "usbfake_host_state": ([ctypes.POINTER(ctypes.c_uint8)], None),
@@ -146,8 +165,8 @@ def current_device() -> ctypes.CDLL:
         for n, b in enumerate(image):
             sector[n] = b
     lib.write_legacy_image = write_legacy_image
-    lib.revision = "current"
-    _libs["current"] = lib
+    lib.revision = key
+    _libs[key] = lib
     return lib
 
 

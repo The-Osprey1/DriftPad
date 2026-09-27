@@ -56,6 +56,7 @@ SCRIPT = [
     "SIM 0 2.00", "SIM 0 9.00", "SIM 0 OFF", "SIM OFF", "SIM 16 1.00", "SIM NOPE",
     "TIMING", "TIMING RESET", "TIMING NOPE", "SCAN_RATE", "RAW 3", "RAW 16",
     "ANIM 2", "ANIM 9", "ANIM", "FULLSCREEN 1", "FULLSCREEN 0", "SCREENSAVER", "WAKE",
+    "OLED_TEST", "OLED_SCAN",   # deferred to core 1 on the firmware; the host stub serves at once
     # framing and ids
     "NOPE", "@bad!id INFO", "@x1", "@" + "a" * 13 + " INFO", "SET_KEY 0 0 98 " + "X" * 170, "@id-_9 PING",
 ]
@@ -159,7 +160,8 @@ class TestFakeDeviceMatchesFirmware(unittest.TestCase):
         seen_cmds = {r[0].get("cmd") for r in self.firmware if r}
         table = {"PING", "INFO", "GET_CONFIG", "STATUS", "STREAM", "SET_ACTUATION", "SET_RT_SENS", "SET_RT_ENABLE",
                  "SET_LAYER", "SET_KEY", "SET_HID", "SAVE", "REVERT", "RESET", "CALIBRATE", "CAL", "SET_BOOT_OUTPUT",
-                 "SIM", "SCAN_RATE", "TIMING", "RAW", "FULLSCREEN", "SCREENSAVER", "ANIM", "WAKE"}
+                 "SIM", "SCAN_RATE", "TIMING", "RAW", "FULLSCREEN", "SCREENSAVER", "ANIM", "WAKE",
+                 "OLED_TEST", "OLED_SCAN"}
         self.assertEqual(table - seen_cmds, set())
         codes = {r[0].get("code") for r in self.firmware if r and r[0].get("status") == "error"}
         expected = {"unknown_command", "bad_request", "bad_arguments", "bad_number", "out_of_range", "invalid_label",

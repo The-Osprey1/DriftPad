@@ -1,7 +1,7 @@
 #include "oled.h"
 #include "pins.h"
-#include "hall.h"
-#include "config.h"
+#include "display_link.h"
+#include "settings_limits.h"
 #include "encoder_menu.h"
 
 #include <Arduino.h>
@@ -16,7 +16,6 @@
 #else
 #include <Adafruit_SSD1306.h>
 #endif
-#include <pico/mutex.h>
 
 namespace {
 
@@ -35,27 +34,42 @@ Adafruit_SSD1306 s_display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define OLED_COLOR_INVERSE SSD1306_INVERSE
 #endif
 
-MenuMode s_currentMenu = MenuMode::ADJUST_RT;
+using display_link::Request;
+
+// Ownership (display_link.h): core 1 owns Wire, the display driver and everything drawn. Core 0
+// only changes the menu state below and posts requests. Each variable has one writing core:
+//   core 0 writes: s_currentMenu, s_menuLastActive, s_fullScreenMode, s_requestedAnim
+//   core 1 writes: everything else (the display state flags are read by core 0 for replies)
+volatile MenuMode s_currentMenu = MenuMode::ADJUST_RT;
+volatile uint32_t s_menuLastActive = 0;
+volatile bool s_fullScreenMode = true;
+int8_t s_requestedAnim = -1;          // core 0: the animation the next screensaver request asks for
+
 uint32_t s_lastRenderTime = 0;
 constexpr uint32_t RENDER_INTERVAL_MS = 33; // ~30 FPS
+constexpr uint32_t DISPLAY_RETRY_MS = 2000;  // display missing at power-up: probe again this often
+constexpr uint32_t TEST_PATTERN_MS = 2000;   // OLED_TEST keeps the pattern on screen this long
 
 volatile bool s_initialized = false;
-volatile bool s_core1Running = false;
-volatile bool s_forceRender = false;
-volatile bool s_fullScreenMode = true;
+bool s_forceRender = false;
 volatile bool s_screensaverActive = false;
 volatile bool s_displaySleeping = false;
-volatile int8_t s_forcedAnim = -1;
-volatile uint32_t s_screensaverStartTime = 0;
+int8_t s_forcedAnim = -1;
+uint32_t s_screensaverStartTime = 0;
 constexpr uint32_t SCREENSAVER_TIMEOUT_MS = 45000;       // 45s idle -> start screensaver
 constexpr uint32_t SCREENSAVER_ANIM_CYCLE_MS = 20000;   // 20s per animation cycle (0 -> 1 -> ... -> 5)
 constexpr uint32_t DISPLAY_SLEEP_TIMEOUT_MS = 3600000UL; // 1 hour (3600s) -> turn display OFF
-volatile uint32_t s_menuLastActive = 0;
-volatile uint32_t s_lastActivityTime = 0;
-volatile bool s_isDimmed = false;
-auto_init_mutex(s_wireMutex);
+uint32_t s_lastActivityTime = 0;
+uint32_t s_lastInitAttempt = 0;
+uint32_t s_testPatternUntil = 0;
+bool s_isDimmed = false;
 
-// Core 1 local copies of edge counters for lock-free display rendering
+// Core 1's copy of the snapshot core 0 publishes, taken at the start of every loop1() pass. The
+// renderer reads key state and settings only from here.
+display_link::Snapshot s_view;
+bool s_haveView = false;
+
+// Edge counters already shown by the key map
 static uint8_t s_lastPressCount[NUM_KEYS] = {0};
 static uint8_t s_lastReleaseCount[NUM_KEYS] = {0};
 static bool s_gridCountersSynced = false;
@@ -74,28 +88,28 @@ static uint32_t s_focusRestSince = 0;
 // Discards stale latches/counts accumulated while non-grid screens were visible
 void discardGridLatches() {
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
-        s_lastPressCount[i] = HallManager::getKey(i).getPressCount();
-        s_lastReleaseCount[i] = HallManager::getKey(i).getReleaseCount();
+        s_lastPressCount[i] = s_view.keys[i].pressCount;
+        s_lastReleaseCount[i] = s_view.keys[i].releaseCount;
         s_focusSeenPress[i] = s_lastPressCount[i];
     }
 }
 
 // Picks the focused key for this frame:
-//  1. A new actuation always takes focus (the key HallManager reports, else the deepest).
+//  1. A new actuation always takes focus (the last active key of the snapshot, else the deepest).
 //  2. A focused key keeps focus until it is released and has sat at rest for FOCUS_SETTLE_MS;
 //     other keys moving or going deeper never steal it.
 //  3. With no focus, the deepest key that is held or has moved FOCUS_ACQUIRE_MM acquires it.
 // The gap between FOCUS_REST_MM and FOCUS_ACQUIRE_MM keeps noise at rest from flickering it.
 void selectDisplayFocus(uint32_t now) {
     int8_t newPress = -1;
-    int8_t lastActive = HallManager::getLastActiveKey();
+    int8_t lastActive = s_view.lastActiveKey;
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
-        uint8_t presses = HallManager::getKey(i).getPressCount();
+        uint8_t presses = s_view.keys[i].pressCount;
         if (presses != s_focusSeenPress[i]) {
             s_focusSeenPress[i] = presses;
             if (newPress < 0 || i == lastActive ||
                 (newPress != lastActive &&
-                 HallManager::getKey(i).getTravelMm() > HallManager::getKey((uint8_t)newPress).getTravelMm())) {
+                 s_view.keys[i].travelMm > s_view.keys[(uint8_t)newPress].travelMm)) {
                 newPress = (int8_t)i;
             }
         }
@@ -107,8 +121,8 @@ void selectDisplayFocus(uint32_t now) {
     }
 
     if (s_focusKey >= 0) {
-        HallKey& k = HallManager::getKey((uint8_t)s_focusKey);
-        if (k.isPressed() || k.getTravelMm() > FOCUS_REST_MM) {
+        const display_link::KeyView& k = s_view.keys[(uint8_t)s_focusKey];
+        if (k.pressed || k.travelMm > FOCUS_REST_MM) {
             s_focusSettling = false;
             return;
         }
@@ -123,9 +137,9 @@ void selectDisplayFocus(uint32_t now) {
 
     float deepest = 0.0f;
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
-        HallKey& k = HallManager::getKey(i);
-        float mm = k.getTravelMm();
-        if ((k.isPressed() || mm >= FOCUS_ACQUIRE_MM) && (s_focusKey < 0 || mm > deepest)) {
+        const display_link::KeyView& k = s_view.keys[i];
+        float mm = k.travelMm;
+        if ((k.pressed || mm >= FOCUS_ACQUIRE_MM) && (s_focusKey < 0 || mm > deepest)) {
             s_focusKey = (int8_t)i;
             deepest = mm;
         }
@@ -321,13 +335,13 @@ void renderSafeZoneScreen() {
     s_display.setCursor(2, 27);
     s_display.print("DRIFTPAD");
 
-    uint8_t curLayer = configGet().activeLayer;
+    uint8_t curLayer = s_view.activeLayer;
     s_display.setCursor(54, 27);
     if (curLayer == 0) s_display.print("L0:NUM");
     else if (curLayer == 1) s_display.print("L1:NAV");
     else s_display.print("L2:GAME");
 
-    const char* rtModeStr = HallKey::isRapidTrigger() ? "RAPID" : "NORM";
+    const char* rtModeStr = s_view.rapidTrigger ? "RAPID" : "NORM";
     int16_t rtModeW = (int16_t)(strlen(rtModeStr) * 6 - 1);
     s_display.setCursor(128 - rtModeW, 27); // Right-aligned to x=127
     s_display.print(rtModeStr);
@@ -342,19 +356,19 @@ void renderSafeZoneScreen() {
     if (s_currentMenu == MenuMode::ADJUST_ACTUATION) s_display.print(">");
     else s_display.print(" ");
     s_display.print("Ac:");
-    s_display.print(HallKey::getActuationPoint(), 1);
+    s_display.print(s_view.actuationMm, 1);
 
     s_display.setCursor(47, 38);
     if (s_currentMenu == MenuMode::ADJUST_RT) s_display.print(">");
     else s_display.print(" ");
     s_display.print("RT:");
-    s_display.print(HallKey::getRtSensitivity(), 2);
+    s_display.print(s_view.rtSensMm, 2);
 
     // Line 2: Mode Toggle & Layer Select
     s_display.setCursor(2, 46);
     if (s_currentMenu == MenuMode::TOGGLE_RT) s_display.print(">");
     else s_display.print(" ");
-    s_display.print(HallKey::isRapidTrigger() ? "RT:ON" : "RT:OFF");
+    s_display.print(s_view.rapidTrigger ? "RT:ON" : "RT:OFF");
 
     s_display.setCursor(47, 46);
     if (s_currentMenu == MenuMode::CYCLE_LAYER) s_display.print(">");
@@ -376,7 +390,7 @@ void renderSafeZoneScreen() {
             int16_t bx = GRID_X + col * (BOX_W + GAP_X);
             int16_t by = GRID_Y + row * (BOX_H + GAP_Y);
 
-            if (HallManager::getKey(keyIdx).isPressed()) {
+            if (s_view.keys[keyIdx].pressed) {
                 s_display.fillRect(bx, by, BOX_W, BOX_H, OLED_COLOR_WHITE);
             } else {
                 s_display.drawRect(bx, by, BOX_W, BOX_H, OLED_COLOR_WHITE);
@@ -388,16 +402,16 @@ void renderSafeZoneScreen() {
     s_display.drawFastHLine(0, 51, 128, OLED_COLOR_WHITE);
 
     // 5. Live Analog Depth Gauge (Bottom, Y: 53..63)
-    int8_t lastKey = HallManager::getLastActiveKey();
+    int8_t lastKey = s_view.lastActiveKey;
     s_display.setCursor(3, 53);
     if (lastKey >= 0 && lastKey < NUM_KEYS) {
-        HallKey& k = HallManager::getKey((uint8_t)lastKey);
-        s_display.print(k.getLabel());
+        const display_link::KeyView& k = s_view.keys[(uint8_t)lastKey];
+        s_display.print(k.label);
         s_display.print(":");
-        s_display.print(displayTravelMm((uint8_t)lastKey, k.getTravelMm()), 1);
+        s_display.print(displayTravelMm((uint8_t)lastKey, k.travelMm), 1);
         s_display.print("mm");
 
-        int16_t barW = (int16_t)((k.getTravelMm() / 4.0f) * 122.0f);
+        int16_t barW = (int16_t)((k.travelMm / 4.0f) * 122.0f);
         if (barW < 0) barW = 0;
         if (barW > 122) barW = 122;
         s_display.drawRect(2, 59, 124, 4, OLED_COLOR_WHITE);
@@ -418,9 +432,7 @@ void renderSafeZoneScreen() {
 
     discardGridLatches();
 
-    mutex_enter_blocking(&s_wireMutex);
     s_display.display();
-    mutex_exit(&s_wireMutex);
 }
 
 const char* const MENU_TITLES[] = {"RT SENSITIVITY", "ACTUATION POINT", "RAPID TRIGGER", "ACTIVE LAYER"};
@@ -491,19 +503,19 @@ void renderMenuOverlay() {
 
     switch (s_currentMenu) {
         case MenuMode::ADJUST_RT: {
-            drawValueWithUnit(String(HallKey::getRtSensitivity(), 2).c_str(), "mm", 26);
-            drawMenuSlider((HallKey::getRtSensitivity() - HallKey::RT_SENS_MIN_MM) /
-                           (HallKey::RT_SENS_MAX_MM - HallKey::RT_SENS_MIN_MM), 4);
+            drawValueWithUnit(String(s_view.rtSensMm, 2).c_str(), "mm", 26);
+            drawMenuSlider((s_view.rtSensMm - limits::cmmToMm(limits::RT_SENS_MIN_CMM)) /
+                           (limits::cmmToMm(limits::RT_SENS_MAX_CMM) - limits::cmmToMm(limits::RT_SENS_MIN_CMM)), 4);
             break;
         }
         case MenuMode::ADJUST_ACTUATION: {
-            drawValueWithUnit(String(HallKey::getActuationPoint(), 2).c_str(), "mm", 26);
-            drawMenuSlider((HallKey::getActuationPoint() - limits::cmmToMm(limits::ACTUATION_MIN_CMM)) /
+            drawValueWithUnit(String(s_view.actuationMm, 2).c_str(), "mm", 26);
+            drawMenuSlider((s_view.actuationMm - limits::cmmToMm(limits::ACTUATION_MIN_CMM)) /
                            (limits::cmmToMm(limits::ACTUATION_MAX_CMM) - limits::cmmToMm(limits::ACTUATION_MIN_CMM)), 4);
             break;
         }
         case MenuMode::TOGGLE_RT: {
-            bool on = HallKey::isRapidTrigger();
+            bool on = s_view.rapidTrigger;
             const char* state = on ? "ON" : "OFF";
             int16_t x = 64 - (textWidth(state, 2) + 6 + 24) / 2;
             s_display.setTextSize(2);
@@ -514,13 +526,13 @@ void renderMenuOverlay() {
             break;
         }
         case MenuMode::CYCLE_LAYER: {
-            uint8_t cur = configGet().activeLayer;
+            uint8_t cur = s_view.activeLayer;
             printCentered(layerName(cur), 64, 26, 2);
 
             // Layer chips: the active one is inverted
             char chip[3];
-            for (uint8_t i = 0; i < NUM_LAYERS; ++i) {
-                int16_t bx = 64 - (NUM_LAYERS * 20 - 2) / 2 + i * 20;
+            for (uint8_t i = 0; i < limits::NUM_LAYERS; ++i) {
+                int16_t bx = 64 - (limits::NUM_LAYERS * 20 - 2) / 2 + i * 20;
                 if (i == cur) {
                     s_display.fillRoundRect(bx, 44, 18, 10, 2, OLED_COLOR_WHITE);
                     s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
@@ -591,8 +603,8 @@ void drawKeyScreenHeader(uint8_t layer, bool showName) {
         s_display.setCursor(chipW + 12, 0);
         s_display.print(layerName(layer));
     }
-    if (HallKey::isRapidTrigger()) {
-        printRight((String("RT ") + String(HallKey::getRtSensitivity(), 2) + "mm").c_str(), 127, 0);
+    if (s_view.rapidTrigger) {
+        printRight((String("RT ") + String(s_view.rtSensMm, 2) + "mm").c_str(), 127, 0);
     } else {
         printRight("RT OFF", 127, 0);
     }
@@ -651,7 +663,7 @@ void drawTravelScale(float travelMm) {
     for (uint8_t mm = 0; mm <= 4; ++mm) {
         s_display.drawPixel(scaleX(mm), SCALE_Y + 4, OLED_COLOR_WHITE);
     }
-    int16_t ax = scaleX(HallKey::getActuationPoint());
+    int16_t ax = scaleX(s_view.actuationMm);
     bool filledPast = travelMm > 0.0f && ax <= fillX;
     s_display.drawFastVLine(ax, SCALE_Y, 4, filledPast ? OLED_COLOR_BLACK : OLED_COLOR_WHITE);
     s_display.drawPixel(ax, SCALE_Y + 4, OLED_COLOR_WHITE);
@@ -675,7 +687,7 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus) {
             continue;
         }
         s_display.drawRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
-        float mm = HallManager::getKey(i).getTravelMm();
+        float mm = s_view.keys[i].travelMm;
         if (mm >= FOCUS_REST_MM) {
             int16_t rows = (int16_t)(mm / SCALE_MAX_MM * 5.0f + 0.5f);
             if (rows < 1) rows = 1;
@@ -701,9 +713,7 @@ void renderFullScreen() {
     if ((millis() - s_menuLastActive) < 2800) {
         renderMenuOverlay();
         discardGridLatches();
-        mutex_enter_blocking(&s_wireMutex);
         s_display.display();
-        mutex_exit(&s_wireMutex);
         return;
     }
 
@@ -719,24 +729,24 @@ void renderFullScreen() {
     // A release and re-press inside one frame shows one un-actuated frame so RT resets stay visible.
     bool focusActuated = false;
     if (focus >= 0) {
-        HallKey& k = HallManager::getKey((uint8_t)focus);
-        bool pressChanged = k.getPressCount() != s_lastPressCount[(uint8_t)focus];
-        bool releaseChanged = k.getReleaseCount() != s_lastReleaseCount[(uint8_t)focus];
-        focusActuated = (k.isPressed() || pressChanged) && !(k.isPressed() && releaseChanged);
+        const display_link::KeyView& k = s_view.keys[(uint8_t)focus];
+        bool pressChanged = k.pressCount != s_lastPressCount[(uint8_t)focus];
+        bool releaseChanged = k.releaseCount != s_lastReleaseCount[(uint8_t)focus];
+        focusActuated = (k.pressed || pressChanged) && !(k.pressed && releaseChanged);
     }
 
     // Keypad map state per key, then consume the latches
     bool actuated[NUM_KEYS];
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
-        HallKey& k = HallManager::getKey(i);
-        uint8_t curPress = k.getPressCount();
-        uint8_t curRelease = k.getReleaseCount();
+        const display_link::KeyView& k = s_view.keys[i];
+        uint8_t curPress = k.pressCount;
+        uint8_t curRelease = k.releaseCount;
         bool pressChanged = (curPress != s_lastPressCount[i]);
         bool releaseChanged = (curRelease != s_lastReleaseCount[i]);
-        if (k.isPressed() && releaseChanged) {
+        if (k.pressed && releaseChanged) {
             actuated[i] = false;   // RT re-press within one frame: show the reset
         } else {
-            actuated[i] = k.isPressed() || pressChanged;   // held, or a tap finished between frames
+            actuated[i] = k.pressed || pressChanged;   // held, or a tap finished between frames
         }
         s_lastPressCount[i] = curPress;
         s_lastReleaseCount[i] = curRelease;
@@ -744,11 +754,11 @@ void renderFullScreen() {
 
     s_display.clearDisplay();
     s_display.setTextColor(OLED_COLOR_WHITE);
-    uint8_t layer = configGet().activeLayer;
+    uint8_t layer = s_view.activeLayer;
     drawKeyScreenHeader(layer, focus >= 0);
 
     if (focus >= 0) {
-        HallKey& k = HallManager::getKey((uint8_t)focus);
+        const display_link::KeyView& k = s_view.keys[(uint8_t)focus];
         if (focusActuated) {
             s_display.fillRect(1, 9, textWidth("ACTUATED") + 4, 9, OLED_COLOR_WHITE);
             s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
@@ -759,9 +769,9 @@ void renderFullScreen() {
             s_display.setCursor(3, 10);
             s_display.print("TRAVEL");
         }
-        drawKeyBox(k.getLabel(), focusActuated);
-        drawTravelScale(k.getTravelMm());
-        printRight((String(displayTravelMm((uint8_t)focus, k.getTravelMm()), 1) + "mm").c_str(),
+        drawKeyBox(k.label, focusActuated);
+        drawTravelScale(k.travelMm);
+        printRight((String(displayTravelMm((uint8_t)focus, k.travelMm), 1) + "mm").c_str(),
                    KEY_BOX_X + KEY_BOX_W - 1, 57);
     } else {
         s_display.setCursor(3, 10);
@@ -778,16 +788,14 @@ void renderFullScreen() {
 
         s_display.setCursor(1, 38);
         s_display.print("ACT");
-        printRight((String(HallKey::getActuationPoint(), 1) + "mm").c_str(), KEY_BOX_X + KEY_BOX_W - 1, 38);
+        printRight((String(s_view.actuationMm, 1) + "mm").c_str(), KEY_BOX_X + KEY_BOX_W - 1, 38);
         drawTravelScale(0.0f);
         printRight("4mm", KEY_BOX_X + KEY_BOX_W - 1, 57);
     }
 
     drawKeypadMap(actuated, focus);
 
-    mutex_enter_blocking(&s_wireMutex);
     s_display.display();
-    mutex_exit(&s_wireMutex);
 }
 
 void updateFloatingBadge(const char* text) {
@@ -1217,9 +1225,7 @@ void renderScreensaver() {
 
     updateFloatingBadge(badge);
 
-    mutex_enter_blocking(&s_wireMutex);
     s_display.display();
-    mutex_exit(&s_wireMutex);
 }
 
 void renderScreen() {
@@ -1234,12 +1240,13 @@ void renderScreen() {
     }
 }
 
-} // namespace
+// ============================================================================================
+// Core 1: Wire, the display, the idle timers and every frame. Nothing here runs on core 0.
+// ============================================================================================
 
-void oledInit() {
-    // 1. Hardware I2C Bus Recovery / Clear Sequence (NXP I2C Bus Specification UM10204):
-    // If a previous crash left SDA held low by the display controller,
-    // pulse SCL 9 times to force the slave to release the SDA line, then issue STOP.
+// Frees a bus a previous crash left with SDA held low (NXP UM10204: nine SCL pulses, then a
+// STOP condition), then starts Wire at 100 kHz.
+void initI2cBus() {
     pinMode(OLED_SDA_PIN, INPUT_PULLUP);
     pinMode(OLED_SCL_PIN, OUTPUT);
     for (int i = 0; i < 9; i++) {
@@ -1248,7 +1255,6 @@ void oledInit() {
         digitalWrite(OLED_SCL_PIN, LOW);
         delayMicroseconds(10);
     }
-    // Generate I2C STOP condition
     pinMode(OLED_SDA_PIN, OUTPUT);
     digitalWrite(OLED_SDA_PIN, LOW);
     delayMicroseconds(10);
@@ -1257,7 +1263,6 @@ void oledInit() {
     digitalWrite(OLED_SDA_PIN, HIGH);
     delayMicroseconds(10);
 
-    // 2. Initialize hardware I2C peripheral
     pinMode(OLED_SDA_PIN, INPUT_PULLUP);
     pinMode(OLED_SCL_PIN, INPUT_PULLUP);
     gpio_pull_up(OLED_SDA_PIN);
@@ -1268,47 +1273,254 @@ void oledInit() {
     Wire.begin();
     Wire.setClock(100000); // 100kHz standard mode for robust signal integrity
     Wire.setTimeout(50, true);
+}
 
-    delay(100);
+void drawSplash() {
+    s_display.clearDisplay();
+    s_display.setTextColor(OLED_COLOR_WHITE);
 
-    bool ok = initDisplayHardware();
+    if (s_fullScreenMode) {
+        s_display.drawRect(0, 0, 128, 64, OLED_COLOR_WHITE);
+        s_display.setTextSize(2);
+        s_display.setCursor(16, 8);
+        s_display.println("DRIFTPAD");
+        s_display.setTextSize(1);
+        s_display.setCursor(20, 28);
+        s_display.println("Rapid Trigger");
+        s_display.setCursor(14, 40);
+        s_display.println("128x64 OLED Mode");
+        s_display.setCursor(18, 52);
+        s_display.println("USB Connected");
+    } else {
+        // Safe splash screen in Y: 25..63
+        s_display.drawFastHLine(0, 25, 128, OLED_COLOR_WHITE);
+        s_display.setCursor(10, 29);
+        s_display.println("DRIFTPAD HE READY");
+        s_display.setCursor(10, 41);
+        s_display.println("Rapid Trigger Active");
+        s_display.setCursor(10, 52);
+        s_display.println("USB Config Connected");
+        s_display.drawRect(0, 25, 128, 39, OLED_COLOR_WHITE);
+        s_display.fillRect(0, 0, 128, 25, OLED_COLOR_BLACK);
+    }
 
-    if (ok) {
-        s_display.clearDisplay();
-        s_display.setTextColor(OLED_COLOR_WHITE);
+    s_display.display();
+}
 
-        if (s_fullScreenMode) {
-            s_display.drawRect(0, 0, 128, 64, OLED_COLOR_WHITE);
-            s_display.setTextSize(2);
-            s_display.setCursor(16, 8);
-            s_display.println("DRIFTPAD");
-            s_display.setTextSize(1);
-            s_display.setCursor(20, 28);
-            s_display.println("Rapid Trigger");
-            s_display.setCursor(14, 40);
-            s_display.println("128x64 OLED Mode");
-            s_display.setCursor(18, 52);
-            s_display.println("USB Connected");
-        } else {
-            // Safe splash screen in Y: 25..63
-            s_display.drawFastHLine(0, 25, 128, OLED_COLOR_WHITE);
-            s_display.setCursor(10, 29);
-            s_display.println("DRIFTPAD HE READY");
-            s_display.setCursor(10, 41);
-            s_display.println("Rapid Trigger Active");
-            s_display.setCursor(10, 52);
-            s_display.println("USB Config Connected");
-            s_display.drawRect(0, 25, 128, 39, OLED_COLOR_WHITE);
-            s_display.fillRect(0, 0, 128, 25, OLED_COLOR_BLACK);
+void drawTestPattern() {
+    s_display.clearDisplay();
+    s_display.fillRect(0, 25, 128, 39, OLED_COLOR_WHITE);
+    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
+    s_display.setTextSize(1);
+    s_display.setCursor(10, 32);
+    s_display.print("DRIFTPAD ACTIVE!");
+    s_display.setCursor(10, 46);
+    s_display.print("SSD1306 SAFE ZONE");
+    s_display.fillRect(0, 0, 128, 25, OLED_COLOR_BLACK);
+    s_display.display();
+    s_display.setTextColor(OLED_COLOR_WHITE);
+}
+
+// Probes every 7-bit address; the ones that ACK go to `found` (at most SCAN_MAX), returns the count
+uint8_t scanBus(uint8_t* found) {
+    uint8_t count = 0;
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) {
+            if (count < display_link::SCAN_MAX) found[count] = addr;
+            count++;
         }
+    }
+    return count;
+}
 
-        mutex_enter_blocking(&s_wireMutex);
-        s_display.display();
-        mutex_exit(&s_wireMutex);
+// Leaves sleep and the screensaver and restarts the idle timers. Key edges that happened while
+// the key map was not on screen are dropped; an awake map keeps its latches, so a quick tap
+// between two frames still shows while commands or the knob keep the display awake.
+void wakeDisplay(uint32_t now) {
+    const bool wasHidden = s_displaySleeping || s_screensaverActive;
+    s_lastActivityTime = now;
+    if (s_displaySleeping) {
+        if (s_initialized) s_display.ssd1306_command(SSD1306_DISPLAYON);
+        s_displaySleeping = false;
+    }
+    s_screensaverActive = false;
+    if (s_isDimmed) {
+        if (s_initialized) s_display.dim(false);
+        s_isDimmed = false;
+    }
+    if (wasHidden) discardGridLatches();
+    s_forceRender = true;
+}
 
-        s_lastRenderTime = millis();
+void sleepDisplay() {
+    s_displaySleeping = true;
+    s_screensaverActive = false;
+    if (!s_initialized) return;
+    s_display.clearDisplay();
+    s_display.display();
+    s_display.ssd1306_command(SSD1306_DISPLAYOFF);
+}
+
+void startScreensaver(uint32_t now, int8_t anim) {
+    if (s_displaySleeping) {
+        if (s_initialized) s_display.ssd1306_command(SSD1306_DISPLAYON);
+        s_displaySleeping = false;
+    }
+    s_forcedAnim = anim;
+    s_screensaverActive = true;
+    s_screensaverStartTime = now;
+    s_lastActivityTime = now;
+    s_forceRender = true;
+}
+
+// Serves what core 0 posted. Wake, sleep and screensaver change the same state, so they are
+// applied in the order they were posted.
+void serveRequests(uint32_t now) {
+    struct Item { Request r; uint32_t ticket; uint32_t stamp; int32_t arg; };
+    Item items[3];
+    uint8_t n = 0;
+    for (Request r : { Request::Wake, Request::Sleep, Request::Screensaver }) {
+        Item it = { r, 0, 0, 0 };
+        it.ticket = display_link::pending(r, &it.arg, &it.stamp);
+        if (it.ticket == 0) continue;
+        uint8_t j = n++;
+        while (j > 0 && items[j - 1].stamp > it.stamp) {
+            items[j] = items[j - 1];
+            --j;
+        }
+        items[j] = it;
+    }
+    for (uint8_t i = 0; i < n; ++i) {
+        switch (items[i].r) {
+            case Request::Wake:        wakeDisplay(now); break;
+            case Request::Sleep:       sleepDisplay(); break;
+            case Request::Screensaver: startScreensaver(now, (int8_t)items[i].arg); break;
+            default: break;
+        }
+        display_link::markServed(items[i].r, items[i].ticket);
+    }
+
+    uint32_t t = display_link::pending(Request::TestPattern);
+    if (t != 0) {
+        if (s_initialized) {
+            drawTestPattern();
+            s_testPatternUntil = now + TEST_PATTERN_MS;
+        }
+        display_link::markServed(Request::TestPattern, t);
+    }
+    t = display_link::pending(Request::ScanBus);
+    if (t != 0) {
+        uint8_t found[display_link::SCAN_MAX];
+        uint8_t count = scanBus(found);
+        display_link::setScanResult(found, count);
+        display_link::markServed(Request::ScanBus, t);
+    }
+}
+
+} // namespace
+
+// RP2040 Core 1: runs in parallel with core 0 from power-up. The I2C transfer of a frame (~23 ms
+// at 100 kHz) and everything else about the display happen here, so core 0's 1 kHz scan never
+// waits for the bus.
+void setup1() {
+    initI2cBus();
+    delay(100);
+    s_lastInitAttempt = millis();
+    if (initDisplayHardware()) {
+        drawSplash();
         s_initialized = true;
     }
+    s_lastActivityTime = millis();
+    s_lastRenderTime = millis();
+}
+
+// A key counts as activity when it is pressed or has moved since the last check. A key
+// parked at a small resting offset is not activity, otherwise it would hold the display
+// awake forever and the screensaver and sleep timeouts would never run.
+constexpr float ACTIVITY_MOVE_MM = 0.15f;
+float s_activityRefTravel[NUM_KEYS] = {0};
+
+bool keysShowActivity() {
+    bool active = false;
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        const display_link::KeyView& k = s_view.keys[i];
+        float mm = k.travelMm;
+        if (fabsf(mm - s_activityRefTravel[i]) > ACTIVITY_MOVE_MM) {
+            s_activityRefTravel[i] = mm;
+            active = true;
+        }
+        if (k.pressed) {
+            active = true;
+        }
+    }
+    return active;
+}
+
+void loop1() {
+    const uint32_t now = millis();
+
+    if (display_link::read(s_view)) {
+        s_haveView = true;
+    } else if (s_haveView) {
+        display_link::noteStaleFrame();   // every copy raced a publish: draw last frame's data
+    }
+    serveRequests(now);
+
+    if (!s_initialized) {
+        if (now - s_lastInitAttempt >= DISPLAY_RETRY_MS) {
+            s_lastInitAttempt = now;
+            if (initDisplayHardware()) {
+                s_initialized = true;
+                s_forceRender = true;
+            }
+        }
+        delay(10);
+        return;
+    }
+    if (!s_haveView || (int32_t)(now - s_testPatternUntil) < 0) {
+        delay(2);   // splash (nothing published yet) or the test pattern stays on screen
+        return;
+    }
+
+    // Key activity wakes the display; idle starts the screensaver (45 s) and then sleep (1 hour)
+    if (keysShowActivity()) {
+        wakeDisplay(now);
+    } else {
+        uint32_t idleMs = now - s_lastActivityTime;
+        if (idleMs >= DISPLAY_SLEEP_TIMEOUT_MS) {
+            if (!s_displaySleeping) {
+                sleepDisplay();
+            }
+        } else if (!s_screensaverActive && (idleMs >= SCREENSAVER_TIMEOUT_MS)) {
+            startScreensaver(now, s_forcedAnim);
+        }
+    }
+
+    if (s_displaySleeping) {
+        delay(20);
+        return;
+    }
+
+    bool shouldRender = s_forceRender || ((now - s_lastRenderTime) >= RENDER_INTERVAL_MS);
+    if (shouldRender) {
+        s_forceRender = false;
+        s_lastRenderTime = now;
+        renderScreen();
+    } else {
+        delay(2);
+    }
+}
+
+// ============================================================================================
+// Core 0 API: the menu state and requests. Nothing below touches Wire or the display.
+// ============================================================================================
+
+void oledInit() {
+    s_currentMenu = MenuMode::ADJUST_RT;
+    s_menuLastActive = millis() - 10000;   // no menu card at power-up
+    s_fullScreenMode = true;
+    s_requestedAnim = -1;
 }
 
 // Encoder input that lands on a sleeping or screensaver display only wakes it. The rest of
@@ -1321,7 +1533,7 @@ static bool s_encoderWokeDisplay = false;
 static bool consumeEncoderWake() {
     uint32_t now = millis();
     if (s_displaySleeping || s_screensaverActive) {
-        oledWake();
+        display_link::post(Request::Wake);
         s_encoderWakeTime = now;
         s_encoderWokeDisplay = true;
         return true;
@@ -1339,8 +1551,7 @@ void oledCycleMenu() {
     uint8_t next = (static_cast<uint8_t>(s_currentMenu) + 1) % static_cast<uint8_t>(MenuMode::COUNT);
     s_currentMenu = static_cast<MenuMode>(next);
     s_menuLastActive = millis();
-    s_lastActivityTime = millis();
-    s_forceRender = true;
+    display_link::post(Request::Wake);
 }
 
 bool oledAdjustCurrentSetting(int32_t delta) {
@@ -1348,196 +1559,22 @@ bool oledAdjustCurrentSetting(int32_t delta) {
     if (consumeEncoderWake()) return false;
 
     s_menuLastActive = millis();
-    s_lastActivityTime = millis();
-
     bool changed = encoderMenuApply(s_currentMenu, delta);
-    s_forceRender = true;
+    display_link::post(Request::Wake);
     return changed;
-}
-
-void oledUpdate(bool force) {
-    if (force) {
-        s_forceRender = true;
-    }
-
-    // When Core 1 is active, display refresh runs asynchronously in loop1()
-    // so Core 0's 1000Hz ADC scanning loop is never blocked or starved.
-    if (!s_core1Running) {
-        uint32_t now = millis();
-
-        if (!s_initialized) {
-            if (initDisplayHardware()) {
-                s_initialized = true;
-                force = true;
-            } else {
-                return;
-            }
-        }
-
-        if (!force && (now - s_lastRenderTime) < RENDER_INTERVAL_MS) {
-            return;
-        }
-        s_lastRenderTime = now;
-        renderScreen();
-    }
-}
-
-// RP2040 Core 1 Multicore Execution:
-// Dedicates Core 1 to asynchronous OLED I2C rendering.
-// This completely offloads the ~23ms I2C display transfer from Core 0.
-void setup1() {
-    s_core1Running = true;
-}
-
-// A key counts as activity when it is pressed or has moved since the last check. A key
-// parked at a small resting offset is not activity, otherwise it would hold the display
-// awake forever and the screensaver and sleep timeouts would never run.
-constexpr float ACTIVITY_MOVE_MM = 0.15f;
-float s_activityRefTravel[NUM_KEYS] = {0};
-
-bool keysShowActivity() {
-    bool active = false;
-    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
-        HallKey& k = HallManager::getKey(i);
-        float mm = k.getTravelMm();
-        if (fabsf(mm - s_activityRefTravel[i]) > ACTIVITY_MOVE_MM) {
-            s_activityRefTravel[i] = mm;
-            active = true;
-        }
-        if (k.isPressed()) {
-            active = true;
-        }
-    }
-    return active;
-}
-
-void loop1() {
-    s_core1Running = true;
-
-    if (!s_initialized) {
-        delay(10);
-        return;
-    }
-
-    uint32_t now = millis();
-
-    // Check activity for auto-wake / auto-screensaver (45s idle) / auto-sleep (1 hour idle)
-    if (keysShowActivity()) {
-        oledWake();
-    } else {
-        uint32_t idleMs = now - s_lastActivityTime;
-        if (idleMs >= DISPLAY_SLEEP_TIMEOUT_MS) {
-            if (!s_displaySleeping) {
-                oledSleep();
-            }
-            delay(100);
-            return;
-        } else if (!s_screensaverActive && (idleMs >= SCREENSAVER_TIMEOUT_MS)) {
-            s_screensaverActive = true;
-            s_screensaverStartTime = now;
-        }
-    }
-
-    if (s_displaySleeping) {
-        delay(100);
-        return;
-    }
-
-    bool shouldRender = s_forceRender || ((now - s_lastRenderTime) >= RENDER_INTERVAL_MS);
-
-    if (shouldRender) {
-        s_forceRender = false;
-        s_lastRenderTime = now;
-        renderScreen();
-    } else {
-        delay(2);
-    }
-}
-
-void oledTestPattern() {
-    mutex_enter_blocking(&s_wireMutex);
-    s_display.clearDisplay();
-    s_display.fillRect(0, 25, 128, 39, OLED_COLOR_WHITE);
-    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    s_display.setTextSize(1);
-    s_display.setCursor(10, 32);
-    s_display.print("DRIFTPAD ACTIVE!");
-    s_display.setCursor(10, 46);
-    s_display.print("SSD1306 SAFE ZONE");
-    s_display.fillRect(0, 0, 128, 25, OLED_COLOR_BLACK);
-    s_display.display();
-    mutex_exit(&s_wireMutex);
-}
-
-uint8_t oledScanBus(uint8_t* found, uint8_t max) {
-    mutex_enter_blocking(&s_wireMutex);
-    uint8_t count = 0;
-    for (uint8_t addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        if (Wire.endTransmission() == 0) {
-            if (count < max) found[count] = addr;
-            count++;
-        }
-    }
-    mutex_exit(&s_wireMutex);
-    return count;
 }
 
 void oledSetFullScreen(bool enabled) {
     s_fullScreenMode = enabled;
-    s_forceRender = true;
+    display_link::post(Request::Wake);
 }
 
 bool oledIsFullScreen() {
     return s_fullScreenMode;
 }
 
-void oledSleep() {
-    s_displaySleeping = true;
-    s_screensaverActive = false;
-    mutex_enter_blocking(&s_wireMutex);
-    s_display.clearDisplay();
-    s_display.display();
-    s_display.ssd1306_command(SSD1306_DISPLAYOFF);
-    mutex_exit(&s_wireMutex);
-}
-
-bool oledIsSleeping() {
-    return s_displaySleeping;
-}
-
-void oledWake() {
-    s_lastActivityTime = millis();
-    if (s_displaySleeping) {
-        mutex_enter_blocking(&s_wireMutex);
-        s_display.ssd1306_command(SSD1306_DISPLAYON);
-        mutex_exit(&s_wireMutex);
-        s_displaySleeping = false;
-    }
-    if (s_screensaverActive) {
-        s_screensaverActive = false;
-    }
-    if (s_isDimmed) {
-        mutex_enter_blocking(&s_wireMutex);
-        s_display.dim(false);
-        mutex_exit(&s_wireMutex);
-        s_isDimmed = false;
-    }
-    discardGridLatches();
-    s_forceRender = true;
-}
-
 void oledTriggerScreensaver() {
-    if (s_displaySleeping) {
-        mutex_enter_blocking(&s_wireMutex);
-        s_display.ssd1306_command(SSD1306_DISPLAYON);
-        mutex_exit(&s_wireMutex);
-        s_displaySleeping = false;
-    }
-    s_screensaverActive = true;
-    s_screensaverStartTime = millis();
-    s_lastActivityTime = millis();
-    s_forceRender = true;
+    display_link::post(Request::Screensaver, s_requestedAnim);
 }
 
 bool oledIsScreensaverActive() {
@@ -1545,6 +1582,29 @@ bool oledIsScreensaverActive() {
 }
 
 void oledSetScreensaverAnim(int8_t animIdx) {
-    s_forcedAnim = animIdx;
-    s_forceRender = true;
+    s_requestedAnim = animIdx;
+}
+
+void oledWake() {
+    display_link::post(Request::Wake);
+}
+
+void oledSleep() {
+    display_link::post(Request::Sleep);
+}
+
+bool oledIsSleeping() {
+    return s_displaySleeping;
+}
+
+uint32_t oledPost(OledRequest r) {
+    return display_link::post(r == OledRequest::BusScan ? Request::ScanBus : Request::TestPattern);
+}
+
+bool oledRequestServed(OledRequest r, uint32_t ticket) {
+    return display_link::isServed(r == OledRequest::BusScan ? Request::ScanBus : Request::TestPattern, ticket);
+}
+
+uint8_t oledBusScanResult(uint8_t* found, uint8_t max) {
+    return display_link::scanResult(found, max);
 }

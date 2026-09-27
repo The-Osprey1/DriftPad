@@ -9,6 +9,7 @@
 #include "hall.h"
 #include "keyboard_output.h"
 #include "oled.h"
+#include "display_link.h"
 #include "settings_limits.h"
 
 namespace commands {
@@ -51,9 +52,33 @@ KeyboardOutput::Reason s_reasonBeforeCal = KeyboardOutput::Reason::DisabledDefau
 char s_eventBuf[proto::MAX_EVENT_LEN];
 proto::EventWriter s_events(s_eventBuf, sizeof(s_eventBuf));
 
-// Any command except the display-idle ones counts as user activity for the OLED, as in v1
+// Any command except the display-idle ones counts as user activity for the OLED, as in v1.
+// Posting the request is all core 0 does; core 1 wakes the display.
 void wakeDisplay() {
+    Timing::Scoped t(*s_timing, Timing::Op::DisplayRequest);
     oledWake();
+}
+
+// OLED_TEST and OLED_SCAN are served by core 1; their replies are deferred until it has.
+constexpr uint32_t DISPLAY_REPLY_TIMEOUT_MS = 1500;   // a scan of a stuck bus can take longer
+uint32_t s_displayTicket = 0;
+
+bool pollOledTest(Reply& r, void*) {
+    if (!oledRequestServed(OledRequest::TestPattern, s_displayTicket)) return false;
+    r.ok().key("display").str("test_pattern");
+    return true;
+}
+
+bool pollOledScan(Reply& r, void*) {
+    if (!oledRequestServed(OledRequest::BusScan, s_displayTicket)) return false;
+    uint8_t found[display_link::SCAN_MAX];
+    const uint8_t n = oledBusScanResult(found, sizeof(found));
+    JsonWriter& w = r.ok();
+    w.key("devices").beginArray();
+    for (uint8_t i = 0; i < n && i < sizeof(found); ++i) w.u32(found[i]);
+    w.endArray();
+    if (n > sizeof(found)) w.key("more").u32(n - sizeof(found));
+    return true;
 }
 
 void writeKeyList(JsonWriter& w, const char* key, uint16_t mask) {
@@ -707,20 +732,16 @@ HandlerResult cmdWake(const Args&, Reply& r, void*) {
 
 HandlerResult cmdOledTest(const Args&, Reply& r, void*) {
     wakeDisplay();
-    oledTestPattern();
-    r.ok().key("display").str("test_pattern");
-    return HandlerResult::Done;
+    s_displayTicket = oledPost(OledRequest::TestPattern);
+    return r.defer(pollOledTest, nullptr, DISPLAY_REPLY_TIMEOUT_MS, err::DISPLAY_TIMEOUT,
+                   "the display core did not draw the test pattern in time");
 }
 
 HandlerResult cmdOledScan(const Args&, Reply& r, void*) {
     wakeDisplay();
-    uint8_t found[16];
-    uint8_t n = oledScanBus(found, sizeof(found));
-    JsonWriter& w = r.ok();
-    w.key("devices").beginArray();
-    for (uint8_t i = 0; i < n && i < sizeof(found); ++i) w.u32(found[i]);
-    w.endArray();
-    return HandlerResult::Done;
+    s_displayTicket = oledPost(OledRequest::BusScan);
+    return r.defer(pollOledScan, nullptr, DISPLAY_REPLY_TIMEOUT_MS, err::DISPLAY_TIMEOUT,
+                   "the display core did not finish the I2C scan in time");
 }
 
 HandlerResult cmdBootsel(const Args&, Reply& r, void*) {
