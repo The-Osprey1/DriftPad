@@ -330,7 +330,11 @@ bool HallKey::runRapidTrigger() {
             _pressCount++;
             _everActuated = true;
             _peakDepthMm = _travelMm;
+            // Both held counters restart on a transition. update() tests them before it updates
+            // them, so a stale _unpressedSamples would run the comb filter over pre-press history
+            // on the next sample and fake a Rapid Trigger release (TC-18).
             _pressSamples = 0;
+            _unpressedSamples = 0;
             stateChanged = true;
         } else {
             if (_travelMm < _valleyDepthMm) {
@@ -361,6 +365,7 @@ bool HallKey::runRapidTrigger() {
             _releaseCount++;
             _valleyDepthMm = _travelMm;
             _unpressedSamples = 0;
+            _pressSamples = 0;
             stateChanged = true;
         }
     }

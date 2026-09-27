@@ -34,10 +34,40 @@ FIRMWARE_SRC = FIRMWARE_DIR / "src"
 HOST_DIR = TESTS_DIR / "firmware_host"
 CACHE_DIR = TESTS_DIR / ".host_build"
 
-# arduino-pico sources some tests compile or compare against (present when PlatformIO has
-# installed the framework for the firmware build).
-FRAMEWORK_DIR = Path(os.path.expanduser("~")) / ".platformio" / "packages" / "framework-arduinopico"
+# arduino-pico sources that keyboard tests compile unmodified (present once PlatformIO has
+# installed the framework for the firmware build; DRIFTPAD_ARDUINO_PICO overrides the location).
+FRAMEWORK_DIR = Path(os.environ.get("DRIFTPAD_ARDUINO_PICO") or
+                     Path(os.path.expanduser("~")) / ".platformio" / "packages" / "framework-arduinopico")
 HID_KEYBOARD_SRC = FRAMEWORK_DIR / "libraries" / "HID_Keyboard" / "src"
+KEYBOARD_SRC = FRAMEWORK_DIR / "libraries" / "Keyboard" / "src"
+TUSB_HID_SRC = FRAMEWORK_DIR / "libraries" / "tusb-hid" / "src"
+USB_HOST_STUBS = Path(__file__).resolve().parent / "firmware_host" / "usb_host"
+NO_FRAMEWORK_REASON = (
+    f"arduino-pico framework not found at {FRAMEWORK_DIR} (run a PlatformIO build once, or set "
+    "DRIFTPAD_ARDUINO_PICO); keyboard library tests not run"
+)
+
+
+def require_keyboard_library() -> None:
+    for d in (HID_KEYBOARD_SRC, KEYBOARD_SRC, TUSB_HID_SRC):
+        if not d.is_dir():
+            raise unittest.SkipTest(NO_FRAMEWORK_REASON)
+
+
+def keyboard_library_sources() -> List[Path]:
+    """The unmodified arduino-pico Keyboard stack compiled into keyboard host tests."""
+    require_keyboard_library()
+    return [KEYBOARD_SRC / "Keyboard.cpp", HID_KEYBOARD_SRC / "HID_Keyboard.cpp",
+            HID_KEYBOARD_SRC / "KeyboardLayout_en_US.cpp"]
+
+
+def keyboard_include_dirs(firmware_include: Optional[Path] = None) -> List[Path]:
+    """Host stubs, fake USB headers, firmware headers, then the real library headers."""
+    inc = [HOST_DIR, USB_HOST_STUBS]
+    if firmware_include is not None:
+        inc.append(firmware_include)
+    inc += [FIRMWARE_INCLUDE, KEYBOARD_SRC, HID_KEYBOARD_SRC, TUSB_HID_SRC]
+    return inc
 
 NO_COMPILER_REASON = (
     "No host C++ compiler found (set CXX, install g++/clang++, or `pip install ziglang`); "
@@ -202,6 +232,34 @@ def build(name: str,
             except OSError:
                 pass
     return out
+
+
+# The last commit before the productisation work. Defect-reproduction tests compile its firmware
+# files to show that each regression scenario fails on the pre-fix implementation.
+PREFIX_REVISION = "e2031e2"
+
+
+def revision_files(revision: str, paths: Sequence[str]) -> Path:
+    """Writes `git show <revision>:<path>` for each repo-relative path under a cache directory and
+    returns that directory (same relative layout). SkipTest when git or the revision is missing
+    (e.g. a shallow clone)."""
+    root = CACHE_DIR / f"rev-{revision}"
+    for rel in paths:
+        dest = root / rel
+        if dest.is_file():
+            continue
+        try:
+            result = subprocess.run(["git", "show", f"{revision}:{rel}"], cwd=str(PROJECT_ROOT),
+                                    capture_output=True)
+        except OSError as e:
+            raise unittest.SkipTest(f"git not available ({e}); pre-fix revision {revision} not checked")
+        if result.returncode != 0:
+            raise unittest.SkipTest(
+                f"revision {revision} not in this clone ({result.stderr.decode(errors='replace').strip()}); "
+                "fetch full history to run the defect-reproduction tests")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(result.stdout)
+    return root
 
 
 def firmware_sources(*names: str) -> List[Path]:

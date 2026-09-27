@@ -318,7 +318,9 @@ class HallKeyDSP:
                 self.is_pressed = True
                 self.peak_depth_mm = self.travel_mm
                 self.ever_actuated = True
+                # Both held counters restart on a transition (TC-18); mirrors hall.cpp
                 self.press_samples = 0
+                self.unpressed_samples = 0
                 state_changed = True
             else:
                 if self.travel_mm < self.valley_depth_mm:
@@ -343,6 +345,7 @@ class HallKeyDSP:
                 self.is_pressed = False
                 self.valley_depth_mm = self.travel_mm
                 self.unpressed_samples = 0
+                self.press_samples = 0
                 state_changed = True
 
         return state_changed
@@ -1019,6 +1022,40 @@ class TestDSPHarness(unittest.TestCase):
                 f"TC-17: {s_rt:.2f}mm RT, {speed:.0f}mm/s, {swing:.1f}mm swing, {dwell}ms dwell detected "
                 f"{ups} releases / {downs} presses of {taps}"
             )
+
+    def test_tc18_fast_stroke_actuates_and_releases_once(self):
+        """
+        TC-18: One full press and one full lift must give exactly one KeyDown and one KeyUp.
+        Regression: the held-key test read the other state's sample counter, which the state
+        machine did not reset on the transition, so the first sample after an actuation (or a
+        release) ran the 60 Hz comb filter over pre-transition history. At 0.10 mm Rapid Trigger
+        every press faster than ~150 mm/s released and re-pressed within 2 ms (a double keystroke).
+        """
+        for s_rt in (HallKeyDSP.RT_SENS_MIN_MM, 0.15, 0.20, 0.50):
+            for speed in (30.0, 100.0, 150.0, 200.0, 300.0, 500.0, 1000.0):
+                for auto_pol in (False, True):
+                    with self.subTest(rt=s_rt, speed=speed, auto_polarity=auto_pol):
+                        dsp = HallKeyDSP(auto_polarity=auto_pol)
+                        dsp.set_rt_sensitivity(s_rt)
+                        events = []
+                        feed = lambda mm: events.append(dsp.is_pressed) if dsp.update(
+                            2048 + (mm / 4.0) * 1000) else None
+                        for _ in range(200):
+                            feed(0.0)
+                        step = speed / 1000.0
+                        mm = 0.0
+                        while mm < 3.6:
+                            mm = min(3.6, mm + step)
+                            feed(mm)
+                        for _ in range(100):
+                            feed(mm)
+                        while mm > 0.0:
+                            mm = max(0.0, mm - step)
+                            feed(mm)
+                        for _ in range(100):
+                            feed(mm)
+                        self.assertEqual(events, [True, False],
+                                         f"{s_rt:.2f}mm RT at {speed:.0f}mm/s gave events {events}")
 
     # ------------------------------------------------------------------------
     # Additional Waveform & Algorithmic Unit Tests

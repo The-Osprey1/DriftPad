@@ -8,19 +8,15 @@ tests/firmware_host/) into a shared library, then:
    against the compiled firmware instead of the Python model.
 2. Feeds identical ADC streams through both and requires identical KeyDown/KeyUp events.
 
-Skipped when no host C++ compiler (g++, clang++ or c++, or $CXX) is on PATH.
+Skipped when no host C++ compiler is found (tests/host_build.py: $CXX, g++/clang++, or the ziglang
+package). The three waveform-generator tests are pure Python and are not re-run here.
 
 Pure Python 3 standard library: zero external pip dependencies.
 """
 
 import ctypes
-import math
-import os
 import random
-import shutil
-import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -30,60 +26,29 @@ PROJECT_ROOT = TESTS_DIR.parent
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
 
+# Modules, not TestCase classes: a TestCase imported into this namespace would be collected and
+# run a second time as part of this module
+import test_adversarial_m2 as adversarial_model
+import test_dsp_harness as dsp_model
 from test_dsp_harness import (
-    HallKeyDSP, TestDSPHarness, generate_directional_reversals, generate_sinusoid,
-    inject_noise_and_emi,
+    HallKeyDSP, generate_directional_reversals, generate_sinusoid, inject_noise_and_emi,
 )
-from test_adversarial_m2 import TestAdversarialDSP
 
-FIRMWARE_DIR = PROJECT_ROOT / "firmware"
-HOST_DIR = TESTS_DIR / "firmware_host"
+import host_build as hb
 
 _lib: Optional[ctypes.CDLL] = None
-_build_error: Optional[str] = None
-_build_dir: Optional[str] = None
-
-
-def _find_compiler() -> Optional[str]:
-    candidates = [os.environ.get("CXX"), "g++", "clang++", "c++"]
-    for c in candidates:
-        if c and shutil.which(c):
-            return shutil.which(c)
-    return None
 
 
 def _build_library() -> ctypes.CDLL:
-    """Compile hall.cpp + hall_shim.cpp into a host shared library (once per process)."""
-    global _lib, _build_error, _build_dir
+    """Compiles the real hall.cpp (with the keyboard output stack it routes edges into) for the host."""
+    global _lib
     if _lib is not None:
         return _lib
-    if _build_error is not None:
-        raise unittest.SkipTest(_build_error)
-
-    cxx = _find_compiler()
-    if cxx is None:
-        _build_error = "No host C++ compiler found (set CXX or install g++/clang++); firmware parity not checked"
-        raise unittest.SkipTest(_build_error)
-
-    _build_dir = tempfile.mkdtemp(prefix="driftpad_hall_")
-    suffix = ".dll" if os.name == "nt" else (".dylib" if sys.platform == "darwin" else ".so")
-    out = os.path.join(_build_dir, "hallkey" + suffix)
-    cmd = [
-        cxx, "-std=c++17", "-O2", "-shared", "-fPIC",
-        # RP2040 (Cortex-M0+) has no FMA; keep host float math unfused to match
-        "-ffp-contract=off",
-        "-I", str(HOST_DIR), "-I", str(FIRMWARE_DIR / "include"),
-        str(FIRMWARE_DIR / "src" / "hall.cpp"), str(HOST_DIR / "hall_shim.cpp"),
-        "-o", out,
-    ]
-    if os.name == "nt":
-        cmd += ["-static-libgcc", "-static-libstdc++"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        # A compile failure is a real regression in hall.cpp/hall.h, not a missing tool
-        raise AssertionError(f"Host build of hall.cpp failed:\n{' '.join(cmd)}\n{result.stderr}")
-
-    lib = ctypes.CDLL(out)
+    hb.require_compiler()
+    sources = hb.firmware_sources("hall.cpp", "keyboard_output.cpp", "keyboard_output_hal_device.cpp",
+                                  "keycodes.cpp") +         hb.host_sources("hall_shim.cpp", "host_clock.cpp", "mux_fake.cpp", "usb_fake.cpp") +         hb.keyboard_library_sources()
+    out = hb.build("hall_parity", sources, hb.keyboard_include_dirs())
+    lib = ctypes.CDLL(str(out))
     vp, i, f = ctypes.c_void_p, ctypes.c_int, ctypes.c_float
     sigs = {
         "hk_create": ([i], vp), "hk_destroy": ([vp], None),
@@ -195,14 +160,20 @@ class _AgainstFirmware:
         self._patched_module.HallKeyDSP = self._orig_dsp
 
 
-class TestDSPHarnessOnFirmware(_AgainstFirmware, TestDSPHarness):
-    """TC-01..TC-16 executed against the compiled firmware/src/hall.cpp."""
-    _source_module = TestDSPHarness.__module__
+class TestDSPHarnessOnFirmware(_AgainstFirmware, dsp_model.TestDSPHarness):
+    """TC-01..TC-18 executed against the compiled firmware/src/hall.cpp."""
+    _source_module = dsp_model.TestDSPHarness.__module__
+
+    # Pure-Python waveform generator checks: they never touch the firmware, so running them here
+    # would only inflate the firmware count
+    test_waveform_sinusoid_properties = None
+    test_waveform_triangle_properties = None
+    test_waveform_noise_injection_statistics = None
 
 
-class TestAdversarialOnFirmware(_AgainstFirmware, TestAdversarialDSP):
+class TestAdversarialOnFirmware(_AgainstFirmware, adversarial_model.TestAdversarialDSP):
     """ADV-01..ADV-05 executed against the compiled firmware/src/hall.cpp."""
-    _source_module = TestAdversarialDSP.__module__
+    _source_module = adversarial_model.TestAdversarialDSP.__module__
 
 
 # ----------------------------------------------------------------------------

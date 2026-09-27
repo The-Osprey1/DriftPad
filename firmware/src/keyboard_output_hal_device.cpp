@@ -1,16 +1,28 @@
-// Device implementation of keyboard_output_hal.h on the arduino-pico Keyboard library.
-// Host builds use tests/firmware_host/kbd_fake_hal.cpp instead.
-#ifndef DRIFTPAD_HOST_BUILD
-
+// keyboard_output_hal.h on the arduino-pico Keyboard library and TinyUSB.
+// Host tests compile this file unchanged against tests/firmware_host/usb_host/ fakes.
 #include "keyboard_output_hal.h"
 #include <Arduino.h>
 #include <Keyboard.h>
 #include <USB.h>
-#include <CoreMutex.h>
 #include "tusb.h"
 
 namespace {
-bool s_linkUp = false;   // tud_ready() at the previous hidTakeResumed() call
+// Written from tud_task(), which arduino-pico runs from a USB interrupt as well as from inside
+// the library's HIDReady() wait; 32-bit stores are atomic on the RP2040.
+volatile uint32_t s_delivered = 0;
+volatile uint32_t s_failed = 0;
+uint32_t s_linkDrops = 0;
+bool     s_linkWasUp = false;
+}
+
+// TinyUSB weak callbacks (pico-sdk lib/tinyusb src/class/hid/hid_device.c). The core does not
+// define them. DriftPad sends no other HID reports, so every input report is a keyboard report.
+extern "C" void tud_hid_report_complete_cb(uint8_t, uint8_t const*, uint16_t) {
+    s_delivered = s_delivered + 1;
+}
+
+extern "C" void tud_hid_report_failed_cb(uint8_t, hid_report_type_t type, uint8_t const*, uint16_t) {
+    if (type == HID_REPORT_TYPE_INPUT) s_failed = s_failed + 1;
 }
 
 void hidInit() {
@@ -29,26 +41,28 @@ void hidReleaseAll() {
     Keyboard.releaseAll();
 }
 
-bool hidReady() {
-    // Keyboard_::sendReport() makes this same call under this same mutex; HIDReady() runs
-    // tud_task(), which the USB IRQ task must not enter at the same time. It returns at once when
-    // the device is unmounted or suspended. While mounted with an earlier report still in flight
-    // it waits for the host to poll that report (one HID poll interval, 500 ms at most), exactly
-    // as the library's own send would. The library checks again inside sendReport(); a suspend
-    // landing between the two checks drops that one report, and hidTakeResumed() then triggers a
-    // resync once the link is back.
-    CoreMutex m(&USB.mutex);
-    return USB.HIDReady();
+bool hidLinkUp() {
+    return tud_ready();
 }
 
-bool hidTakeResumed() {
-    // arduino-pico does not forward tud_mount_cb/tud_resume_cb to sketches, and defining them
-    // here could collide with the core in a later release, so the link state is polled instead.
-    // tud_ready() = mounted && !suspended.
+bool hidEndpointFree() {
+    return tud_hid_ready();
+}
+
+uint32_t hidDeliveredCount() {
+    return s_delivered;
+}
+
+uint32_t hidFailedCount() {
+    return s_failed;
+}
+
+uint32_t hidLinkDownCount() {
+    // arduino-pico does not forward tud_umount_cb/tud_suspend_cb to sketches, so the link is
+    // polled; KeyboardOutput::service() calls this every loop. A bus reset shorter than one loop
+    // is not seen here, but it aborts the in-flight transfer, which the delivery check catches.
     bool up = tud_ready();
-    bool resumed = up && !s_linkUp;
-    s_linkUp = up;
-    return resumed;
+    if (s_linkWasUp && !up) s_linkDrops++;
+    s_linkWasUp = up;
+    return s_linkDrops;
 }
-
-#endif // DRIFTPAD_HOST_BUILD

@@ -7,26 +7,33 @@
  * @file keyboard_output_hal.h
  * @brief The only path from KeyboardOutput to the USB keyboard.
  *
- * Device: src/keyboard_output_hal_device.cpp wraps the arduino-pico Keyboard library.
- * Host tests: tests/firmware_host/kbd_fake_hal.cpp reproduces the library's report handling
- * (tests/test_keyboard_output.py checks it against the real library) and records every report.
+ * src/keyboard_output_hal_device.cpp implements it on the arduino-pico Keyboard library and
+ * TinyUSB. Host tests compile that same file against the real library and a fake TinyUSB/host
+ * (tests/firmware_host/usb_fake.cpp).
  *
- * KeyboardOutput passes raw codes only: 136 + usage for keys, 128 + bit for modifiers. With raw
- * codes the library never consults its ASCII map, so it never adds or drops Shift/AltGr itself.
- * Return values are the library's (press()/release() != 0).
+ * KeyboardOutput passes raw codes only: 136 + usage for keys, 128 + bit for modifiers, so the
+ * library never consults its ASCII map and never adds or drops Shift/AltGr itself.
+ *
+ * The library's return values do NOT say whether a report was sent: press()/release() return 1
+ * even when sendReport() skipped the report because USB.HIDReady() was false. Delivery is judged
+ * only from the transfer counters below.
  */
 
 void hidInit();                  // Keyboard.begin()
-bool hidPress(uint8_t code);     // Keyboard.press(code) != 0; false means no report was sent
-bool hidRelease(uint8_t code);   // Keyboard.release(code) != 0
-void hidReleaseAll();            // Keyboard.releaseAll()
+// Library calls. Each attempts at most one report and may block inside the library while the
+// previous report is still waiting for the host to poll (up to 500 ms if the host stops polling
+// while the device stays mounted). Return: the library's own return value.
+bool hidPress(uint8_t code);
+bool hidRelease(uint8_t code);
+void hidReleaseAll();
 
-// True when a report sent now reaches the host (USB.HIDReady(), the check the library makes
-// before every report). When false the library still updates its report but drops the send.
-bool hidReady();
+// Non-blocking transport state
+bool hidLinkUp();                // mounted and not suspended (tud_ready())
+bool hidEndpointFree();          // link up and no report waiting for the host (tud_hid_ready())
 
-// True once each time the USB link comes back (mounted and not suspended after being
-// unmounted or suspended). The host may have dropped key state meanwhile.
-bool hidTakeResumed();
+// Monotonic counters
+uint32_t hidDeliveredCount();    // reports the host collected (tud_hid_report_complete_cb)
+uint32_t hidFailedCount();       // input reports whose transfer failed (tud_hid_report_failed_cb)
+uint32_t hidLinkDownCount();     // link up -> down transitions seen by this function's polling
 
 #endif // KEYBOARD_OUTPUT_HAL_H

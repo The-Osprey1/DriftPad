@@ -1,13 +1,12 @@
 // C ABI over the real firmware HallKey (firmware/src/hall.cpp) for tests/test_firmware_parity.py.
-// Compiled on the host together with hall.cpp; private members are opened only to mirror
+// Compiled on the host together with hall.cpp and its keyboard output stack (mux_fake.cpp
+// supplies the mux); private members are opened only to mirror
 // HallKeyDSP(auto_polarity=False) and to read state the Python tests inspect.
 #include <cstdint>
 #include <cmath>
 #define private public
 #include "hall.h"
 #undef private
-
-uint16_t muxReadChannel(uint8_t) { return 2048; }
 
 extern "C" {
 

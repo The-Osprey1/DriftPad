@@ -10,11 +10,10 @@
 // clear left shift even while a Shift key is held. Reference counts decide when a usage or a
 // modifier bit is pressed (first owner) or released (last owner).
 //
-// Delivery: arduino-pico drops a report silently when USB.HIDReady() is false but keeps the
-// change in its internal report. Readiness is checked through the HAL before every library call;
-// a change made while not ready marks the report pending and service() re-sends the full current
-// report later with Keyboard.release(136). Code 136 is usage 0: release() clears nothing, then
-// sends the report unchanged (HID_Keyboard.cpp, release()), so it is a pure "send again".
+// Delivery (see keyboard_output.h): every library call that can send is counted as an attempt;
+// the attempts are confirmed only by TinyUSB's transfer-complete count. The full state is re-sent
+// with Keyboard.release(136): code 136 is usage 0, so release() clears nothing and then sends the
+// current report unchanged (HID_Keyboard.cpp, release()).
 
 namespace KeyboardOutput {
 namespace {
@@ -49,10 +48,14 @@ UsageRef s_usageRefs[MAX_USAGES];
 uint8_t s_libModifiers = 0;
 uint8_t s_libKeys[MAX_USAGES];
 
-// The report as last delivered to the host
-uint8_t s_hostModifiers = 0;
-uint8_t s_hostKeys[MAX_USAGES];
-bool    s_pending = false;
+// Delivery bookkeeping
+bool     s_awaiting = false;         // attempts made that are not confirmed yet
+uint32_t s_expectDelivered = 0;      // delivered count at which every attempt is confirmed
+uint32_t s_attemptsAwaiting = 0;
+uint32_t s_dropsAtAttempt = 0;       // link-down count when the unconfirmed batch started
+uint32_t s_failedAtAttempt = 0;
+uint32_t s_dropsSeen = 0;
+bool     s_pending = false;          // host may be out of date: full-state re-send due
 
 Stats s_stats;
 
@@ -94,26 +97,31 @@ uint8_t usageRefRemove(uint8_t usage) {
     return 0;
 }
 
-void copyLibraryToHost() {
-    s_hostModifiers = s_libModifiers;
-    for (uint8_t i = 0; i < MAX_USAGES; ++i) s_hostKeys[i] = s_libKeys[i];
+// Brackets one library call. The expected delivered count includes a report still in flight from
+// before the batch (the endpoint holds one at a time, and the library call waits for it).
+void beginAttempt() {
+    uint32_t drops = hidLinkDownCount();
+    if (!s_awaiting) {
+        s_expectDelivered = hidDeliveredCount() + (hidEndpointFree() ? 0u : 1u);
+        s_dropsAtAttempt = drops;
+        s_failedAtAttempt = hidFailedCount();
+        s_attemptsAwaiting = 0;
+    }
 }
 
-// Accounts for one library call. `ready` is the readiness checked just before it; `sent` is
-// whether the library attempted a report at all.
-void accountReport(bool ready, bool sent) {
-    if (ready && sent) {
-        copyLibraryToHost();
-        s_pending = false;
-        s_stats.reportsSent++;
-    } else {
-        s_pending = true;
-        s_stats.reportsDeferred++;
+void endAttempt(bool attempted) {
+    if (attempted) {
+        s_awaiting = true;
+        s_expectDelivered++;
+        s_attemptsAwaiting++;
+        s_stats.reportsAttempted++;
+    }
+    if (!hidLinkUp()) {
+        s_pending = true;   // the library skipped the send: HIDReady() is false without a link
     }
 }
 
 void libraryPress(uint8_t code) {
-    bool ready = hidReady();
     if (code >= RAW_USAGE_BASE) {
         uint8_t usage = (uint8_t)(code - RAW_USAGE_BASE);
         for (uint8_t i = 0; i < MAX_USAGES; ++i) {
@@ -125,15 +133,15 @@ void libraryPress(uint8_t code) {
     } else {
         s_libModifiers |= (uint8_t)(1u << (code - RAW_MODIFIER_BASE));
     }
+    beginAttempt();
     // With all 6 usage slots taken, HID_Keyboard::press(128 + bit) sets the modifier but returns 0
     // before sendReport() (usage 0 is "not present" and there is no free slot for it). Push the
     // report out explicitly so the modifier is not left unsent.
-    bool sent = hidPress(code) || hidRelease(RESEND_CODE);
-    accountReport(ready, sent);
+    bool attempted = hidPress(code) || hidRelease(RESEND_CODE);
+    endAttempt(attempted);
 }
 
 void libraryRelease(uint8_t code) {
-    bool ready = hidReady();
     if (code >= RAW_USAGE_BASE) {
         uint8_t usage = (uint8_t)(code - RAW_USAGE_BASE);
         for (uint8_t i = 0; i < MAX_USAGES; ++i) {
@@ -142,16 +150,16 @@ void libraryRelease(uint8_t code) {
     } else {
         s_libModifiers &= (uint8_t)~(1u << (code - RAW_MODIFIER_BASE));
     }
-    bool sent = hidRelease(code);
-    accountReport(ready, sent);
+    beginAttempt();
+    endAttempt(hidRelease(code));
 }
 
 void libraryReleaseAll() {
-    bool ready = hidReady();
     s_libModifiers = 0;
     for (uint8_t i = 0; i < MAX_USAGES; ++i) s_libKeys[i] = 0;
+    beginAttempt();
     hidReleaseAll();
-    accountReport(ready, true);
+    endAttempt(true);
 }
 
 void releaseOwned(uint8_t physKey) {
@@ -192,15 +200,16 @@ void init() {
     for (uint8_t i = 0; i < MAX_USAGES; ++i) {
         s_usageRefs[i] = UsageRef{0, 0};
         s_libKeys[i] = 0;
-        s_hostKeys[i] = 0;
     }
     s_libModifiers = 0;
-    s_hostModifiers = 0;
+    s_awaiting = false;
+    s_attemptsAwaiting = 0;
     s_pending = false;
-    s_stats = Stats{0, 0, 0, 0, 0};
+    s_stats = Stats{0, 0, 0, 0, 0, 0, 0};
 
     hidInit();
-    libraryReleaseAll();   // the host starts from an empty report (deferred if USB is not up yet)
+    s_dropsSeen = hidLinkDownCount();
+    libraryReleaseAll();   // the host starts from an empty report (re-sent once USB is up)
 }
 
 void setEnabled(bool enabled, Reason reason) {
@@ -302,16 +311,41 @@ void releaseAll(uint16_t pressedMask) {
 }
 
 void service() {
-    if (hidTakeResumed()) {
-        s_pending = true;   // the host may have dropped key state while the link was down
+    uint32_t drops = hidLinkDownCount();
+    if (s_awaiting) {
+        if (drops != s_dropsAtAttempt || hidFailedCount() != s_failedAtAttempt) {
+            // The link went down or a transfer failed with reports unconfirmed
+            s_awaiting = false;
+            s_pending = true;
+            s_stats.lostReports += s_attemptsAwaiting;
+        } else if ((int32_t)(hidDeliveredCount() - s_expectDelivered) >= 0) {
+            s_awaiting = false;
+            s_stats.reportsConfirmed += s_attemptsAwaiting;
+        } else if (hidEndpointFree()) {
+            // Idle with deliveries missing: the library skipped a send (its HIDReady() timed out)
+            s_awaiting = false;
+            s_pending = true;
+            s_stats.lostReports += s_attemptsAwaiting;
+        }
     }
-    if (!s_pending || !hidReady()) return;
-    if (hidRelease(RESEND_CODE)) {
-        copyLibraryToHost();
+    if (drops != s_dropsSeen) {
+        // The host may have forgotten pressed keys (suspend, re-enumeration)
+        s_stats.linkDrops += drops - s_dropsSeen;
+        s_dropsSeen = drops;
+        s_pending = true;
+    }
+    if (s_pending && !s_awaiting && hidEndpointFree()) {
         s_pending = false;
+        beginAttempt();
+        endAttempt(hidRelease(RESEND_CODE));
         s_stats.resyncs++;
-        s_stats.reportsSent++;
     }
+}
+
+Delivery deliveryState() {
+    if (s_pending) return Delivery::Pending;
+    if (s_awaiting) return Delivery::InFlight;
+    return Delivery::Confirmed;
 }
 
 uint16_t activeKeysMask() {
@@ -327,8 +361,8 @@ Stats stats() {
 }
 
 void currentReport(uint8_t& modifiers, uint8_t usages[6]) {
-    modifiers = s_hostModifiers;
-    for (uint8_t i = 0; i < MAX_USAGES; ++i) usages[i] = s_hostKeys[i];
+    modifiers = s_libModifiers;
+    for (uint8_t i = 0; i < MAX_USAGES; ++i) usages[i] = s_libKeys[i];
 }
 
 bool reportPending() {
