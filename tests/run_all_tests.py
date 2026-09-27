@@ -195,9 +195,14 @@ def run_all() -> int:
 
     for rec in table_result.records:
         test = rec["test"]
-        method_name = test._testMethodName
-        doc = getattr(test, method_name).__doc__ or ""
-        meta = get_test_metadata(method_name, doc)
+        method_name = getattr(test, "_testMethodName", None)
+        if method_name is None:
+            # Class-level skip or error (e.g. parity tests without a host C++ compiler):
+            # unittest reports it as an _ErrorHolder with only a description
+            meta = {"id": "CLASS", "cat": "Setup", "desc": str(test)}
+        else:
+            doc = getattr(test, method_name).__doc__ or ""
+            meta = get_test_metadata(method_name, doc)
         if type(test).__name__.endswith("OnFirmware"):
             meta = {"id": "FW " + meta["id"], "cat": "FW Parity", "desc": meta["desc"]}
         
