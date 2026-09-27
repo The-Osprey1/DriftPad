@@ -34,7 +34,7 @@ DriftPad is a custom Hall-effect macropad built around analog magnetic key sensi
 
 - **Analog Hall-effect sensing** on all 16 keys through a CD74HC4067 analog multiplexer into the RP2040 ADC
 - **Adjustable actuation point** from 0.10 to 3.80 mm
-- **Rapid Trigger** with adjustable sensitivity from 0.05 to 2.00 mm, so a key re-actuates or releases as soon as it changes direction
+- **Rapid Trigger** with adjustable sensitivity from 0.10 to 2.00 mm, so a key re-actuates or releases as soon as it changes direction
 - **Noise and drift handling:** velocity-adaptive filtering, automatic rest baseline tracking and magnet polarity auto-detection
 - **Three keymap layers** out of the box: Numpad, Navigation and Gaming (WASD)
 - **128×64 OLED cockpit UI** showing live key travel, the active layer and Rapid Trigger settings

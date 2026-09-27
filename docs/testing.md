@@ -144,6 +144,7 @@ To track ambient thermal and power supply drift up to $\pm 100\text{ counts}$ wi
 | [`tests/test_dsp_harness.py`](../tests/test_dsp_harness.py) | DSP model, waveform generators, Rapid Trigger, noise, latency and drift tests |
 | [`tests/test_build.py`](../tests/test_build.py) | PlatformIO build and UF2 / ELF / BIN checks |
 | [`tests/test_config_schema.py`](../tests/test_config_schema.py) | Serial protocol, keymap schema and configurator checks |
+| [`tests/test_firmware_parity.py`](../tests/test_firmware_parity.py) | Compiles `firmware/src/hall.cpp` for the host, runs the TC and ADV suites against it, and requires identical key events to the Python model. Skipped when no `g++`/`clang++` is on PATH |
 | [`tests/test_adversarial_m2.py`](../tests/test_adversarial_m2.py) | Extra adversarial cases (chatter under noise, baseline lockout, OLED bounds). Not part of the master runner |
 | [`tests/test_challenger2_verification.py`](../tests/test_challenger2_verification.py) | Firmware binary layout and serial command coverage checks. Not part of the master runner |
 
@@ -151,4 +152,4 @@ Run the last two directly, for example `python -m unittest tests.test_adversaria
 
 ## 8. Known Open Issues
 
-- **ADV-02 fails.** At the minimum RT sensitivity of 0.05 mm, the DSP model produces false releases (285 in the current run) under 10-count 60 Hz EMI plus 3-sigma Gaussian noise. The main suite's TC-04 passes at 0.05 mm because it does not combine both noise sources. Until this is fixed, RT sensitivities above 0.05 mm are the safer choice on noisy hardware.
+- **Resolved: ADV-02.** At 0.05 mm the DSP produced 285 false releases in 5 s under 10-count 60 Hz EMI plus 3-sigma Gaussian noise. The RT sensitivity floor is now 0.10 mm (`HallKey::RT_SENS_MIN_MM`, mirrored by `HallKeyDSP.RT_SENS_MIN_MM`), where ADV-02 produces none.
