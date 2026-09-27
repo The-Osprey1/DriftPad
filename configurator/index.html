@@ -1,1019 +1,291 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DriftPad // Web Configurator</title>
-    <style>
-        :root {
-            --bg-base: #0f1117;
-            --bg-card: #181c27;
-            --bg-elevated: #222738;
-            --accent: #00f2fe;
-            --accent-glow: rgba(0, 242, 254, 0.35);
-            --accent-purple: #7928ca;
-            --text-main: #f3f4f6;
-            --text-muted: #9ca3af;
-            --border: #2d3748;
-            --green: #10b981;
-            --red: #ef4444;
-            --amber: #f59e0b;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        body {
-            background-color: var(--bg-base);
-            background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0, 242, 254, 0.07), transparent 70%);
-            background-attachment: fixed;
-            color: var(--text-main);
-            min-height: 100vh;
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        :focus-visible {
-            outline: 2px solid var(--accent);
-            outline-offset: 2px;
-        }
-
-        header {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 14px;
-            padding: 16px 24px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-        }
-
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .brand-badge {
-            background: linear-gradient(135deg, var(--accent), var(--accent-purple));
-            color: #000;
-            font-weight: 900;
-            font-size: 13px;
-            padding: 4px 10px;
-            border-radius: 6px;
-            letter-spacing: 1px;
-        }
-
-        .brand h1 {
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            line-height: 1.15;
-        }
-
-        .brand h1 small {
-            display: block;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-muted);
-            letter-spacing: 0.3px;
-        }
-
-        .header-actions {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 10px;
-        }
-
-        .connection {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-right: 4px;
-        }
-
-        .btn {
-            background: var(--bg-elevated);
-            color: var(--text-main);
-            border: 1px solid var(--border);
-            padding: 8px 16px;
-            border-radius: 8px;
-            font: inherit;
-            font-weight: 600;
-            font-size: 14px;
-            cursor: pointer;
-            transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s, color 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            white-space: nowrap;
-        }
-
-        .btn-danger {
-            color: var(--red);
-            border-color: rgba(239, 68, 68, 0.4);
-        }
-
-        .btn.btn-danger:hover {
-            border-color: var(--red);
-            box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
-        }
-
-        .btn.on {
-            color: var(--green);
-            border-color: var(--green);
-        }
-
-        .btn:hover {
-            border-color: var(--accent);
-            box-shadow: 0 0 12px var(--accent-glow);
-        }
-
-        /* Animation picker joined to the Screensaver button */
-        .btn-group {
-            display: flex;
-        }
-
-        .btn-group select.btn {
-            border-radius: 8px 0 0 8px;
-            border-right: none;
-            padding-right: 10px;
-            color-scheme: dark;
-        }
-
-        .btn-group select.btn + .btn {
-            border-radius: 0 8px 8px 0;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #00f2fe, #4facfe);
-            color: #000;
-            border: none;
-        }
-
-        .btn-primary:hover {
-            box-shadow: 0 0 16px rgba(0, 242, 254, 0.6);
-            transform: translateY(-1px);
-        }
-
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: var(--red);
-            box-shadow: 0 0 8px var(--red);
-        }
-
-        .status-dot.connected {
-            background: var(--green);
-            box-shadow: 0 0 8px var(--green);
-        }
-
-        .main-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-            gap: 20px;
-            align-items: start;
-        }
-
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 12px;
-        }
-
-        .card-title {
-            font-size: 16px;
-            font-weight: 700;
-            color: var(--accent);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        /* 4x4 Key Matrix */
-        .key-matrix-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .layer-tabs {
-            display: flex;
-            background: var(--bg-elevated);
-            border-radius: 8px;
-            padding: 4px;
-            gap: 4px;
-            width: 100%;
-        }
-
-        .layer-tab {
-            flex: 1;
-            padding: 8px 12px;
-            text-align: center;
-            font: inherit;
-            font-size: 13px;
-            font-weight: 600;
-            border: none;
-            border-radius: 6px;
-            background: none;
-            cursor: pointer;
-            color: var(--text-muted);
-            transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-        }
-
-        .layer-tab:hover:not(.active) {
-            color: var(--text-main);
-            background: rgba(255, 255, 255, 0.04);
-        }
-
-        .layer-tab.active {
-            background: var(--accent);
-            color: #000;
-            box-shadow: 0 2px 8px var(--accent-glow);
-        }
-
-        .keypad-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 12px;
-            background: #11141d;
-            padding: 16px;
-            border-radius: 14px;
-            border: 1px solid var(--border);
-            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
-            width: min(100%, 372px); /* 76px keys at full size */
-        }
-
-        /* Keycap: lit top face over a darker skirt, which disappears as the key goes down */
-        .key-cap {
-            aspect-ratio: 1;
-            background: linear-gradient(180deg, #2c3246, var(--bg-elevated));
-            border: 1px solid #353d52;
-            border-radius: 10px;
-            color: var(--text-main);
-            font: inherit;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.12s, border-color 0.12s;
-            user-select: none;
-            position: relative;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -4px 0 rgba(0, 0, 0, 0.35), 0 3px 6px rgba(0, 0, 0, 0.35);
-        }
-
-        .key-cap:hover {
-            border-color: var(--accent);
-            transform: translateY(-2px);
-        }
-
-        .key-cap.pressed {
-            background: linear-gradient(180deg, #14c48d, #059669);
-            color: #fff;
-            transform: translateY(2px);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 16px rgba(16, 185, 129, 0.55);
-            border-color: #34d399;
-        }
-
-        .key-label {
-            font-size: 16px;
-            font-weight: 700;
-        }
-
-        .key-sub {
-            font-size: 10px;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-
-        .key-cap.pressed .key-sub {
-            color: #d1fae5;
-        }
-
-        /* Tuning Controls */
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .control-label {
-            display: flex;
-            justify-content: space-between;
-            font-size: 14px;
-            font-weight: 600;
-        }
-
-        .control-val {
-            color: var(--accent);
-            font-family: monospace;
-            font-size: 15px;
-        }
-
-        /* Range: the part left of the thumb is filled; --fill is kept in sync by syncRangeFill() */
-        input[type="range"] {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 100%;
-            height: 6px;
-            background: linear-gradient(90deg, #3b82f6, var(--accent)) 0 / var(--fill, 0%) 100% no-repeat, var(--bg-elevated);
-            border-radius: 3px;
-            cursor: pointer;
-        }
-
-        input[type="range"]:focus-visible {
-            outline: none;
-        }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: var(--accent);
-            border: 3px solid var(--bg-card);
-            box-shadow: 0 0 0 1px var(--accent), 0 0 10px var(--accent-glow);
-            transition: transform 0.15s, box-shadow 0.15s;
-        }
-
-        input[type="range"]::-moz-range-thumb {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: var(--accent);
-            border: 3px solid var(--bg-card);
-            box-shadow: 0 0 0 1px var(--accent), 0 0 10px var(--accent-glow);
-            transition: transform 0.15s, box-shadow 0.15s;
-        }
-
-        input[type="range"]:hover::-webkit-slider-thumb {
-            transform: scale(1.15);
-        }
-
-        input[type="range"]:hover::-moz-range-thumb {
-            transform: scale(1.15);
-        }
-
-        input[type="range"]:focus-visible::-webkit-slider-thumb {
-            box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-glow);
-        }
-
-        input[type="range"]:focus-visible::-moz-range-thumb {
-            box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-glow);
-        }
-
-        .range-scale {
-            display: flex;
-            justify-content: space-between;
-            font-size: 10px;
-            color: var(--text-muted);
-            font-family: Consolas, monospace;
-        }
-
-        .hint {
-            font-size: 11px;
-            color: var(--text-muted);
-            line-height: 1.45;
-        }
-
-        /* Toggle switch built on a real checkbox */
-        .switch {
-            -webkit-appearance: none;
-            appearance: none;
-            flex: none;
-            width: 42px;
-            height: 24px;
-            border-radius: 12px;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
-            position: relative;
-            cursor: pointer;
-            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
-        }
-
-        .switch::after {
-            content: "";
-            position: absolute;
-            top: 3px;
-            left: 3px;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background: var(--text-muted);
-            transition: transform 0.2s, background 0.2s;
-        }
-
-        .switch:checked {
-            background: rgba(0, 242, 254, 0.18);
-            border-color: var(--accent);
-            box-shadow: 0 0 10px var(--accent-glow);
-        }
-
-        .switch:checked::after {
-            transform: translateX(18px);
-            background: var(--accent);
-        }
-
-        .toggle-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            padding: 12px 14px;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-        }
-
-        /* Switch Cutaway Simulation */
-        .switch-visualizer {
-            background: #11141d;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        /* Travel bar with a tick at every millimetre of the 4 mm stroke */
-        .stem-track {
-            height: 24px;
-            background:
-                repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(255, 255, 255, 0.08) calc(25% - 1px) 25%),
-                var(--bg-elevated);
-            border-radius: 6px;
-            position: relative;
-            overflow: hidden;
-            border: 1px solid var(--border);
-        }
-
-        .stem-progress {
-            height: 100%;
-            width: 0%;
-            background: linear-gradient(90deg, #3b82f6, var(--accent));
-            transition: width 0.05s ease;
-        }
-
-        .stem-marker-act {
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: var(--amber);
-            box-shadow: 0 0 6px var(--amber);
-        }
-
-        .log-console {
-            background: #090b10;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px;
-            font-family: Consolas, monospace;
-            font-size: 12px;
-            color: #10b981;
-            height: 110px;
-            overflow-y: auto;
-        }
-
-        /* Modal */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.7);
-            backdrop-filter: blur(4px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-        }
-
-        .modal-overlay.open {
-            display: flex;
-        }
-
-        .modal-box {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px;
-            width: min(420px, calc(100vw - 32px));
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-        }
-
-        .modal-box input {
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
-            color: var(--text-main);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font: inherit;
-            font-size: 14px;
-        }
-
-        .modal-box input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
-        @media (max-width: 960px) {
-            body { padding: 16px; }
-            .main-grid { grid-template-columns: minmax(0, 1fr); }
-            header { justify-content: center; }
-            .header-actions { justify-content: center; }
-        }
-
-        @media (max-width: 480px) {
-            .card { padding: 16px; }
-            .keypad-grid { gap: 8px; padding: 10px; }
-            .key-label { font-size: 14px; }
-            .layer-tab { padding: 8px 6px; font-size: 12px; }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            * { transition: none !important; }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DriftPad Configurator</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/app-shell.css">
 </head>
 <body>
 
-    <!-- Top Navigation Header -->
-    <header>
-        <div class="brand">
-            <span class="brand-badge">HE</span>
-            <h1>DriftPad<small>Rapid Trigger Configurator</small></h1>
-        </div>
-        <div class="header-actions">
-            <div class="connection">
-                <div id="statusDot" class="status-dot"></div>
-                <span id="statusText" style="font-size: 14px; font-weight: 600; color: var(--text-muted);">Disconnected</span>
-            </div>
-            <button id="connectBtn" class="btn btn-primary" onclick="toggleConnect()">Connect DriftPad</button>
-            <a class="btn" href="keymap.html" style="text-decoration: none;">Keymap Editor</a>
-            <button id="hidBtn" class="btn" onclick="toggleHid()">Enable HID Output</button>
-            <div class="btn-group">
-                <select id="animSelect" class="btn" title="Screensaver animation">
-                    <option value="-1">Cycle all</option>
-                    <option value="0">Starfield</option>
-                    <option value="1">Cyber rain</option>
-                    <option value="2">Oscilloscope</option>
-                    <option value="3">Synthwave grid</option>
-                    <option value="4">Magnetic ripples</option>
-                    <option value="5">Lava lamp</option>
-                </select>
-                <button class="btn" onclick="playScreensaver()">Screensaver</button>
-            </div>
-            <button class="btn" onclick="saveToFlash()">Save to Flash</button>
-            <button class="btn" onclick="sendCommand('BOOTSEL')">Bootloader</button>
-            <button class="btn btn-danger" onclick="factoryReset()">Reset</button>
-        </div>
-    </header>
+<div id="simBanner" class="sim-banner" hidden>SIMULATED DEVICE: no hardware is connected. Everything here talks to an in-browser model.</div>
 
-    <div class="main-grid">
+<header>
+    <div class="brand">
+        <span class="brand-badge" aria-hidden="true">HE</span>
+        <h1>DriftPad<small>Configurator</small></h1>
+    </div>
+    <div class="header-actions">
+        <div class="connection">
+            <span id="statusDot" class="status-dot" aria-hidden="true"></span>
+            <span id="statusText">No device</span>
+        </div>
+        <span id="dirtyBadge" class="badge badge-warn" hidden>Unsaved changes on the device</span>
+        <button id="connectBtn" class="btn btn-primary" type="button">Connect DriftPad</button>
+    </div>
+</header>
 
-        <!-- Left Column: Keypad & Layers -->
+<p id="connDetail" class="conn-detail muted"></p>
+
+<!-- Announcements for assistive technology: status is polite, errors interrupt -->
+<div id="liveStatus" class="sr-only" role="status" aria-live="polite"></div>
+<div id="liveError" class="sr-only" role="alert" aria-live="assertive"></div>
+
+<nav class="tabs" role="tablist" aria-label="Configurator areas">
+    <button role="tab" id="tab-keys" aria-controls="panel-keys" aria-selected="true" class="tab" data-view="keys">Keys</button>
+    <button role="tab" id="tab-sensitivity" aria-controls="panel-sensitivity" aria-selected="false" class="tab" data-view="sensitivity" tabindex="-1">Sensitivity</button>
+    <button role="tab" id="tab-device" aria-controls="panel-device" aria-selected="false" class="tab" data-view="device" tabindex="-1">Device</button>
+</nav>
+
+<!-- ============================== KEYS ============================== -->
+<section id="panel-keys" role="tabpanel" aria-labelledby="tab-keys" class="panel">
+    <div class="layout">
         <div class="card">
             <div class="card-header">
-                <span class="card-title">16-Key Matrix Map</span>
-                <span id="activeLayerLabel" style="font-size: 13px; font-weight: 600; color: var(--accent);">Layer 0: Numpad</span>
+                <h2 class="card-title">Layout</h2>
+                <span id="syncSummary" class="muted">Not connected: edits are kept in this browser</span>
             </div>
 
-            <div class="key-matrix-container">
-                <div class="layer-tabs">
-                    <button class="layer-tab active" onclick="selectLayer(0)">L0: Numpad</button>
-                    <button class="layer-tab" onclick="selectLayer(1)">L1: Navigation</button>
-                    <button class="layer-tab" onclick="selectLayer(2)">L2: WASD Gaming</button>
-                </div>
+            <div class="layer-tabs" id="layerTabs" role="radiogroup" aria-label="Layer to view and edit">
+                <button class="layer-tab" type="button" role="radio" data-layer="0">L0: Numpad</button>
+                <button class="layer-tab" type="button" role="radio" data-layer="1">L1: Navigation</button>
+                <button class="layer-tab" type="button" role="radio" data-layer="2">L2: WASD Gaming</button>
+            </div>
+            <p class="muted small">Viewing a layer never changes the pad. <span id="activeLayerNote"></span>
+                <button id="makeActiveBtn" class="btn btn-sm" type="button" disabled>Make this the active layer on the pad</button></p>
 
-                <div class="keypad-grid" id="keypadGrid">
-                    <!-- Populated dynamically via JS -->
+            <div class="pad" id="pad" role="group" aria-label="Keys of the pad, as it sits on the desk. Arrow keys move between keys; Home and End go to the start and end of a row.">
+                <div class="oled" id="oled" aria-hidden="true">
+                    <div class="oled-top"><span id="oledLayer">L0 NUMPAD</span><span>DISPLAY</span></div>
+                    <div class="oled-main" id="oledMain">ESC</div>
+                    <div class="oled-sub" id="oledSub">KEY 0 · Esc</div>
                 </div>
+                <div class="knob" aria-hidden="true" title="The knob drives the on-device menu and is not remappable">
+                    <div class="knob-dial"></div><span>KNOB</span>
+                </div>
+                <!-- 16 key caps are created once by app.js and updated in place -->
             </div>
 
-            <div style="font-size: 12px; color: var(--text-muted); text-align: center;">
-                Click any key to remap its digital HID output. Keys light up live during press.
+            <div class="legend">
+                <span><i class="flag-custom" aria-hidden="true">●</i> Changed from the default layout</span>
+                <span><i class="flag-pending" aria-hidden="true">▲</i> Not yet written to the pad</span>
+                <span><i class="flag-error" aria-hidden="true">✕</i> Write failed</span>
+            </div>
+
+            <div class="row">
+                <button id="writeBtn" class="btn btn-primary" type="button" disabled>Write changes</button>
+                <button id="loadBtn" class="btn" type="button" disabled>Load from the pad</button>
+            </div>
+            <div class="row">
+                <button id="resetLayerBtn" class="btn btn-sm" type="button">Reset layer to default</button>
+                <button id="resetAllKeysBtn" class="btn btn-sm btn-danger" type="button">Reset all layers</button>
+                <button id="exportKeymapBtn" class="btn btn-sm" type="button">Export keymap</button>
+                <button id="importKeymapBtn" class="btn btn-sm" type="button">Import keymap</button>
+                <input type="file" id="importKeymapFile" accept="application/json,.json" hidden>
             </div>
         </div>
 
-        <!-- Right Column: Rapid Trigger Tuning & Switch Simulation -->
         <div class="card">
             <div class="card-header">
-                <span class="card-title">Rapid Trigger & DSP Tuning</span>
-                <span style="font-size: 12px; color: var(--green); font-weight: 600;">ACTIVE DSP ENGINE</span>
+                <h2 class="card-title" id="editorTitle">Key 0</h2>
+                <button id="resetKeyBtn" class="btn btn-sm" type="button">Reset key</button>
             </div>
-
-            <!-- Actuation Point Slider -->
-            <div class="control-group">
-                <div class="control-label">
-                    <span>Actuation Point (mm)</span>
-                    <span id="actVal" class="control-val">1.20 mm</span>
+            <div class="current">
+                <div class="field">
+                    <label for="labelInput">Display label (1 to 4 characters)</label>
+                    <input type="text" id="labelInput" maxlength="8" autocomplete="off" spellcheck="false" aria-describedby="labelHelp">
+                    <span id="labelHelp" class="hint">Letters are shown in capitals. Spaces, quotes, backslash and @ are not allowed.</span>
                 </div>
-                <input type="range" id="actSlider" min="0.2" max="3.6" step="0.05" value="1.20" oninput="onActuationChange(this.value)">
-                <div class="range-scale"><span>0.2</span><span>3.6</span></div>
-                <span class="hint">Depth at which standard keystroke triggers down.</span>
-            </div>
-
-            <!-- Rapid Trigger Sensitivity Slider -->
-            <div class="control-group">
-                <div class="control-label">
-                    <span>Rapid Trigger Sensitivity (mm)</span>
-                    <span id="rtSensVal" class="control-val">0.20 mm</span>
+                <div class="field">
+                    <span class="field-label" id="sendsLabel">Sends</span>
+                    <div id="sendsName" class="sends" aria-labelledby="sendsLabel">Esc</div>
+                    <span id="deviceKeyState" class="hint"></span>
                 </div>
-                <input type="range" id="rtSensSlider" min="0.10" max="1.50" step="0.05" value="0.20" oninput="onRtSensChange(this.value)">
-                <div class="range-scale"><span>0.10</span><span>1.50</span></div>
-                <span class="hint">Distance switch must reverse upward to release or downward to re-trigger.</span>
+                <div class="field">
+                    <label for="codeInput">Key code</label>
+                    <input type="number" id="codeInput" min="0" max="255">
+                </div>
+            </div>
+            <div class="row">
+                <button id="captureBtn" class="btn capture-btn" type="button" aria-pressed="false">Press a key to assign</button>
+                <span class="muted" id="captureHint">Or pick one below.</span>
+            </div>
+            <div class="field">
+                <label for="search">Search keys</label>
+                <input type="search" id="search" placeholder="e.g. f13, ctrl, page">
+            </div>
+            <div class="cat-tabs" id="catTabs" role="radiogroup" aria-label="Key category"></div>
+            <div class="picker" id="picker" role="listbox" aria-label="Keys to assign"></div>
+        </div>
+    </div>
+</section>
+
+<!-- ============================== SENSITIVITY ============================== -->
+<section id="panel-sensitivity" role="tabpanel" aria-labelledby="tab-sensitivity" class="panel" hidden>
+    <div class="layout">
+        <div class="card">
+            <div class="card-header"><h2 class="card-title">Sensitivity</h2><span id="limitsSource" class="muted small"></span></div>
+
+            <div class="control-group">
+                <div class="control-label"><label for="actSlider">Actuation point</label><output id="actEdit" for="actSlider" class="control-val"></output></div>
+                <input type="range" id="actSlider" step="0.05" aria-describedby="actHelp actDevice">
+                <div class="range-scale"><span id="actMin"></span><span id="actMax"></span></div>
+                <span id="actDevice" class="device-value"></span>
+                <span id="actHelp" class="hint">How far a key must go down before it sends its key. Shallower is faster but easier to trigger by accident.</span>
             </div>
 
-            <!-- Rapid Trigger Enable Toggle -->
+            <div class="control-group">
+                <div class="control-label"><label for="rtSlider">Rapid Trigger sensitivity</label><output id="rtEdit" for="rtSlider" class="control-val"></output></div>
+                <input type="range" id="rtSlider" step="0.05" aria-describedby="rtHelp rtDevice">
+                <div class="range-scale"><span id="rtMin"></span><span id="rtMax"></span></div>
+                <span id="rtDevice" class="device-value"></span>
+                <span id="rtHelp" class="hint">With Rapid Trigger on, a key releases as soon as it moves up by this distance and presses again as soon as it moves down by it, without returning to the top first.</span>
+            </div>
+
             <label class="toggle-row" for="rtToggle">
-                <span>
-                    <span style="display: block; font-weight: 600; font-size: 14px;">Rapid Trigger Mode</span>
-                    <span class="hint" style="display: block;">Continuous dynamic actuation & release without fixed reset point.</span>
-                </span>
-                <input type="checkbox" id="rtToggle" class="switch" role="switch" checked onchange="onRtToggle(this.checked)">
+                <span><span class="toggle-title">Rapid Trigger</span>
+                    <span class="hint" id="rtToggleHelp">Off: a key releases only when it comes back above the actuation point.</span></span>
+                <input type="checkbox" id="rtToggle" class="switch" role="switch" aria-describedby="rtToggleHelp rtEnDevice">
             </label>
+            <span id="rtEnDevice" class="device-value"></span>
+            <p id="settingsState" class="state-line" aria-live="off"></p>
+        </div>
+        <div class="card explain">
+            <h2 class="card-title">What these mean</h2>
+            <p><strong>Applied</strong> means the pad uses the value now. <strong>Saved</strong> means it survives unplugging: use <em>Save to the pad</em> on the Device page. Values that are applied but not saved are lost when the pad loses power.</p>
+            <p><strong>Travel is an estimate.</strong> The pad measures a magnet with a Hall-effect sensor and maps the signal linearly onto the switch's nominal 4 mm of travel. Distances shown here are that estimate, in steps of 0.01 mm; they are not measured with a gauge.</p>
+            <p>The limits come from the connected pad. They are the ranges the sensing is designed for, not measured accuracy.</p>
+        </div>
+    </div>
+</section>
 
-            <!-- Switch Stem Simulation Sandbox -->
-            <div class="switch-visualizer">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 13px; font-weight: 700; color: var(--text-main);">Software Switch Simulator (Key 0)</span>
-                    <span id="simDepthLabel" style="font-size: 13px; font-family: monospace; color: var(--accent);">Travel: 0.00 mm</span>
-                </div>
-                <div class="stem-track">
-                    <div id="stemProgress" class="stem-progress"></div>
-                    <div id="actMarker" class="stem-marker-act" style="left: 30%;"></div>
-                </div>
-                <input type="range" id="simSlider" min="0.0" max="4.0" step="0.05" value="0.0" oninput="onSimSlider(this.value)">
-                <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted);">
-                    <span>0.0mm (Rest)</span>
-                    <span style="color: var(--amber);">▲ Actuation Point</span>
-                    <span>4.0mm (Bottom Out)</span>
-                </div>
+<!-- ============================== DEVICE ============================== -->
+<section id="panel-device" role="tabpanel" aria-labelledby="tab-device" class="panel" hidden>
+    <div class="layout">
+        <div class="card">
+            <div class="card-header"><h2 class="card-title">This pad</h2></div>
+            <dl class="identity" id="identity"><dt>Status</dt><dd>No device</dd></dl>
+            <div class="row">
+                <button id="saveBtn" class="btn btn-primary" type="button" disabled>Save to the pad</button>
+                <button id="revertBtn" class="btn" type="button" disabled>Discard unsaved changes</button>
             </div>
-
-            <!-- Device Event Log -->
-            <div class="control-group">
-                <span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">Serial Communication Console</span>
-                <div id="logConsole" class="log-console">
-                    [WEB] DriftPad Web Configurator Initialized.<br>
-                    [READY] Click "Connect DriftPad" to pair via USB WebSerial.
-                </div>
+            <p id="saveState" class="state-line"></p>
+            <div class="row">
+                <button id="resetBtn" class="btn btn-sm btn-danger" type="button" disabled>Factory settings…</button>
+                <button id="resetAllBtn" class="btn btn-sm btn-danger" type="button" disabled hidden>Factory settings and forget calibration…</button>
             </div>
         </div>
 
-    </div>
+        <div class="card">
+            <div class="card-header"><h2 class="card-title">Keyboard output</h2></div>
+            <p id="outputState" class="state-line">Not connected.</p>
+            <div class="row">
+                <button id="outputOnBtn" class="btn" type="button" disabled>Turn keyboard output on</button>
+                <button id="outputOffBtn" class="btn" type="button" disabled>Turn keyboard output off</button>
+            </div>
+            <label class="toggle-row" for="bootOutputToggle" id="bootOutputRow" hidden>
+                <span><span class="toggle-title">Standalone mode</span>
+                    <span class="hint" id="bootOutputHelp">Turn keyboard output on by itself at power-up. Needs valid calibration; keys held while plugging in stay silent until released. Save to keep it.</span></span>
+                <input type="checkbox" id="bootOutputToggle" class="switch" role="switch" aria-describedby="bootOutputHelp bootOutputNote">
+            </label>
+            <p id="bootOutputNote" class="state-line" hidden></p>
+        </div>
 
-    <!-- Key Remap Modal -->
-    <div id="remapModal" class="modal-overlay">
-        <div class="modal-box">
-            <h3 style="font-size: 18px; color: var(--accent);">Remap Key</h3>
-            <div id="remapKeyInfo" style="font-size: 13px; color: var(--text-muted);">Configuring Key...</div>
-            <div class="control-group">
-                <label style="font-size: 12px; font-weight: 600;">Display Label (max 4 chars)</label>
-                <input type="text" id="remapLabelInput" maxlength="4">
+        <div class="card" id="calCard" hidden>
+            <div class="card-header"><h2 class="card-title">Calibration</h2><span id="calState" class="badge"></span></div>
+            <p class="hint">Calibration measures each key at rest and fully pressed, so the pad can tell a key held while it powers up from one at rest. Keyboard output stays off while it runs.</p>
+            <ol class="steps">
+                <li>Take your hands off the pad, then start. The pad measures every key at rest for half a second.</li>
+                <li>Press each key all the way down and let it go. Done keys are marked below.</li>
+                <li>Finish, then save to the pad.</li>
+            </ol>
+            <div class="mini-grid" id="calGrid" role="list" aria-label="Calibration progress per key"></div>
+            <p id="calProgress" class="state-line"></p>
+            <div class="row">
+                <button id="calStartBtn" class="btn btn-primary" type="button" disabled>Start calibration</button>
+                <button id="calFinishBtn" class="btn" type="button" disabled>Finish</button>
+                <button id="calCancelBtn" class="btn" type="button" disabled>Cancel</button>
             </div>
-            <div class="control-group">
-                <label style="font-size: 12px; font-weight: 600;">HID Keycode (ASCII / Arduino Keycode)</label>
-                <input type="number" id="remapCodeInput">
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h2 class="card-title">Backup</h2></div>
+            <p class="hint">A backup holds the keymaps and sensitivity settings. Calibration belongs to one pad's sensors and is never restored from a file.</p>
+            <div class="row">
+                <button id="backupBtn" class="btn" type="button" disabled>Download backup</button>
+                <button id="restoreBtn" class="btn" type="button" disabled>Restore from a file…</button>
+                <input type="file" id="restoreFile" accept="application/json,.json" hidden>
             </div>
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
-                <button class="btn" onclick="closeRemapModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="saveRemapKey()">Apply</button>
-            </div>
+            <p id="restoreState" class="state-line"></p>
         </div>
     </div>
 
-    <script>
-        let port = null;
-        let reader = null;
-        let writer = null;
-        let activeLayer = 0;
-        let selectedKeyIdx = -1;
+    <details class="card advanced" id="advanced">
+        <summary>Advanced diagnostics</summary>
+        <div class="adv-grid">
+            <fieldset>
+                <legend>Simulate a key</legend>
+                <label for="simKey">Key</label>
+                <select id="simKey"></select>
+                <label for="simTravel">Travel</label>
+                <input type="range" id="simTravel" min="0" max="4" step="0.05" value="0">
+                <output id="simTravelVal" for="simTravel">0.00 mm</output>
+                <button id="simOffBtn" class="btn btn-sm" type="button" disabled>Stop simulating</button>
+                <p class="hint">Simulated presses show in the display and telemetry but never type anything.</p>
+            </fieldset>
+            <fieldset>
+                <legend>Raw sensor samples</legend>
+                <label for="rawKey">Key</label>
+                <select id="rawKey"></select>
+                <button id="rawBtn" class="btn btn-sm" type="button" disabled>Capture 1 second</button>
+                <pre id="rawOut" class="out"></pre>
+            </fieldset>
+            <fieldset>
+                <legend>Scan timing</legend>
+                <button id="timingBtn" class="btn btn-sm" type="button" disabled>Read timing</button>
+                <button id="timingResetBtn" class="btn btn-sm" type="button" disabled>Reset counters</button>
+                <pre id="timingOut" class="out"></pre>
+            </fieldset>
+            <fieldset>
+                <legend>Display</legend>
+                <label for="animSelect">Screensaver animation</label>
+                <select id="animSelect">
+                    <option value="-1">Cycle all</option><option value="0">Starfield</option><option value="1">Cyber rain</option>
+                    <option value="2">Oscilloscope</option><option value="3">Synthwave grid</option><option value="4">Magnetic ripples</option><option value="5">Lava lamp</option>
+                </select>
+                <button id="screensaverBtn" class="btn btn-sm" type="button" disabled>Play screensaver</button>
+            </fieldset>
+            <fieldset>
+                <legend>Firmware</legend>
+                <button id="forceOutputBtn" class="btn btn-sm btn-danger" type="button" disabled>Force keyboard output on…</button>
+                <button id="bootselBtn" class="btn btn-sm btn-danger" type="button" disabled>Restart into the bootloader…</button>
+            </fieldset>
+            <fieldset class="wide">
+                <legend>Serial log</legend>
+                <div id="log" class="log" role="log" aria-label="Serial log" tabindex="0"></div>
+            </fieldset>
+        </div>
+    </details>
+</section>
 
-        let deviceConfig = {
-            actuation: 1.20,
-            rt_sens: 0.20,
-            rt_enabled: true,
-            active_layer: 0,
-            layers: [
-                // Layer 0: Numpad default
-                [
-                    {idx: 0, code: 177, label: "ESC"}, {idx: 1, code: 55, label: "7"}, {idx: 2, code: 56, label: "8"}, {idx: 3, code: 57, label: "9"},
-                    {idx: 4, code: 240, label: "M1"},  {idx: 5, code: 52, label: "4"}, {idx: 6, code: 53, label: "5"}, {idx: 7, code: 54, label: "6"},
-                    {idx: 8, code: 241, label: "M2"},  {idx: 9, code: 49, label: "1"}, {idx: 10, code: 50, label: "2"}, {idx: 11, code: 51, label: "3"},
-                    {idx: 12, code: 242, label: "M3"}, {idx: 13, code: 243, label: "M4"}, {idx: 14, code: 48, label: "0"}, {idx: 15, code: 176, label: "ENT"}
-                ],
-                // Layer 1: Nav default
-                [
-                    {idx: 0, code: 177, label: "ESC"}, {idx: 1, code: 210, label: "HOME"}, {idx: 2, code: 218, label: "UP"}, {idx: 3, code: 211, label: "PGUP"},
-                    {idx: 4, code: 179, label: "TAB"}, {idx: 5, code: 216, label: "LEFT"}, {idx: 6, code: 217, label: "DOWN"}, {idx: 7, code: 215, label: "RGHT"},
-                    {idx: 8, code: 209, label: "INS"}, {idx: 9, code: 213, label: "END"}, {idx: 10, code: 217, label: "DOWN"}, {idx: 11, code: 214, label: "PGDN"},
-                    {idx: 12, code: 178, label: "BSPC"}, {idx: 13, code: 212, label: "DEL"}, {idx: 14, code: 32, label: "SPCE"}, {idx: 15, code: 176, label: "ENT"}
-                ],
-                // Layer 2: WASD Gaming default
-                [
-                    {idx: 0, code: 177, label: "ESC"}, {idx: 1, code: 49, label: "1"}, {idx: 2, code: 50, label: "2"}, {idx: 3, code: 51, label: "3"},
-                    {idx: 4, code: 179, label: "TAB"}, {idx: 5, code: 113, label: "Q"}, {idx: 6, code: 119, label: "W"}, {idx: 7, code: 101, label: "E"},
-                    {idx: 8, code: 129, label: "SHFT"}, {idx: 9, code: 97, label: "A"}, {idx: 10, code: 115, label: "S"}, {idx: 11, code: 100, label: "D"},
-                    {idx: 12, code: 128, label: "CTRL"}, {idx: 13, code: 114, label: "R"}, {idx: 14, code: 32, label: "SPCE"}, {idx: 15, code: 102, label: "F"}
-                ]
-            ]
-        };
+<dialog id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
+    <h2 id="confirmTitle">Are you sure?</h2>
+    <p id="confirmBody"></p>
+    <div class="row dialog-actions">
+        <button id="confirmCancel" class="btn" type="button">Cancel</button>
+        <button id="confirmOk" class="btn btn-primary" type="button">Continue</button>
+    </div>
+</dialog>
 
-        function log(msg) {
-            const consoleBox = document.getElementById("logConsole");
-            const entry = document.createElement("div");
-            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            consoleBox.appendChild(entry);
-            consoleBox.scrollTop = consoleBox.scrollHeight;
-        }
-
-        function renderKeypad() {
-            const grid = document.getElementById("keypadGrid");
-            grid.innerHTML = "";
-            const keys = deviceConfig.layers[activeLayer] || [];
-
-            for (let i = 0; i < 16; ++i) {
-                const k = keys[i] || { idx: i, code: 0, label: "KEY" };
-                const btn = document.createElement("button");
-                btn.className = "key-cap";
-                btn.id = `keyCap_${i}`;
-                btn.onclick = () => openRemapModal(i);
-
-                const label = document.createElement("div");
-                label.className = "key-label";
-                label.textContent = k.label;
-
-                const sub = document.createElement("div");
-                sub.className = "key-sub";
-                sub.textContent = `#${k.idx}`;
-
-                btn.appendChild(label);
-                btn.appendChild(sub);
-                grid.appendChild(btn);
-            }
-        }
-
-        function selectLayer(l) {
-            activeLayer = l;
-            document.querySelectorAll(".layer-tab").forEach((el, idx) => {
-                el.classList.toggle("active", idx === l);
-            });
-            const names = ["Layer 0: Numpad", "Layer 1: Navigation", "Layer 2: WASD Gaming"];
-            document.getElementById("activeLayerLabel").textContent = names[l];
-            renderKeypad();
-            sendCommand(`SET_LAYER ${l}`);
-        }
-
-        let hidEnabled = false;
-        function toggleHid() {
-            hidEnabled = !hidEnabled;
-            sendCommand(`SET_HID ${hidEnabled ? 1 : 0}`);
-            const btn = document.getElementById("hidBtn");
-            btn.textContent = hidEnabled ? "Disable HID Output" : "Enable HID Output";
-            btn.classList.toggle("on", hidEnabled);
-        }
-
-        async function toggleConnect() {
-            if (port) {
-                try {
-                    await reader.cancel();
-                    await port.close();
-                } catch(e) {}
-                port = null;
-                updateConnectState(false);
-                return;
-            }
-
-            if (!navigator.serial) {
-                alert("WebSerial is not supported in this browser. Please use Chrome, Edge, or Opera.");
-                return;
-            }
-
-            try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 115200 });
-                updateConnectState(true);
-                log("Connected to DriftPad USB Serial.");
-
-                const textDecoder = new TextDecoderStream();
-                port.readable.pipeTo(textDecoder.writable);
-                reader = textDecoder.readable.getReader();
-
-                const textEncoder = new TextEncoderStream();
-                textEncoder.readable.pipeTo(port.writable);
-                writer = textEncoder.writable.getWriter();
-
-                readLoop();
-                sendCommand("GET_CONFIG");
-            } catch (err) {
-                log("Connection error: " + err);
-                port = null;
-                updateConnectState(false);
-            }
-        }
-
-        function updateConnectState(connected) {
-            const dot = document.getElementById("statusDot");
-            const txt = document.getElementById("statusText");
-            const btn = document.getElementById("connectBtn");
-            if (connected) {
-                dot.classList.add("connected");
-                txt.textContent = "Connected";
-                btn.textContent = "Disconnect";
-            } else {
-                dot.classList.remove("connected");
-                txt.textContent = "Disconnected";
-                btn.textContent = "Connect DriftPad";
-            }
-        }
-
-        // ANIM <n> picks the animation and starts the screensaver; -1 cycles through all six
-        function playScreensaver() {
-            sendCommand('ANIM ' + document.getElementById('animSelect').value);
-        }
-
-        async function sendCommand(cmd) {
-            if (!writer) return;
-            try {
-                await writer.write(cmd + "\n");
-                log("TX -> " + cmd);
-            } catch (err) {
-                log("Write error: " + err);
-            }
-        }
-
-        async function readLoop() {
-            let buffer = "";
-            try {
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    if (value) {
-                        buffer += value;
-                        const lines = buffer.split("\n");
-                        buffer = lines.pop();
-                        for (const line of lines) {
-                            handleIncomingLine(line.trim());
-                        }
-                    }
-                }
-            } catch (err) {
-                log("Reader terminated: " + err);
-            }
-        }
-
-        function handleIncomingLine(line) {
-            if (!line) return;
-            log("RX <- " + line);
-
-            try {
-                const data = JSON.parse(line);
-                if (data.type === "config") {
-                    deviceConfig.actuation = data.actuation;
-                    deviceConfig.rt_sens = data.rt_sens;
-                    deviceConfig.rt_enabled = data.rt_enabled;
-                    deviceConfig.active_layer = data.active_layer;
-                    deviceConfig.layers = data.layers;
-
-                    document.getElementById("actSlider").value = data.actuation;
-                    document.getElementById("actVal").textContent = data.actuation.toFixed(2) + " mm";
-                    document.getElementById("rtSensSlider").value = data.rt_sens;
-                    document.getElementById("rtSensVal").textContent = data.rt_sens.toFixed(2) + " mm";
-                    document.getElementById("rtToggle").checked = data.rt_enabled;
-                    updateActuationMarker(data.actuation);
-                    syncRangeFill(document.getElementById("actSlider"));
-                    syncRangeFill(document.getElementById("rtSensSlider"));
-
-                    selectLayer(data.active_layer);
-                } else if (data.type === "sim_event") {
-                    const el = document.getElementById(`keyCap_${data.key}`);
-                    if (el) {
-                        el.classList.toggle("pressed", data.pressed);
-                    }
-                }
-            } catch(e) {
-                // Non-JSON telemetry / info string
-            }
-        }
-
-        function onActuationChange(val) {
-            val = parseFloat(val);
-            document.getElementById("actVal").textContent = val.toFixed(2) + " mm";
-            updateActuationMarker(val);
-            sendCommand(`SET_ACTUATION ${val.toFixed(2)}`);
-        }
-
-        function updateActuationMarker(actMm) {
-            const pct = (actMm / 4.0) * 100;
-            document.getElementById("actMarker").style.left = `${pct}%`;
-        }
-
-        function onRtSensChange(val) {
-            val = parseFloat(val);
-            document.getElementById("rtSensVal").textContent = val.toFixed(2) + " mm";
-            sendCommand(`SET_RT_SENS ${val.toFixed(2)}`);
-        }
-
-        function onRtToggle(enabled) {
-            sendCommand(`SET_RT_ENABLE ${enabled ? 1 : 0}`);
-        }
-
-        function onSimSlider(val) {
-            val = parseFloat(val);
-            document.getElementById("simDepthLabel").textContent = `Travel: ${val.toFixed(2)} mm`;
-            const pct = (val / 4.0) * 100;
-            document.getElementById("stemProgress").style.width = `${pct}%`;
-
-            // Inject simulated travel into Key 0
-            sendCommand(`SIM 0 ${val.toFixed(2)}`);
-        }
-
-        function saveToFlash() {
-            sendCommand("SAVE");
-        }
-
-        function factoryReset() {
-            if (confirm("Reset all settings, actuation points, and keymaps to factory defaults?")) {
-                sendCommand("RESET");
-                setTimeout(() => sendCommand("GET_CONFIG"), 200);
-            }
-        }
-
-        // Remap Key Modal Logic
-        function openRemapModal(keyIdx) {
-            selectedKeyIdx = keyIdx;
-            const k = deviceConfig.layers[activeLayer][keyIdx];
-            document.getElementById("remapKeyInfo").textContent = `Configuring Key #${keyIdx} on Layer ${activeLayer}`;
-            document.getElementById("remapLabelInput").value = k.label;
-            document.getElementById("remapCodeInput").value = k.code;
-            document.getElementById("remapModal").classList.add("open");
-        }
-
-        function closeRemapModal() {
-            document.getElementById("remapModal").classList.remove("open");
-        }
-
-        function saveRemapKey() {
-            const label = document.getElementById("remapLabelInput").value.trim().toUpperCase() || "KEY";
-            const code = parseInt(document.getElementById("remapCodeInput").value) || 0;
-
-            deviceConfig.layers[activeLayer][selectedKeyIdx].label = label;
-            deviceConfig.layers[activeLayer][selectedKeyIdx].code = code;
-
-            renderKeypad();
-            sendCommand(`SET_KEY ${activeLayer} ${selectedKeyIdx} ${code} ${label}`);
-            closeRemapModal();
-        }
-
-        // Paints the filled part of a range track up to its thumb
-        function syncRangeFill(el) {
-            const pct = (el.value - el.min) / (el.max - el.min) * 100;
-            el.style.setProperty("--fill", `${pct}%`);
-        }
-
-        // Initialize UI
-        document.querySelectorAll('input[type="range"]').forEach(el => {
-            el.addEventListener("input", () => syncRangeFill(el));
-            syncRangeFill(el);
-        });
-        renderKeypad();
-        updateActuationMarker(1.20);
-    </script>
+<script src="js/contract.js"></script>
+<script src="js/keycodes.js"></script>
+<script src="js/protocol.js"></script>
+<script src="js/transport.js"></script>
+<script src="js/device.js"></script>
+<script src="js/draft.js"></script>
+<script src="js/backup.js"></script>
+<script src="js/fake_device.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

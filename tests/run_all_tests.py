@@ -65,6 +65,8 @@ BROWSER = "headless browser"
 ARTIFACTS = "build artifacts"
 SOURCE = "source inspection"
 TOOLING = "host tooling with fakes"
+BROWSER_AND_COMPILED = "headless browser + compiled firmware on host"
+VALIDATOR = "test validator self-check"
 UNCLASSIFIED = "unclassified"
 
 # (module, class regex or None, method regex or None, scope); first match wins
@@ -75,9 +77,8 @@ SCOPE_RULES: List[Tuple[str, Optional[str], Optional[str], str]] = [
     ("test_challenger2_verification", None, None, SOURCE),
     ("test_dsp_harness", None, None, SYNTHETIC),
     ("test_adversarial_m2", None, None, SYNTHETIC),
-    ("test_config_schema", None, r"zero_external|keymap_editor", SOURCE),
     ("test_config_schema", None, r"tc14", COMPILED),
-    ("test_config_schema", None, None, SYNTHETIC),
+    ("test_config_schema", None, None, VALIDATOR),
     ("test_firmware_parity", None, None, COMPILED),
     ("test_keyboard_output", None, None, COMPILED),
     ("test_calibration", None, None, COMPILED),
@@ -89,7 +90,8 @@ SCOPE_RULES: List[Tuple[str, Optional[str], Optional[str], str]] = [
     ("test_persistence_device", None, None, COMPILED),
     ("test_build_info_script", None, None, TOOLING),
     ("test_configurator_js", None, None, BROWSER),
-    ("test_configurator", None, None, SOURCE),
+    ("test_configurator_contract", None, None, BROWSER_AND_COMPILED),
+    ("test_contract_consistency", None, None, SOURCE),
     ("test_flash_tool", None, None, TOOLING),
     ("test_release_tooling", None, None, TOOLING),
 ]
@@ -104,6 +106,7 @@ REQUIRED_SUITES: List[Tuple[str, Tuple[str, ...]]] = [
     ("protocol/parser (compiled)", ("test_protocol_core",)),
     ("virtual device integration (compiled)", ("test_virtual_device", "test_protocol_device")),
     ("configurator JS (headless Chrome)", ("test_configurator_js",)),
+    ("configurator fake vs firmware contract", ("test_configurator_contract",)),
     ("build + artifacts", ("test_build",)),
     ("flash layout (build artifacts)", ("test_flash_layout",)),
     ("docs/contract consistency", (r"test_docs\w*", r"test_contract\w*")),
@@ -153,11 +156,9 @@ TEST_META: List[Tuple[str, str, str, str]] = [
     (r"test_challenger2_verification", r"^test_05_", "CH2-05", "Config schema & CRC32 integrity"),
     (r"test_challenger2_verification", r"^test_06_", "CH2-06", "OLED safe zone & core guards"),
     (r"test_challenger2_verification", r"^test_07_", "CH2-07", "Serial command coverage"),
-    (r"test_config_schema", r"tc14", "TC-14", "WebSerial command parser"),
-    (r"test_config_schema", r"tc15", "TC-15", "3-layer JSON roundtrip"),
-    (r"test_config_schema", r"zero_external", "TC-C1", "Configurator zero-CDN check"),
-    (r"test_config_schema", r"profile_schema_adversarial", "TC-C2", "Profile schema adversarial rejection"),
-    (r"test_config_schema", r"get_config_payload_adversarial", "TC-C3", "GET_CONFIG payload adversarial rejection"),
+    (r"test_config_schema", r"tc14", "TC-14", "Firmware GET_CONFIG matches the schema"),
+    (r"test_config_schema", r"get_config_payload_adversarial", "TC-C3", "GET_CONFIG validator rejects bad payloads"),
+    (r"test_contract_consistency", r"needs_no_network", "TC-C1", "Configurator works offline"),
 ]
 
 
@@ -569,6 +570,19 @@ def required_suite_status(module_names: List[str], imported: List[str],
     return out
 
 
+def inner_results(modules: Dict[str, Any], suite_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Dict[str, int]]]:
+    """Counts a module recorded in its INNER_RESULTS dict (tests that run many checks inside one
+    Python test, such as a browser page). Only modules whose tests actually ran are reported."""
+    ran = {r["module"] for r in suite_rows if r.get("passed") or r.get("failed") or r.get("errors")}
+    out = {}
+    for name, module in modules.items():
+        data = getattr(module, "INNER_RESULTS", None)
+        if name in ran and isinstance(data, dict) and data:
+            out[name] = {label: {"passed": int(v.get("passed", 0)), "failed": int(v.get("failed", 0))}
+                         for label, v in data.items() if isinstance(v, dict)}
+    return out
+
+
 def release_problems(summary: Dict[str, Any], tools: Dict[str, Dict[str, Any]],
                      required: List[Dict[str, Any]], build: Optional[build_state.BuildRecord],
                      repo_git: Dict[str, Any], foreign_firmware: bool) -> List[str]:
@@ -665,6 +679,7 @@ def run(argv: Optional[List[str]] = None) -> int:
     suites: List[SuiteInfo] = []
     module_errors: List[Dict[str, str]] = []
     imported: List[str] = []
+    modules: Dict[str, Any] = {}
     for name in module_names:
         try:
             module = importlib.import_module(f"tests.{name}")
@@ -674,6 +689,7 @@ def run(argv: Optional[List[str]] = None) -> int:
             module_errors.append({"module": name, "error": traceback.format_exc()})
             continue
         imported.append(name)
+        modules[name] = module
         suites.extend(load_module_suites(module, loader))
 
     if args.list:
@@ -694,6 +710,7 @@ def run(argv: Optional[List[str]] = None) -> int:
 
     summary = account(suites, result, module_errors)
     c = summary["counts"]
+    inner = inner_results(modules, summary["suites"])
     required = required_suite_status(module_names, imported, summary["suites"])
     build = build_state.current()
     problems = release_problems(summary, tools, required, build, repo_git, foreign) if mode == "release" else []
@@ -718,6 +735,11 @@ def run(argv: Optional[List[str]] = None) -> int:
         d["total"] += 1
         d["PASS"] += t["status"] == "PASS"
     print("  By scope   : " + "; ".join(f"{k}: {v['PASS']}/{v['total']} passed" for k, v in by_scope.items()))
+    if inner:
+        print("  Inside     : checks run inside single Python tests (browser pages, reply comparisons):")
+        for mod, groups in inner.items():
+            for label, n in groups.items():
+                print(f"               {mod}: {label}: {n['passed']} passed, {n['failed']} failed")
     print("  Hardware   : no suite in this run exercises a physical DriftPad (hardware acceptance is separate)")
 
     skipped_rows = [r for r in summary["suites"] if r["skipped"] or r["not_run"]]
@@ -819,6 +841,7 @@ def run(argv: Optional[List[str]] = None) -> int:
             "firmware_dir_override": foreign,
             "tools": tools,
             "counts": c,
+            "inner_results": inner,
             "required_suites": required,
             "suites": summary["suites"],
             "tests": summary["tests"],

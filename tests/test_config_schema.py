@@ -1,18 +1,20 @@
 """
-test_config_schema.py - GET_CONFIG / profile schema validators and configurator offline checks.
+test_config_schema.py - The real firmware's GET_CONFIG reply satisfies the documented schema.
 
-Scope: Python checks of data formats and configurator source files. TC-14 validates the GET_CONFIG
-reply of the real firmware (host-compiled); the protocol itself is tested end to end in
-tests/test_protocol_device.py.
+Scope: TC-14 is the host-compiled firmware's GET_CONFIG reply; the adversarial test shows the
+validator TC-14 relies on does reject malformed payloads (so TC-14 cannot pass vacuously).
+
+Moved elsewhere (these used to live here):
+  - configurator offline and default-keymap checks: tests/test_contract_consistency.py
+  - backup/restore round trip: configurator/tests/session_tests.js, on the real backup.js
+    (the "profile" format the old checks validated was never produced by the configurator)
 
 Pure Python 3 standard library.
 """
 
 import json
-import re
 import sys
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -23,6 +25,12 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 # ============================================================================
 # Serial Protocol & Profile Validators
 # ============================================================================
+
+def label_ok(label: Any) -> bool:
+    """A label as the firmware stores it (tests/fixtures/label_vectors.json, already normalised)."""
+    return (isinstance(label, str) and 1 <= len(label) <= 4 and
+            all(0x21 <= ord(c) <= 0x7E and c not in '"\@' and not ("a" <= c <= "z") for c in label))
+
 
 def validate_get_config_payload(payload: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     """
@@ -42,8 +50,13 @@ def validate_get_config_payload(payload: Dict[str, Any]) -> Tuple[bool, Optional
     if isinstance(rt_sens, bool) or not isinstance(rt_sens, (int, float)) or not (0.10 <= rt_sens <= 2.00):
         return False, f"Invalid RT sensitivity: {rt_sens} (must be in [0.10, 2.00] mm)"
 
-    if not isinstance(payload.get("rt_enabled"), bool):
-        return False, f"Invalid rt_enabled flag: {payload.get('rt_enabled')}"
+    for flag in ("rt_enabled", "boot_output", "dirty"):
+        if not isinstance(payload.get(flag), bool):
+            return False, f"Invalid {flag} flag: {payload.get(flag)!r}"
+
+    seq = payload.get("settings_seq")
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+        return False, f"Invalid settings_seq: {seq!r}"
 
     active_layer = payload.get("active_layer")
     if isinstance(active_layer, bool) or not isinstance(active_layer, int) or not (0 <= active_layer <= 2):
@@ -66,99 +79,14 @@ def validate_get_config_payload(payload: Dict[str, Any]) -> Tuple[bool, Optional
             if isinstance(code, bool) or not isinstance(code, int) or not (0 <= code <= 255):
                 return False, f"Key L{l_idx}:K{k_idx} has invalid HID code: {code}"
             label = key.get("label")
-            if not isinstance(label, str) or len(label) > 4:
-                return False, f"Key L{l_idx}:K{k_idx} has invalid label: '{label}' (must be string <= 4 chars)"
+            if not label_ok(label):
+                return False, f"Key L{l_idx}:K{k_idx} has invalid label: {label!r} (label rule: 1-4 of 0x21..0x7E except \" \ @, no lower case)"
 
     return True, None
 
 
-def validate_profile_json(data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
-    """
-    Validates complete exported DriftPadProfile against authoritative JSON schema.
-    """
-    if not isinstance(data, dict):
-        return False, "Root must be an object"
-
-    required_root = ["version", "generator", "exported_at", "settings"]
-    for req in required_root:
-        if req not in data:
-            return False, f"Missing required root field: '{req}'"
-
-    if data["version"] != 1:
-        return False, f"Unsupported profile version: {data['version']} (expected 1)"
-
-    if not isinstance(data["generator"], str) or len(data["generator"]) == 0:
-        return False, "Field 'generator' must be a non-empty string"
-
-    if not isinstance(data["exported_at"], str):
-        return False, "Field 'exported_at' must be an ISO8601 string"
-
-    settings = data["settings"]
-    if not isinstance(settings, dict):
-        return False, "Field 'settings' must be an object"
-
-    # Reuse GET_CONFIG validator for settings payload
-    settings_copy = dict(settings)
-    settings_copy["type"] = "config"
-    return validate_get_config_payload(settings_copy)
-
-
 class TestConfigSchema(unittest.TestCase):
-    """
-    Validates WebSerial configuration format, profile JSON backup/restore,
-    and checks that configurator/index.html has zero external CDN dependencies.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        cls.root_dir = Path(__file__).resolve().parent.parent
-        cls.configurator_path = cls.root_dir / "configurator" / "index.html"
-
-    def test_offline_zero_external_dependencies(self):
-        """Verifies configurator/index.html operates 100% offline with zero external CDN dependencies."""
-        self._assert_offline(self.configurator_path)
-
-    def test_keymap_editor_offline(self):
-        """Verifies configurator/keymap.html operates 100% offline with zero external CDN dependencies."""
-        self._assert_offline(self.configurator_path.with_name("keymap.html"))
-
-    def test_keymap_editor_defaults_match_firmware(self):
-        """The keymap editor's default Layer 0 must match setDefaultKeymaps() in config.cpp."""
-        editor = self.configurator_path.with_name("keymap.html").read_text(encoding="utf-8")
-        firmware = (self.root_dir / "firmware" / "src" / "config.cpp").read_text(encoding="utf-8")
-        l0_block = firmware.split("const LayerKey l0", 1)[1].split("};", 1)[0]
-        fw_labels = re.findall(r'\{\s*[^,]+,\s*"([^"]*)"\s*\}', l0_block)
-        editor_block = editor.split("const DEFAULTS = [", 1)[1].split("]],", 1)[0] + "]"
-        editor_labels = re.findall(r'\[[^,\[\]]+,"([^"]*)"\]', editor_block)
-        self.assertEqual(len(fw_labels), 16)
-        self.assertEqual(editor_labels, fw_labels)
-
-    def _assert_offline(self, path):
-        self.assertTrue(path.is_file(), f"Missing configurator at {path}")
-        html_content = path.read_text(encoding="utf-8")
-
-        # Scan for external URLs in src, href, @import, url(...)
-        src_href_matches = re.findall(
-            r'(?:src|href)\s*=\s*["\'](https?://[^"\']+|//[^"\']+)["\']',
-            html_content,
-            re.IGNORECASE
-        )
-        css_url_matches = re.findall(
-            r'url\(\s*["\']?(https?://[^)"\']+|//[^)"\']+)["\']?\s*\)',
-            html_content,
-            re.IGNORECASE
-        )
-        import_matches = re.findall(
-            r'@import\s+["\'](https?://[^"\']+|//[^"\']+)["\']',
-            html_content,
-            re.IGNORECASE
-        )
-
-        all_external = src_href_matches + css_url_matches + import_matches
-        self.assertEqual(
-            len(all_external), 0,
-            f"Found external network dependencies in {path.name}:\n" + "\n".join(all_external)
-        )
+    """GET_CONFIG schema: the real firmware's reply, and the validator's own rejections."""
 
     def test_tc14_real_get_config_payload_matches_schema(self):
         """TC-14: the GET_CONFIG reply of the real firmware (whole image on the host) satisfies the
@@ -169,133 +97,6 @@ class TestConfigSchema(unittest.TestCase):
         valid, err = validate_get_config_payload(payload)
         self.assertTrue(valid, f"firmware GET_CONFIG does not match the schema: {err}")
 
-    def test_tc15_profile_json_backup_restore_roundtrip(self):
-        """TC-15: 3-layer export and restore round-trip schema test with 100% parameter fidelity."""
-        # 1. Construct a rich 3-layer custom profile
-        custom_layers = []
-        for l in range(3):
-            keys = []
-            for k in range(16):
-                keys.append({
-                    "idx": k,
-                    "code": 100 + l * 20 + k,
-                    "label": f"L{l}K{k}"[:4]
-                })
-            custom_layers.append(keys)
-
-        original_profile = {
-            "version": 1,
-            "generator": "DriftPad Configurator v2.0",
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "settings": {
-                "actuation": 2.15,
-                "rt_sens": 0.12,
-                "rt_enabled": True,
-                "active_layer": 2,
-                "layers": custom_layers
-            }
-        }
-
-        # 2. Validate original profile against schema
-        valid, err = validate_profile_json(original_profile)
-        self.assertTrue(valid, f"Original profile failed schema validation: {err}")
-
-        # 3. Export to JSON string
-        json_str = json.dumps(original_profile, indent=2)
-
-        # 4. Simulate restore / parse back from JSON
-        restored_profile = json.loads(json_str)
-
-        # 5. Validate restored profile against schema
-        valid, err = validate_profile_json(restored_profile)
-        self.assertTrue(valid, f"Restored profile failed schema validation: {err}")
-
-        # 6. Assert exact deep equality between source and restored settings
-        orig_s = original_profile["settings"]
-        rest_s = restored_profile["settings"]
-        self.assertEqual(orig_s["actuation"], rest_s["actuation"])
-        self.assertEqual(orig_s["rt_sens"], rest_s["rt_sens"])
-        self.assertEqual(orig_s["rt_enabled"], rest_s["rt_enabled"])
-        self.assertEqual(orig_s["active_layer"], rest_s["active_layer"])
-
-        for l in range(3):
-            for k in range(16):
-                self.assertEqual(orig_s["layers"][l][k]["idx"], rest_s["layers"][l][k]["idx"])
-                self.assertEqual(orig_s["layers"][l][k]["code"], rest_s["layers"][l][k]["code"])
-                self.assertEqual(orig_s["layers"][l][k]["label"], rest_s["layers"][l][k]["label"])
-
-    def test_profile_schema_adversarial_rejection(self):
-        """Verifies schema validator rejects malformed, incomplete, or corrupted profile payloads."""
-        valid_template = {
-            "version": 1,
-            "generator": "Test",
-            "exported_at": "2026-09-25T00:00:00Z",
-            "settings": {
-                "actuation": 1.20,
-                "rt_sens": 0.20,
-                "rt_enabled": True,
-                "active_layer": 0,
-                "layers": [
-                    [{"idx": i, "code": i, "label": f"K{i}"} for i in range(16)]
-                    for _ in range(3)
-                ]
-            }
-        }
-
-        # Case A: Missing version
-        bad_a = dict(valid_template)
-        del bad_a["version"]
-        valid, _ = validate_profile_json(bad_a)
-        self.assertFalse(valid)
-
-        # Case B: Unsupported version
-        bad_b = dict(valid_template)
-        bad_b["version"] = 99
-        valid, _ = validate_profile_json(bad_b)
-        self.assertFalse(valid)
-
-        # Case C: Actuation point out of range (>3.8mm)
-        bad_c = json.loads(json.dumps(valid_template))
-        bad_c["settings"]["actuation"] = 5.00
-        valid, _ = validate_profile_json(bad_c)
-        self.assertFalse(valid)
-
-        # Case D: Only 2 layers provided instead of 3
-        bad_d = json.loads(json.dumps(valid_template))
-        bad_d["settings"]["layers"] = bad_d["settings"]["layers"][:2]
-        valid, _ = validate_profile_json(bad_d)
-        self.assertFalse(valid)
-
-        # Case E: Key label too long (>4 chars)
-        bad_e = json.loads(json.dumps(valid_template))
-        bad_e["settings"]["layers"][0][0]["label"] = "TOOLONG"
-        valid, _ = validate_profile_json(bad_e)
-        self.assertFalse(valid)
-
-        # Case F: Key missing in layer (15 keys instead of 16)
-        bad_f = json.loads(json.dumps(valid_template))
-        bad_f["settings"]["layers"][0] = bad_f["settings"]["layers"][0][:15]
-        valid, _ = validate_profile_json(bad_f)
-        self.assertFalse(valid)
-
-        # Case G: Actuation point below minimum (<0.25mm, e.g. 0.20mm)
-        bad_g = json.loads(json.dumps(valid_template))
-        bad_g["settings"]["actuation"] = 0.20
-        valid, err_g = validate_profile_json(bad_g)
-        self.assertFalse(valid, "Actuation point < 0.25mm must be rejected to respect top deadzone")
-
-        # Case H: Boolean actuation rejected (bool inherits from int in Python)
-        bad_h = json.loads(json.dumps(valid_template))
-        bad_h["settings"]["actuation"] = True
-        valid, err_h = validate_profile_json(bad_h)
-        self.assertFalse(valid, "Boolean actuation must be rejected")
-
-        # Case I: Boolean active_layer rejected
-        bad_i = json.loads(json.dumps(valid_template))
-        bad_i["settings"]["active_layer"] = True
-        valid, err_i = validate_profile_json(bad_i)
-        self.assertFalse(valid, "Boolean active_layer must be rejected")
-
     def test_get_config_payload_adversarial_rejection(self):
         """Verifies validate_get_config_payload rejects booleans in numeric fields and out-of-range actuation."""
         valid_cfg = {
@@ -303,12 +104,17 @@ class TestConfigSchema(unittest.TestCase):
             "actuation": 1.20,
             "rt_sens": 0.20,
             "rt_enabled": True,
+            "boot_output": False,
+            "dirty": False,
+            "settings_seq": 3,
             "active_layer": 0,
             "layers": [
                 [{"idx": i, "code": 65 + i, "label": f"K{i}"} for i in range(16)]
                 for _ in range(3)
             ]
         }
+
+        self.assertEqual(validate_get_config_payload(valid_cfg), (True, None), "the template itself is valid")
 
         # 1. Reject boolean actuation
         cfg_bool_act = dict(valid_cfg)
@@ -333,6 +139,16 @@ class TestConfigSchema(unittest.TestCase):
         cfg_bool_code["layers"][0][0]["code"] = True
         valid, _ = validate_get_config_payload(cfg_bool_code)
         self.assertFalse(valid, "Boolean key code must be rejected")
+
+        # 5. Labels that break the rule, and missing persistence fields
+        for bad_label in ("", "ABCDE", "a", "A B", 'A"', "A\\", "@", "É"):
+            cfg = json.loads(json.dumps(valid_cfg))
+            cfg["layers"][1][2]["label"] = bad_label
+            self.assertFalse(validate_get_config_payload(cfg)[0], f"label {bad_label!r} must be rejected")
+        for field in ("boot_output", "dirty", "settings_seq"):
+            cfg = dict(valid_cfg)
+            del cfg[field]
+            self.assertFalse(validate_get_config_payload(cfg)[0], f"missing {field} must be rejected")
 
 
 if __name__ == "__main__":

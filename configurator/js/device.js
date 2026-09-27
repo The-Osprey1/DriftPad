@@ -109,29 +109,21 @@
         };
     }
 
-    // Telemetry frame -> {pressed[16], travel[16]} (accepts keys[{idx,pressed,travel}] or arrays/masks).
+    // Telemetry frame (docs/protocol-v2-draft.md, STREAM; firmware sendTelemetry()):
+    //   "pressed", "active", "sim": 16-bit masks; "travel": 16 integers in centi-millimetres.
+    // Returns {pressed[16], sending[16], travel[16] in mm, simMask}, or null for anything else.
     function parseTelemetry(ev) {
-        const pressed = new Array(NUM_KEYS).fill(false);
-        const travel = new Array(NUM_KEYS).fill(0);
-        let ok = false;
-        if (Array.isArray(ev.keys)) {
-            for (const k of ev.keys) {
-                if (!k || !isInt(k.idx) || k.idx < 0 || k.idx >= NUM_KEYS) continue;
-                pressed[k.idx] = !!k.pressed;
-                if (isNum(k.travel)) travel[k.idx] = k.travel;
-                ok = true;
-            }
-        } else {
-            if (isInt(ev.pressed_mask)) {
-                for (let i = 0; i < NUM_KEYS; i++) pressed[i] = !!(ev.pressed_mask & (1 << i));
-                ok = true;
-            } else if (Array.isArray(ev.pressed)) {
-                ev.pressed.forEach((v, i) => { if (typeof v === "boolean") pressed[i] = v; else if (isInt(v) && v < NUM_KEYS) pressed[v] = true; });
-                ok = true;
-            }
-            if (Array.isArray(ev.travel)) ev.travel.forEach((v, i) => { if (i < NUM_KEYS && isNum(v)) travel[i] = v; });
+        if (!isInt(ev.pressed) || !Array.isArray(ev.travel) || ev.travel.length !== NUM_KEYS) return null;
+        const bit = (mask, i) => isInt(mask) && (mask & (1 << i)) !== 0;
+        const pressed = [];
+        const sending = [];
+        const travel = [];
+        for (let i = 0; i < NUM_KEYS; i++) {
+            pressed.push(bit(ev.pressed, i));
+            sending.push(bit(ev.active, i));
+            travel.push(isInt(ev.travel[i]) ? ev.travel[i] / 100 : 0);
         }
-        return ok ? { pressed, travel } : null;
+        return { pressed, sending, travel, simMask: isInt(ev.sim) ? ev.sim : 0 };
     }
 
     class DeviceSession extends Emitter {
@@ -150,7 +142,7 @@
             this.logLines = [];
             this.counters = { unmatched: 0, events: 0, telemetryFrames: 0, textLines: 0 };
             this.pageVisible = true;
-            this.telemetry = { wanted: new Set(), target: false, active: false, hz: null, error: null, pressed: new Array(NUM_KEYS).fill(false), travel: new Array(NUM_KEYS).fill(0), frames: 0 };
+            this.telemetry = { wanted: new Set(), target: false, active: false, hz: null, error: null, pressed: new Array(NUM_KEYS).fill(false), sending: new Array(NUM_KEYS).fill(false), travel: new Array(NUM_KEYS).fill(0), frames: 0 };
             this._telemetryChain = Promise.resolve();
             this._rawCollector = null;
             this._expectReboot = false;
@@ -171,8 +163,9 @@
             this.telemetry.target = false;
             this.telemetry.hz = null;
             this.telemetry.error = null;
-            this.telemetry.pressed.fill(false);
-            this.telemetry.travel.fill(0);
+            this.telemetry.pressed = new Array(NUM_KEYS).fill(false);
+            this.telemetry.sending = new Array(NUM_KEYS).fill(false);
+            this.telemetry.travel = new Array(NUM_KEYS).fill(0);
         }
 
         get isConnected() { return this.conn.state === "connected" && !!this.client; }
@@ -394,10 +387,11 @@
                     const t = parseTelemetry(ev);
                     if (!t) return;
                     this.telemetry.pressed = t.pressed;
+                    this.telemetry.sending = t.sending;
                     this.telemetry.travel = t.travel;
                     this.telemetry.frames++;
                     this.counters.telemetryFrames++;
-                    if (isInt(ev.sim_mask)) this.deviceStatus.sim_mask = ev.sim_mask;
+                    this.deviceStatus.sim_mask = t.simMask;
                     this.emit("telemetry", this.telemetry);
                     return;
                 }
@@ -422,8 +416,11 @@
             if (!this.isConnected) return;
             const cal = this.cal || (this.cal = { phase: "idle", done: [], failed: [], missing: [], active: false });
             if (typeof ev.phase === "string") cal.phase = ev.phase;
-            if (Array.isArray(ev.keys_done)) cal.done = ev.keys_done.filter(isInt);
-            if (Array.isArray(ev.keys_failed)) cal.failed = ev.keys_failed.filter(isInt);
+            // Firmware fields (commands.cpp writeCalProgress): rest_ok, rest_failed, travel_done
+            if (Array.isArray(ev.travel_done)) cal.done = ev.travel_done.filter(isInt);
+            if (Array.isArray(ev.rest_failed)) cal.failed = ev.rest_failed.filter(isInt);
+            if (Array.isArray(ev.rest_ok)) cal.restOk = ev.rest_ok.filter(isInt);
+            if (isInt(ev.elapsed_ms)) cal.elapsedMs = ev.elapsed_ms;
             cal.active = cal.phase === "rest" || cal.phase === "travel";
             cal.updatedAt = Date.now();
             if (!cal.active) this.refreshStatus().catch(() => {});
@@ -649,7 +646,10 @@
             if (should === this.telemetry.target) return this._telemetryChain;
             this.telemetry.target = should;
             if (!should) {
+                // No live data any more: show nothing rather than the last frame.
                 this.telemetry.pressed = new Array(NUM_KEYS).fill(false);
+                this.telemetry.sending = new Array(NUM_KEYS).fill(false);
+                this.telemetry.travel = new Array(NUM_KEYS).fill(0);
                 this.emit("telemetry", this.telemetry);
             }
             this._telemetryChain = this._telemetryChain.then(() => this._applyTelemetry()).catch(() => {});

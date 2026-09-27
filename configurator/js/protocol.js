@@ -81,6 +81,13 @@
     }
 
     const VERB_RE = /^[A-Za-z_]+$/;
+
+    function randomPrefix() {
+        const chars = "abcdefghijklmnopqrstuvwxyz";
+        let out = "";
+        for (let i = 0; i < 3; i++) out += chars[Math.floor(Math.random() * chars.length)];
+        return out;
+    }
     const ARG_RE = /^[\x21-\x7E]+$/;
 
     // Builds "@<id> VERB arg arg". Throws ProtocolError(bad_request) instead of producing a line the
@@ -120,7 +127,9 @@
             this.onText = o.onText || (() => {});
             this.onTraffic = o.onTraffic || (() => {});
             this.timeoutMs = o.timeoutMs || 2000;
-            this.idPrefix = o.idPrefix || "c";
+            // A random per-connection prefix: a late reply to a request of an earlier connection
+            // (or of another program that used the port) can never match a pending request.
+            this.idPrefix = o.idPrefix || randomPrefix();
             this.pending = new Map();
             this.watchers = new Set();
             this.nextId = 1;
@@ -138,11 +147,12 @@
         }
 
         allocId() {
-            // Monotonic, never reused within a session, at most 12 characters.
-            const id = this.idPrefix + (this.nextId++).toString(36);
+            // Monotonic, never reused within a connection, at most 12 characters.
+            let id = this.idPrefix + (this.nextId++).toString(36);
             if (id.length > C.LIMITS_CMM.REQUEST_ID_MAX_LEN) {
+                this.idPrefix = randomPrefix();
                 this.nextId = 1;
-                return this.allocId();
+                id = this.idPrefix + (this.nextId++).toString(36);
             }
             return id;
         }

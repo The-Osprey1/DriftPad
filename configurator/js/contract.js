@@ -181,10 +181,16 @@
         in_progress: "Calibration is running.",
     });
 
+    // INFO.features the configurator understands (the current firmware lists all of them). A command
+    // behind a feature is used only when INFO lists that feature, so a build without it degrades
+    // to hiding the control instead of sending a command it would reject.
     const FEATURES = Object.freeze([
-        "keymap", "layers", "rapid_trigger", "guided_calibration", "settings_ab", "telemetry",
-        "timing", "raw", "sim", "display", "boot_output",
+        "keymap", "layers", "rapid_trigger", "telemetry", "timing", "raw", "sim", "display",
+        "guided_calibration", "boot_output", "settings_ab",
     ]);
+
+    // Simulated travel accepted by SIM <key> <mm> (firmware: 0.00 .. 4.00 mm).
+    const SIM_TRAVEL_MAX_MM = 4.0;
 
     // Verbs the configurator sends, with the canonical "cmd" each reply must carry.
     const ALIASES = Object.freeze({ HELLO: "INFO", HID: "SET_HID", OUTPUT: "SET_HID" });
@@ -211,6 +217,7 @@
         OUTPUT_REASONS,
         CAL_STATES,
         FEATURES,
+        SIM_TRAVEL_MAX_MM,
         REQUEST_ID_RE,
         cmmToMm,
         mmToCmm,

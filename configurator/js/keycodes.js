@@ -172,13 +172,17 @@
         return code >= 32 && code <= 126;
     }
 
-    // Mirrors keycodeIsAssignable() (firmware/include/keycodes.h): 0 = None; 1..127 through the
-    // en_US table; 128..135 modifiers; 136 would be HID usage 0 (nothing); 137..255 usages.
+    // Mirrors keycodeIsAssignable() (firmware/src/keycodes.cpp): 0 = None; 1..127 through the
+    // en_US table; 128..135 modifiers; 136..139 would be HID usages 0..3 (nothing, or the
+    // keyboard's own error codes, which hosts treat as "phantom state"); 140..255 usages 4..119.
+    // tests/test_configurator_contract.py checks every code against the real firmware.
+    const FIRST_USAGE_CODE = 136 + 4;
     function isAssignable(code) {
         if (!Number.isInteger(code) || code < 0 || code > 255) return false;
         if (code === 0) return true;
         if (code < 128) return asciiMapped(code);
-        return code !== 136;
+        if (code <= 135) return true;
+        return code >= FIRST_USAGE_CODE;
     }
 
     function keyName(code) {

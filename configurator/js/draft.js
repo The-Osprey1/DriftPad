@@ -276,7 +276,18 @@
                         }
                     }
                     if (refresh && this.session.isConnected) {
-                        try { await this.session.refreshConfig(); } catch (e) { /* reported by ops.load */ }
+                        let cfg = null;
+                        try { cfg = await this.session.refreshConfig(); } catch (e) { /* reported by ops.load */ }
+                        // The fresh read-back decides what an unanswered write did: a key that now
+                        // holds exactly what was sent was applied; anything else stays failed.
+                        if (cfg) {
+                            result.failed = result.failed.filter(f => {
+                                if (!sameKey(cfg.layers[f.l][f.k], f)) return true;
+                                this.errors.delete(keyId(f.l, f.k));
+                                result.written.push({ l: f.l, k: f.k, code: f.code, label: f.label, confirmedBy: "readback" });
+                                return false;
+                            });
+                        }
                     }
                 } finally {
                     this.writing = false;
@@ -378,8 +389,14 @@
             this.applying = true;
             this.emit("change");
             const result = { applied: [], failed: [], mismatched: [] };
+            const applied = s => {
+                result.applied.push(s);
+                // Follow the device again unless the field was edited meanwhile.
+                if (this.edits[s.field] !== null && sameSetting(s.field, this.edits[s.field], s.value)) this.edits[s.field] = null;
+            };
             return this.session.runOp("settings", async () => {
                 try {
+                    let unknown = false;
                     for (const s of snapshot) {
                         this.inFlight.set(s.field, s.value);
                         this.errors.delete(s.field);
@@ -391,17 +408,31 @@
                                 this.mismatches.set(s.field, { sent: s.value, stored });
                                 result.mismatched.push({ ...s, stored });
                             } else {
-                                result.applied.push(s);
-                                // Follow the device again unless the field was edited meanwhile.
-                                if (this.edits[s.field] !== null && sameSetting(s.field, this.edits[s.field], s.value)) this.edits[s.field] = null;
+                                applied(s);
                             }
                         } catch (err) {
                             this.errors.set(s.field, err.message);
                             result.failed.push({ ...s, error: err });
-                            if (err.kind !== "device_error") break;
+                            if (err.kind !== "device_error") {
+                                unknown = err.kind === "timeout" || err.kind === "invalid_reply";
+                                break;
+                            }
                         } finally {
                             this.inFlight.delete(s.field);
                             this.emit("change");
+                        }
+                    }
+                    // Outcome unknown (no usable reply): the fresh read-back decides, never an assumption.
+                    if (unknown && this.session.isConnected) {
+                        let cfg = null;
+                        try { cfg = await this.session.refreshConfig(); } catch (e) { /* reported by ops.load */ }
+                        if (cfg) {
+                            result.failed = result.failed.filter(f => {
+                                if (!sameSetting(f.field, cfg[f.field], f.value)) return true;
+                                this.errors.delete(f.field);
+                                applied({ field: f.field, value: f.value, confirmedBy: "readback" });
+                                return false;
+                            });
                         }
                     }
                 } finally {
