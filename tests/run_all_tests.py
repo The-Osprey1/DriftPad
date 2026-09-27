@@ -28,6 +28,8 @@ import test_dsp_harness
 import test_build
 import test_config_schema
 import test_firmware_parity
+import test_adversarial_m2
+import test_challenger2_verification
 
 
 class TableTestResult(unittest.TestResult):
@@ -136,10 +138,24 @@ def get_test_metadata(test_method_name: str, docstring: str) -> Dict[str, str]:
         return {"id": "TC-B3", "cat": "Artifact", "desc": "UF2 Magic & RP2040 Family ID"}
     elif "zero_external" in test_method_name:
         return {"id": "TC-C1", "cat": "Config", "desc": "Configurator Zero-CDN Check"}
+    elif test_method_name.startswith("test_0") and test_method_name[5:7].isdigit():
+        ch2 = {
+            "01": "All Build Artifacts Present",
+            "02": "UF2 Exhaustive Block Validation",
+            "03": "ELF Headers & Segment Isolation",
+            "04": "Memory Footprint & Budgets",
+            "05": "Config Schema & CRC32 Integrity",
+            "06": "OLED Safe Zone & Core Guards",
+            "07": "Serial Command Coverage",
+        }
+        n = test_method_name[5:7]
+        return {"id": f"CH2-{n}", "cat": "Verification", "desc": ch2.get(n, test_method_name)}
     elif "adversarial" in test_method_name:
         return {"id": "TC-C2", "cat": "Config", "desc": "Adversarial Schema Rejection"}
     elif "tc16" in test_method_name:
         return {"id": "TC-16", "cat": "DSP RT Noise", "desc": "RT Reversals with Active Noise"}
+    elif "tc17" in test_method_name:
+        return {"id": "TC-17", "cat": "DSP RT", "desc": "Rapid Re-taps Stay Responsive"}
     elif "clamped_to_floor" in test_method_name:
         return {"id": "TC-S2", "cat": "DSP Model", "desc": "RT Sensitivity Floor Clamp"}
     elif test_method_name.startswith("test_adv0"):
@@ -178,6 +194,8 @@ def run_all() -> int:
     suite.addTests(loader.loadTestsFromTestCase(test_dsp_harness.TestDSPHarness))
     suite.addTests(loader.loadTestsFromTestCase(test_build.TestPlatformIOBuild))
     suite.addTests(loader.loadTestsFromTestCase(test_config_schema.TestConfigSchema))
+    suite.addTests(loader.loadTestsFromTestCase(test_adversarial_m2.TestAdversarialDSP))
+    suite.addTests(loader.loadTestsFromTestCase(test_challenger2_verification.TestChallenger2Adversarial))
     # Same DSP suites against firmware/src/hall.cpp compiled for the host (skipped without g++/clang++)
     suite.addTests(loader.loadTestsFromTestCase(test_firmware_parity.TestFirmwareModelLockstep))
     suite.addTests(loader.loadTestsFromTestCase(test_firmware_parity.TestDSPHarnessOnFirmware))

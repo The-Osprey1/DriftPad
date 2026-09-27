@@ -966,6 +966,60 @@ class TestDSPHarness(unittest.TestCase):
             f"TC-16: Turnaround accuracy with active noise {accuracy:.2f}% below threshold 95.0%"
         )
 
+    def test_tc17_rapid_retaps_keep_rapid_trigger_responsive(self):
+        """
+        TC-17: Fast re-taps with short dwell at each turn must all register.
+        Regression: an earlier noise envelope learned the keystroke itself as noise, widening
+        the RT threshold to ~0.7 mm and swallowing 29 of 30 taps at every sensitivity.
+        """
+        scenarios = [
+            # (sensitivity mm, finger speed mm/s, swing mm, dwell ms at each turn)
+            (0.10, 100.0, 0.4, 15),
+            (0.10, 150.0, 0.4, 8),
+            (0.20, 150.0, 0.6, 5),
+        ]
+        taps = 30
+        for s_rt, speed, swing, dwell in scenarios:
+            random.seed(3)
+            dsp = HallKeyDSP(auto_polarity=False)
+            dsp.set_rt_sensitivity(s_rt)
+            adc = lambda mm: int(round(2048 + (mm / 4.0) * 1000 + random.gauss(0.0, 1.5)))
+            for _ in range(500):
+                dsp.update(adc(0.0))
+
+            step = speed / 1000.0
+            mm = 0.0
+            while mm < 2.5:
+                mm = min(2.5, mm + step)
+                dsp.update(adc(mm))
+            for _ in range(dwell):
+                dsp.update(adc(mm))
+            self.assertTrue(dsp.is_pressed, "Key must be pressed at 2.5mm before re-taps")
+
+            ups = downs = 0
+            for _ in range(taps):
+                for direction in (-1, 1):
+                    target = mm + direction * swing
+                    while abs(mm - target) > 1e-9:
+                        mm += direction * min(step, abs(target - mm))
+                        if dsp.update(adc(mm)):
+                            if dsp.is_pressed:
+                                downs += 1
+                            else:
+                                ups += 1
+                    for _ in range(dwell):
+                        if dsp.update(adc(mm)):
+                            if dsp.is_pressed:
+                                downs += 1
+                            else:
+                                ups += 1
+
+            self.assertEqual(
+                (ups, downs), (taps, taps),
+                f"TC-17: {s_rt:.2f}mm RT, {speed:.0f}mm/s, {swing:.1f}mm swing, {dwell}ms dwell detected "
+                f"{ups} releases / {downs} presses of {taps}"
+            )
+
     # ------------------------------------------------------------------------
     # Additional Waveform & Algorithmic Unit Tests
     # ------------------------------------------------------------------------
