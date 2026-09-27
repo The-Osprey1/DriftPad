@@ -17,6 +17,7 @@ The handler lives in `processCommand()` in [`firmware/src/main.cpp`](../firmware
 | `GET_CONFIG` | `{"type":"config", ...}` with actuation, RT sensitivity, RT enabled, active layer and all three keymaps |
 | `STATUS` | `{"type":"status", ...}` with the active layer, last active key and per-key `pressed`, `travel` and `label` |
 | `STREAM <0\|1>` | Turns `STATUS` telemetry at ~30 Hz on or off |
+| `SCAN_RATE` | `{"type":"scan_rate","hz":...,"max_gap_us":...}`: key scans in the last second (1000 when healthy) and the longest gap between scans since the previous `SCAN_RATE` |
 
 ## Settings
 

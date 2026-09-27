@@ -153,3 +153,4 @@ Run the last two directly, for example `python -m unittest tests.test_adversaria
 ## 8. Known Open Issues
 
 - **Resolved: ADV-02.** At 0.05 mm the DSP produced 285 false releases in 5 s under 10-count 60 Hz EMI plus 3-sigma Gaussian noise. The RT sensitivity floor is now 0.10 mm (`HallKey::RT_SENS_MIN_MM`, mirrored by `HallKeyDSP.RT_SENS_MIN_MM`), where ADV-02 produces none.
+- **Scan rate.** Several constants are counted in samples, not milliseconds: the comb filter's `raw[n-8]`/`raw[n-9]` taps (half a 60 Hz period at 1 kHz), the 8-sample EMI correlation, the 30-sample held window and `_stationaryUnpressedMs`. They rely on the firmware's fixed 1 kHz scan in `loop()`. Unpaced, the loop ran at about 1,480 Hz, which put the comb taps near a third of a 60 Hz cycle instead of a half. `SCAN_RATE` reports the live rate and the longest gap between scans (about 1.5 ms at worst, when USB serial traffic delays a scan).

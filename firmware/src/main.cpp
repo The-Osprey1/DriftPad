@@ -16,6 +16,15 @@ bool s_streamTelemetry = false;
 uint32_t s_lastStreamTime = 0;
 String s_serialBuffer = "";
 
+// Key scan timing, reported by SCAN_RATE
+constexpr uint32_t SCAN_PERIOD_US = 1000;
+uint32_t s_nextScanUs = 0;
+uint32_t s_scanCount = 0;
+uint32_t s_scanWindowStart = 0;
+uint32_t s_scanRateHz = 0;
+uint32_t s_lastScanUs = 0;
+uint32_t s_maxScanGapUs = 0;
+
 void printJsonEscaped(const char* text) {
     if (text == nullptr) return;
     for (const char* p = text; *p != '\0'; ++p) {
@@ -204,6 +213,11 @@ void processCommand(String line) {
             }
         }
     }
+    else if (line.equalsIgnoreCase("SCAN_RATE")) {
+        Serial.printf("{\"type\":\"scan_rate\",\"hz\":%lu,\"max_gap_us\":%lu}\n",
+            (unsigned long)s_scanRateHz, (unsigned long)s_maxScanGapUs);
+        s_maxScanGapUs = 0;
+    }
     else if (line.startsWith("STREAM ")) {
         s_streamTelemetry = (line.substring(7).toInt() != 0);
         Serial.printf("{\"status\":\"ok\",\"streaming\":%s}\n", s_streamTelemetry ? "true" : "false");
@@ -345,8 +359,28 @@ void loop() {
         oledCycleMenu();
     }
 
-    // Read physical switch multiplexer
-    HallManager::updateAll();
+    // Read physical switch multiplexer at a fixed 1 kHz. The DSP's sample-counted constants
+    // (EMI correlation lags, chatter window, stationary timer) are tuned for this rate.
+    uint32_t nowUs = micros();
+    if ((int32_t)(nowUs - s_nextScanUs) >= 0) {
+        s_nextScanUs += SCAN_PERIOD_US;
+        if ((int32_t)(nowUs - s_nextScanUs) >= 0) {
+            // Fell a full period behind: resync instead of bursting scans to catch up
+            s_nextScanUs = nowUs + SCAN_PERIOD_US;
+        }
+
+        if (s_lastScanUs != 0 && nowUs - s_lastScanUs > s_maxScanGapUs) {
+            s_maxScanGapUs = nowUs - s_lastScanUs;
+        }
+        s_lastScanUs = nowUs;
+        HallManager::updateAll();
+        s_scanCount++;
+        if (nowUs - s_scanWindowStart >= 1000000UL) {
+            s_scanRateHz = s_scanCount;
+            s_scanCount = 0;
+            s_scanWindowStart = nowUs;
+        }
+    }
 
     // Update safe-zone display
     oledUpdate(false);
