@@ -66,13 +66,16 @@ char* nextToken(char*& p) {
     return start;
 }
 
-// Finds a well-formed "@id" at the start of a rejected line so its error can still be correlated
+// Finds a well-formed "@id" at the start of a rejected line so its error can still be correlated.
+// The id must end with a space inside the kept bytes: a token that runs into the end of an
+// over-long line's buffer was cut short and is not the request's id.
 size_t extractId(const char* line, uint16_t len, const char*& idStart) {
     uint16_t i = 0;
     while (i < len && line[i] == ' ') ++i;
     if (i >= len || line[i] != '@') return 0;
     uint16_t start = ++i;
     while (i < len && line[i] != ' ') ++i;
+    if (i >= len) return 0;
     size_t n = (size_t)(i - start);
     if (!isValidRequestId(line + start, n)) return 0;
     idStart = line + start;
@@ -114,8 +117,11 @@ ParseResult parseCmm(const char* text, uint16_t minCmm, uint16_t maxCmm, uint16_
     uint32_t whole = 0;
     bool overflow = false;
     while (isDigit(*p)) {
-        if (whole > 42949671u) overflow = true;    // whole * 100 + 99 must fit 32 bits
-        else whole = whole * 10u + (uint32_t)(*p - '0');
+        // whole * 100 + 99 must fit 32 bits, so whole may never exceed 42949671: test the value
+        // it would take, not the value it has (checking first let 429496719 through and wrap)
+        const uint32_t d = (uint32_t)(*p - '0');
+        if (overflow || whole > (42949671u - d) / 10u) overflow = true;
+        else whole = whole * 10u + d;
         ++p;
     }
 
