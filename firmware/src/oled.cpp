@@ -145,7 +145,7 @@ constexpr uint8_t LAVA_BLOBS = 5;
 constexpr uint8_t LAVA_GX = SCREEN_WIDTH / 4 + 1;
 constexpr uint8_t LAVA_GY = SCREEN_HEIGHT / 4 + 1;
 uint16_t s_lavaGrid[LAVA_GY][LAVA_GX];
-uint16_t s_lavaField[SCREEN_HEIGHT][SCREEN_WIDTH];
+uint16_t s_lavaRows[3][SCREEN_WIDTH];   // Rolling window of interpolated field rows (y-1, y, y+1)
 float s_lavaTime = 0.0f;
 
 // Screensaver sequencing & cross-animation transition
@@ -1084,27 +1084,36 @@ void renderAnimLava() {
         }
     }
 
-    for (uint8_t y = 0; y < SCREEN_HEIGHT; ++y) {
+    // Interpolate one screen row of the field from the 4 px grid
+    auto fieldRow = [](uint8_t y, uint16_t* out) {
         uint8_t gy = y >> 2, fy = y & 3;
         for (uint8_t x = 0; x < SCREEN_WIDTH; ++x) {
             uint8_t gx = x >> 2, fx = x & 3;
             uint32_t top = s_lavaGrid[gy][gx] * (4 - fx) + s_lavaGrid[gy][gx + 1] * fx;
             uint32_t bot = s_lavaGrid[gy + 1][gx] * (4 - fx) + s_lavaGrid[gy + 1][gx + 1] * fx;
-            s_lavaField[y][x] = (uint16_t)((top * (4 - fy) + bot * fy) >> 4);
+            out[x] = (uint16_t)((top * (4 - fy) + bot * fy) >> 4);
         }
-    }
+    };
 
     uint8_t* buf = s_display.getBuffer();
+    fieldRow(0, s_lavaRows[0]);
     for (uint8_t y = 0; y < SCREEN_HEIGHT; ++y) {
+        if (y + 1 < SCREEN_HEIGHT) {
+            fieldRow(y + 1, s_lavaRows[(y + 1) % 3]);
+        }
+        const uint16_t* prev = (y > 0) ? s_lavaRows[(y + 2) % 3] : nullptr;
+        const uint16_t* row = s_lavaRows[y % 3];
+        const uint16_t* next = (y + 1 < SCREEN_HEIGHT) ? s_lavaRows[(y + 1) % 3] : nullptr;
+
         for (uint8_t x = 0; x < SCREEN_WIDTH; ++x) {
-            uint16_t f = s_lavaField[y][x];
+            uint16_t f = row[x];
             if (f < EDGE) continue;
 
             // Off-screen neighbours count as inside so blobs leaving the screen stay open
-            bool rim = (x > 0 && s_lavaField[y][x - 1] < EDGE) ||
-                       (x < SCREEN_WIDTH - 1 && s_lavaField[y][x + 1] < EDGE) ||
-                       (y > 0 && s_lavaField[y - 1][x] < EDGE) ||
-                       (y < SCREEN_HEIGHT - 1 && s_lavaField[y + 1][x] < EDGE);
+            bool rim = (x > 0 && row[x - 1] < EDGE) ||
+                       (x < SCREEN_WIDTH - 1 && row[x + 1] < EDGE) ||
+                       (prev && prev[x] < EDGE) ||
+                       (next && next[x] < EDGE);
             bool on = rim;
             if (!rim && f >= CORE) {
                 uint8_t level = 1 + (f - CORE) / 96;
