@@ -27,7 +27,8 @@ enum class MenuMode {
 void oledInit();
 void oledUpdate(bool force = false);
 void oledCycleMenu();
-void oledAdjustCurrentSetting(int32_t delta);
+// Returns true if a setting changed (false when the input only woke the display)
+bool oledAdjustCurrentSetting(int32_t delta);
 void oledTestPattern();
 void oledScanBus();
 void oledSetFullScreen(bool enabled);

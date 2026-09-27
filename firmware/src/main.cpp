@@ -16,6 +16,11 @@ bool s_streamTelemetry = false;
 uint32_t s_lastStreamTime = 0;
 String s_serialBuffer = "";
 
+// Encoder edits are saved once the knob has been still this long, so a spin costs one flash write
+constexpr uint32_t ENCODER_SAVE_DELAY_MS = 3000;
+bool s_encoderSavePending = false;
+uint32_t s_lastEncoderEdit = 0;
+
 // Key scan timing, reported by SCAN_RATE
 constexpr uint32_t SCAN_PERIOD_US = 1000;
 uint32_t s_nextScanUs = 0;
@@ -24,6 +29,22 @@ uint32_t s_scanWindowStart = 0;
 uint32_t s_scanRateHz = 0;
 uint32_t s_lastScanUs = 0;
 uint32_t s_maxScanGapUs = 0;
+
+// RAW <key>: captures one second of a key's raw ADC samples at the scan rate for noise analysis
+constexpr uint16_t RAW_CAPTURE_LEN = 1000;
+uint16_t s_rawCapture[RAW_CAPTURE_LEN];
+uint16_t s_rawCaptureCount = 0;
+int8_t s_rawCaptureKey = -1;
+
+void finishRawCapture() {
+    Serial.printf("{\"type\":\"raw\",\"key\":%d,\"rate_hz\":1000,\"samples\":[", s_rawCaptureKey);
+    for (uint16_t i = 0; i < s_rawCaptureCount; ++i) {
+        Serial.print(s_rawCapture[i]);
+        if (i + 1 < s_rawCaptureCount) Serial.print(',');
+    }
+    Serial.println(F("]}"));
+    s_rawCaptureKey = -1;
+}
 
 void printJsonEscaped(const char* text) {
     if (text == nullptr) return;
@@ -218,6 +239,15 @@ void processCommand(String line) {
             (unsigned long)s_scanRateHz, (unsigned long)s_maxScanGapUs);
         s_maxScanGapUs = 0;
     }
+    else if (line.startsWith("RAW ")) {
+        int keyIdx = line.substring(4).toInt();
+        if (keyIdx >= 0 && keyIdx < NUM_KEYS) {
+            s_rawCaptureCount = 0;
+            s_rawCaptureKey = (int8_t)keyIdx;
+        } else {
+            Serial.println(F("{\"status\":\"error\",\"msg\":\"RAW key out of range\"}"));
+        }
+    }
     else if (line.startsWith("STREAM ")) {
         s_streamTelemetry = (line.substring(7).toInt() != 0);
         Serial.printf("{\"status\":\"ok\",\"streaming\":%s}\n", s_streamTelemetry ? "true" : "false");
@@ -352,11 +382,16 @@ void loop() {
     // Rotary encoder navigation
     encoderUpdate();
     int32_t delta = encoderGetDelta();
-    if (delta != 0) {
-        oledAdjustCurrentSetting(delta);
+    if (delta != 0 && oledAdjustCurrentSetting(delta)) {
+        s_encoderSavePending = true;
+        s_lastEncoderEdit = millis();
     }
     if (encoderWasClicked()) {
         oledCycleMenu();
+    }
+    if (s_encoderSavePending && (millis() - s_lastEncoderEdit) >= ENCODER_SAVE_DELAY_MS) {
+        s_encoderSavePending = false;
+        configSave();
     }
 
     // Read physical switch multiplexer at a fixed 1 kHz. The DSP's sample-counted constants
@@ -374,6 +409,12 @@ void loop() {
         }
         s_lastScanUs = nowUs;
         HallManager::updateAll();
+        if (s_rawCaptureKey >= 0) {
+            s_rawCapture[s_rawCaptureCount++] = HallManager::getKey((uint8_t)s_rawCaptureKey).getRawAdc();
+            if (s_rawCaptureCount >= RAW_CAPTURE_LEN) {
+                finishRawCapture();
+            }
+        }
         s_scanCount++;
         if (nowUs - s_scanWindowStart >= 1000000UL) {
             s_scanRateHz = s_scanCount;

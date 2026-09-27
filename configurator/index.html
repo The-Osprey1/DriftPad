@@ -30,18 +30,29 @@
 
         body {
             background-color: var(--bg-base);
+            background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0, 242, 254, 0.07), transparent 70%);
+            background-attachment: fixed;
             color: var(--text-main);
             min-height: 100vh;
+            max-width: 1280px;
+            margin: 0 auto;
             padding: 24px;
             display: flex;
             flex-direction: column;
             gap: 20px;
         }
 
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
         header {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
+            gap: 14px;
             padding: 16px 24px;
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -69,27 +80,62 @@
             font-size: 20px;
             font-weight: 700;
             letter-spacing: 0.5px;
+            line-height: 1.15;
+        }
+
+        .brand h1 small {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.3px;
         }
 
         .header-actions {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            gap: 14px;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .connection {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-right: 4px;
         }
 
         .btn {
             background: var(--bg-elevated);
             color: var(--text-main);
             border: 1px solid var(--border);
-            padding: 8px 18px;
+            padding: 8px 16px;
             border-radius: 8px;
+            font: inherit;
             font-weight: 600;
             font-size: 14px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s, color 0.2s;
             display: flex;
             align-items: center;
             gap: 8px;
+            white-space: nowrap;
+        }
+
+        .btn-danger {
+            color: var(--red);
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+
+        .btn.btn-danger:hover {
+            border-color: var(--red);
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
+        }
+
+        .btn.on {
+            color: var(--green);
+            border-color: var(--green);
         }
 
         .btn:hover {
@@ -139,8 +185,9 @@
 
         .main-grid {
             display: grid;
-            grid-template-columns: 1.1fr 1fr;
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
             gap: 20px;
+            align-items: start;
         }
 
         .card {
@@ -191,12 +238,20 @@
             flex: 1;
             padding: 8px 12px;
             text-align: center;
+            font: inherit;
             font-size: 13px;
             font-weight: 600;
+            border: none;
             border-radius: 6px;
+            background: none;
             cursor: pointer;
             color: var(--text-muted);
-            transition: all 0.2s;
+            transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+        }
+
+        .layer-tab:hover:not(.active) {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.04);
         }
 
         .layer-tab.active {
@@ -207,28 +262,33 @@
 
         .keypad-grid {
             display: grid;
-            grid-template-columns: repeat(4, 76px);
-            grid-template-rows: repeat(4, 76px);
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 12px;
             background: #11141d;
             padding: 16px;
             border-radius: 14px;
             border: 1px solid var(--border);
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+            width: min(100%, 372px); /* 76px keys at full size */
         }
 
+        /* Keycap: lit top face over a darker skirt, which disappears as the key goes down */
         .key-cap {
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
+            aspect-ratio: 1;
+            background: linear-gradient(180deg, #2c3246, var(--bg-elevated));
+            border: 1px solid #353d52;
             border-radius: 10px;
+            color: var(--text-main);
+            font: inherit;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.12s, border-color 0.12s;
             user-select: none;
             position: relative;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -4px 0 rgba(0, 0, 0, 0.35), 0 3px 6px rgba(0, 0, 0, 0.35);
         }
 
         .key-cap:hover {
@@ -237,10 +297,10 @@
         }
 
         .key-cap.pressed {
-            background: linear-gradient(135deg, #10b981, #059669);
+            background: linear-gradient(180deg, #14c48d, #059669);
             color: #fff;
             transform: translateY(2px);
-            box-shadow: 0 0 16px rgba(16, 185, 129, 0.6);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 16px rgba(16, 185, 129, 0.55);
             border-color: #34d399;
         }
 
@@ -279,12 +339,18 @@
             font-size: 15px;
         }
 
+        /* Range: the part left of the thumb is filled; --fill is kept in sync by syncRangeFill() */
         input[type="range"] {
             -webkit-appearance: none;
+            appearance: none;
             width: 100%;
             height: 6px;
-            background: var(--bg-elevated);
+            background: linear-gradient(90deg, #3b82f6, var(--accent)) 0 / var(--fill, 0%) 100% no-repeat, var(--bg-elevated);
             border-radius: 3px;
+            cursor: pointer;
+        }
+
+        input[type="range"]:focus-visible {
             outline: none;
         }
 
@@ -294,13 +360,98 @@
             height: 18px;
             border-radius: 50%;
             background: var(--accent);
-            cursor: pointer;
-            box-shadow: 0 0 10px var(--accent-glow);
-            transition: 0.15s;
+            border: 3px solid var(--bg-card);
+            box-shadow: 0 0 0 1px var(--accent), 0 0 10px var(--accent-glow);
+            transition: transform 0.15s, box-shadow 0.15s;
         }
 
-        input[type="range"]::-webkit-slider-thumb:hover {
-            transform: scale(1.2);
+        input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 3px solid var(--bg-card);
+            box-shadow: 0 0 0 1px var(--accent), 0 0 10px var(--accent-glow);
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        input[type="range"]:hover::-webkit-slider-thumb {
+            transform: scale(1.15);
+        }
+
+        input[type="range"]:hover::-moz-range-thumb {
+            transform: scale(1.15);
+        }
+
+        input[type="range"]:focus-visible::-webkit-slider-thumb {
+            box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-glow);
+        }
+
+        input[type="range"]:focus-visible::-moz-range-thumb {
+            box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-glow);
+        }
+
+        .range-scale {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: Consolas, monospace;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+
+        /* Toggle switch built on a real checkbox */
+        .switch {
+            -webkit-appearance: none;
+            appearance: none;
+            flex: none;
+            width: 42px;
+            height: 24px;
+            border-radius: 12px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .switch::after {
+            content: "";
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .switch:checked {
+            background: rgba(0, 242, 254, 0.18);
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        .switch:checked::after {
+            transform: translateX(18px);
+            background: var(--accent);
+        }
+
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 14px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 10px;
         }
 
         /* Switch Cutaway Simulation */
@@ -314,9 +465,12 @@
             gap: 12px;
         }
 
+        /* Travel bar with a tick at every millimetre of the 4 mm stroke */
         .stem-track {
             height: 24px;
-            background: var(--bg-elevated);
+            background:
+                repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(255, 255, 255, 0.08) calc(25% - 1px) 25%),
+                var(--bg-elevated);
             border-radius: 6px;
             position: relative;
             overflow: hidden;
@@ -375,11 +529,44 @@
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 24px;
-            width: 420px;
+            width: min(420px, calc(100vw - 32px));
             display: flex;
             flex-direction: column;
             gap: 16px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
+
+        .modal-box input {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font: inherit;
+            font-size: 14px;
+        }
+
+        .modal-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        @media (max-width: 960px) {
+            body { padding: 16px; }
+            .main-grid { grid-template-columns: minmax(0, 1fr); }
+            header { justify-content: center; }
+            .header-actions { justify-content: center; }
+        }
+
+        @media (max-width: 480px) {
+            .card { padding: 16px; }
+            .keypad-grid { gap: 8px; padding: 10px; }
+            .key-label { font-size: 14px; }
+            .layer-tab { padding: 8px 6px; font-size: 12px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { transition: none !important; }
         }
     </style>
 </head>
@@ -389,11 +576,13 @@
     <header>
         <div class="brand">
             <span class="brand-badge">HE</span>
-            <h1>DriftPad Rapid Trigger Configurator</h1>
+            <h1>DriftPad<small>Rapid Trigger Configurator</small></h1>
         </div>
         <div class="header-actions">
-            <div id="statusDot" class="status-dot"></div>
-            <span id="statusText" style="font-size: 14px; font-weight: 600; color: var(--text-muted);">Disconnected</span>
+            <div class="connection">
+                <div id="statusDot" class="status-dot"></div>
+                <span id="statusText" style="font-size: 14px; font-weight: 600; color: var(--text-muted);">Disconnected</span>
+            </div>
             <button id="connectBtn" class="btn btn-primary" onclick="toggleConnect()">Connect DriftPad</button>
             <a class="btn" href="keymap.html" style="text-decoration: none;">Keymap Editor</a>
             <button id="hidBtn" class="btn" onclick="toggleHid()">Enable HID Output</button>
@@ -411,7 +600,7 @@
             </div>
             <button class="btn" onclick="saveToFlash()">Save to Flash</button>
             <button class="btn" onclick="sendCommand('BOOTSEL')">Bootloader</button>
-            <button class="btn" style="color: var(--red); border-color: rgba(239,68,68,0.4);" onclick="factoryReset()">Reset</button>
+            <button class="btn btn-danger" onclick="factoryReset()">Reset</button>
         </div>
     </header>
 
@@ -426,9 +615,9 @@
 
             <div class="key-matrix-container">
                 <div class="layer-tabs">
-                    <div class="layer-tab active" onclick="selectLayer(0)">L0: Numpad</div>
-                    <div class="layer-tab" onclick="selectLayer(1)">L1: Navigation</div>
-                    <div class="layer-tab" onclick="selectLayer(2)">L2: WASD Gaming</div>
+                    <button class="layer-tab active" onclick="selectLayer(0)">L0: Numpad</button>
+                    <button class="layer-tab" onclick="selectLayer(1)">L1: Navigation</button>
+                    <button class="layer-tab" onclick="selectLayer(2)">L2: WASD Gaming</button>
                 </div>
 
                 <div class="keypad-grid" id="keypadGrid">
@@ -455,7 +644,8 @@
                     <span id="actVal" class="control-val">1.20 mm</span>
                 </div>
                 <input type="range" id="actSlider" min="0.2" max="3.6" step="0.05" value="1.20" oninput="onActuationChange(this.value)">
-                <span style="font-size: 11px; color: var(--text-muted);">Depth at which standard keystroke triggers down.</span>
+                <div class="range-scale"><span>0.2</span><span>3.6</span></div>
+                <span class="hint">Depth at which standard keystroke triggers down.</span>
             </div>
 
             <!-- Rapid Trigger Sensitivity Slider -->
@@ -465,17 +655,18 @@
                     <span id="rtSensVal" class="control-val">0.20 mm</span>
                 </div>
                 <input type="range" id="rtSensSlider" min="0.10" max="1.50" step="0.05" value="0.20" oninput="onRtSensChange(this.value)">
-                <span style="font-size: 11px; color: var(--text-muted);">Distance switch must reverse upward to release or downward to re-trigger.</span>
+                <div class="range-scale"><span>0.10</span><span>1.50</span></div>
+                <span class="hint">Distance switch must reverse upward to release or downward to re-trigger.</span>
             </div>
 
             <!-- Rapid Trigger Enable Toggle -->
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
-                <div>
-                    <div style="font-weight: 600; font-size: 14px;">Rapid Trigger Mode</div>
-                    <div style="font-size: 11px; color: var(--text-muted);">Continuous dynamic actuation & release without fixed reset point.</div>
-                </div>
-                <input type="checkbox" id="rtToggle" checked onchange="onRtToggle(this.checked)" style="transform: scale(1.3); cursor: pointer;">
-            </div>
+            <label class="toggle-row" for="rtToggle">
+                <span>
+                    <span style="display: block; font-weight: 600; font-size: 14px;">Rapid Trigger Mode</span>
+                    <span class="hint" style="display: block;">Continuous dynamic actuation & release without fixed reset point.</span>
+                </span>
+                <input type="checkbox" id="rtToggle" class="switch" role="switch" checked onchange="onRtToggle(this.checked)">
+            </label>
 
             <!-- Switch Stem Simulation Sandbox -->
             <div class="switch-visualizer">
@@ -514,11 +705,11 @@
             <div id="remapKeyInfo" style="font-size: 13px; color: var(--text-muted);">Configuring Key...</div>
             <div class="control-group">
                 <label style="font-size: 12px; font-weight: 600;">Display Label (max 4 chars)</label>
-                <input type="text" id="remapLabelInput" maxlength="4" style="background: var(--bg-elevated); border: 1px solid var(--border); color: #fff; padding: 8px 12px; border-radius: 6px;">
+                <input type="text" id="remapLabelInput" maxlength="4">
             </div>
             <div class="control-group">
                 <label style="font-size: 12px; font-weight: 600;">HID Keycode (ASCII / Arduino Keycode)</label>
-                <input type="number" id="remapCodeInput" style="background: var(--bg-elevated); border: 1px solid var(--border); color: #fff; padding: 8px 12px; border-radius: 6px;">
+                <input type="number" id="remapCodeInput">
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
                 <button class="btn" onclick="closeRemapModal()">Cancel</button>
@@ -579,7 +770,7 @@
 
             for (let i = 0; i < 16; ++i) {
                 const k = keys[i] || { idx: i, code: 0, label: "KEY" };
-                const btn = document.createElement("div");
+                const btn = document.createElement("button");
                 btn.className = "key-cap";
                 btn.id = `keyCap_${i}`;
                 btn.onclick = () => openRemapModal(i);
@@ -614,15 +805,8 @@
             hidEnabled = !hidEnabled;
             sendCommand(`SET_HID ${hidEnabled ? 1 : 0}`);
             const btn = document.getElementById("hidBtn");
-            if (hidEnabled) {
-                btn.textContent = "Disable HID Output";
-                btn.style.borderColor = "var(--green)";
-                btn.style.color = "var(--green)";
-            } else {
-                btn.textContent = "Enable HID Output";
-                btn.style.borderColor = "var(--border)";
-                btn.style.color = "var(--text-main)";
-            }
+            btn.textContent = hidEnabled ? "Disable HID Output" : "Enable HID Output";
+            btn.classList.toggle("on", hidEnabled);
         }
 
         async function toggleConnect() {
@@ -733,6 +917,8 @@
                     document.getElementById("rtSensVal").textContent = data.rt_sens.toFixed(2) + " mm";
                     document.getElementById("rtToggle").checked = data.rt_enabled;
                     updateActuationMarker(data.actuation);
+                    syncRangeFill(document.getElementById("actSlider"));
+                    syncRangeFill(document.getElementById("rtSensSlider"));
 
                     selectLayer(data.active_layer);
                 } else if (data.type === "sim_event") {
@@ -815,7 +1001,17 @@
             closeRemapModal();
         }
 
+        // Paints the filled part of a range track up to its thumb
+        function syncRangeFill(el) {
+            const pct = (el.value - el.min) / (el.max - el.min) * 100;
+            el.style.setProperty("--fill", `${pct}%`);
+        }
+
         // Initialize UI
+        document.querySelectorAll('input[type="range"]').forEach(el => {
+            el.addEventListener("input", () => syncRangeFill(el));
+            syncRangeFill(el);
+        });
         renderKeypad();
         updateActuationMarker(1.20);
     </script>

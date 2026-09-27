@@ -6,6 +6,9 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
+#include <Fonts/FreeSansBold9pt7b.h>
+#include <Fonts/FreeSansBold12pt7b.h>
+#include <Fonts/FreeSansBold18pt7b.h>
 
 #if USE_SH1106
 #include <Adafruit_SH110X.h>
@@ -54,15 +57,77 @@ auto_init_mutex(s_wireMutex);
 // Core 1 local copies of edge counters for lock-free display rendering
 static uint8_t s_lastPressCount[NUM_KEYS] = {0};
 static uint8_t s_lastReleaseCount[NUM_KEYS] = {0};
-static uint8_t s_overshootFrames[NUM_KEYS] = {0};
 static bool s_gridCountersSynced = false;
+
+// Display focus: which key the left panel shows. Display selection only; HID and the
+// Rapid Trigger state machine never read it. Keeps its own copy of the press counts so
+// it never consumes the grid latches above.
+constexpr float FOCUS_ACQUIRE_MM = 0.30f;   // meaningful travel: twice REST_DRIFT_THRESHOLD_MM
+constexpr float FOCUS_REST_MM = 0.15f;      // at rest for settling
+constexpr uint32_t FOCUS_SETTLE_MS = 100;   // focused key must stay at rest this long to let go
+static int8_t s_focusKey = -1;
+static uint8_t s_focusSeenPress[NUM_KEYS] = {0};
+static bool s_focusSettling = false;
+static uint32_t s_focusRestSince = 0;
 
 // Discards stale latches/counts accumulated while non-grid screens were visible
 void discardGridLatches() {
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
         s_lastPressCount[i] = HallManager::getKey(i).getPressCount();
         s_lastReleaseCount[i] = HallManager::getKey(i).getReleaseCount();
-        s_overshootFrames[i] = 0;
+        s_focusSeenPress[i] = s_lastPressCount[i];
+    }
+}
+
+// Picks the focused key for this frame:
+//  1. A new actuation always takes focus (the key HallManager reports, else the deepest).
+//  2. A focused key keeps focus until it is released and has sat at rest for FOCUS_SETTLE_MS;
+//     other keys moving or going deeper never steal it.
+//  3. With no focus, the deepest key that is held or has moved FOCUS_ACQUIRE_MM acquires it.
+// The gap between FOCUS_REST_MM and FOCUS_ACQUIRE_MM keeps noise at rest from flickering it.
+void selectDisplayFocus(uint32_t now) {
+    int8_t newPress = -1;
+    int8_t lastActive = HallManager::getLastActiveKey();
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        uint8_t presses = HallManager::getKey(i).getPressCount();
+        if (presses != s_focusSeenPress[i]) {
+            s_focusSeenPress[i] = presses;
+            if (newPress < 0 || i == lastActive ||
+                (newPress != lastActive &&
+                 HallManager::getKey(i).getTravelMm() > HallManager::getKey((uint8_t)newPress).getTravelMm())) {
+                newPress = (int8_t)i;
+            }
+        }
+    }
+    if (newPress >= 0) {
+        s_focusKey = newPress;
+        s_focusSettling = false;
+        return;
+    }
+
+    if (s_focusKey >= 0) {
+        HallKey& k = HallManager::getKey((uint8_t)s_focusKey);
+        if (k.isPressed() || k.getTravelMm() > FOCUS_REST_MM) {
+            s_focusSettling = false;
+            return;
+        }
+        if (!s_focusSettling) {
+            s_focusSettling = true;
+            s_focusRestSince = now;
+        }
+        if (now - s_focusRestSince < FOCUS_SETTLE_MS) return;
+        s_focusKey = -1;
+        s_focusSettling = false;
+    }
+
+    float deepest = 0.0f;
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        HallKey& k = HallManager::getKey(i);
+        float mm = k.getTravelMm();
+        if ((k.isPressed() || mm >= FOCUS_ACQUIRE_MM) && (s_focusKey < 0 || mm > deepest)) {
+            s_focusKey = (int8_t)i;
+            deepest = mm;
+        }
     }
 }
 
@@ -77,6 +142,64 @@ float displayTravelMm(uint8_t keyIdx, float mm) {
         shown = roundf(mm * 10.0f) / 10.0f;
     }
     return shown;
+}
+
+const char* const LAYER_NAMES[] = {"NUMPAD", "NAV", "GAMING"};
+
+const char* layerName(uint8_t layer) {
+    return layer < 3 ? LAYER_NAMES[layer] : "?";
+}
+
+// Width in pixels of a string in the built-in 6x8 font (no trailing gap)
+int16_t textWidth(const char* text, uint8_t size = 1) {
+    return (int16_t)(strlen(text) * 6 * size) - size;
+}
+
+void printCentered(const char* text, int16_t centerX, int16_t y, uint8_t size = 1) {
+    s_display.setTextSize(size);
+    s_display.setCursor(centerX - textWidth(text, size) / 2, y);
+    s_display.print(text);
+}
+
+// Shared header (Y: 0..10): checkered flag, inverted banner, speed chevrons, status pill
+void drawHeader(const char* banner, const char* pill) {
+    for (int8_t r = 0; r < 4; ++r) {
+        for (int8_t c = 0; c < 3; ++c) {
+            if ((r + c) % 2 == 0) {
+                s_display.fillRect(c * 2, 1 + r * 2, 2, 2, OLED_COLOR_WHITE);
+            }
+        }
+    }
+
+    // Banner X: 7..72 fits 11 characters
+    s_display.fillRect(7, 0, 66, 10, OLED_COLOR_WHITE);
+    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
+    s_display.setTextSize(1);
+    s_display.setCursor(7 + (67 - textWidth(banner)) / 2, 1);
+    s_display.print(banner);
+
+    s_display.drawLine(77, 0, 74, 10, OLED_COLOR_WHITE);
+    s_display.drawLine(81, 0, 78, 10, OLED_COLOR_WHITE);
+    s_display.drawLine(85, 0, 82, 10, OLED_COLOR_WHITE);
+
+    // Pill X: 87..126 fits 6 characters
+    constexpr int16_t PILL_X = 87;
+    constexpr int16_t PILL_W = 40;
+    s_display.drawRoundRect(PILL_X, 0, PILL_W, 11, 2, OLED_COLOR_WHITE);
+    s_display.setTextColor(OLED_COLOR_WHITE);
+    s_display.setCursor(PILL_X + (PILL_W - textWidth(pill)) / 2, 2);
+    s_display.print(pill);
+}
+
+void drawCornerBrackets() {
+    s_display.drawFastHLine(0, 0, 8, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(0, 0, 6, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(119, 0, 9, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(127, 0, 6, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(0, 63, 8, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(0, 57, 7, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(119, 63, 9, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(127, 57, 7, OLED_COLOR_WHITE);
 }
 
 // Animation 0: 3D Warp Starfield & Floating Badge
@@ -281,7 +404,7 @@ void renderSafeZoneScreen() {
             s_display.fillRect(2, 59, barW, 4, OLED_COLOR_WHITE);
         }
     } else {
-        s_display.print("Ready | USB Connected");
+        s_display.print("Ready | USB"); // A longer string runs past the frame at x=127
         s_display.drawRect(2, 59, 124, 4, OLED_COLOR_WHITE);
     }
 
@@ -299,146 +422,277 @@ void renderSafeZoneScreen() {
     mutex_exit(&s_wireMutex);
 }
 
+const char* const MENU_TITLES[] = {"RT SENSITIVITY", "ACTUATION POINT", "RAPID TRIGGER", "ACTIVE LAYER"};
+
+// Size-2 value and size-1 unit sharing a baseline, centered as one group
+void drawValueWithUnit(const char* value, const char* unit, int16_t y) {
+    int16_t valueW = textWidth(value, 2);
+    int16_t x = 64 - (valueW + 3 + textWidth(unit)) / 2;
+    s_display.setTextSize(2);
+    s_display.setCursor(x, y);
+    s_display.print(value);
+    s_display.setTextSize(1);
+    s_display.setCursor(x + valueW + 3, y + 7);
+    s_display.print(unit);
+}
+
+// Slider track (X: 10..117, Y: 46..50) with detent ticks under it and a knob on the fill edge
+void drawMenuSlider(float ratio, uint8_t steps) {
+    constexpr int16_t X0 = 10;
+    constexpr int16_t X1 = 117;
+    constexpr int16_t Y = 46;
+    if (ratio < 0.0f) ratio = 0.0f;
+    if (ratio > 1.0f) ratio = 1.0f;
+
+    s_display.drawRoundRect(X0, Y, X1 - X0 + 1, 5, 2, OLED_COLOR_WHITE);
+    int16_t fillX = X0 + (int16_t)(ratio * (X1 - X0) + 0.5f);
+    if (fillX > X0 + 1) {
+        s_display.fillRoundRect(X0, Y, fillX - X0 + 1, 5, 2, OLED_COLOR_WHITE);
+    }
+    for (uint8_t t = 0; t <= steps; ++t) {
+        s_display.drawPixel(X0 + (X1 - X0) * t / steps, 53, OLED_COLOR_WHITE);
+    }
+
+    int16_t knobX = fillX - 2;
+    if (knobX < X0) knobX = X0;
+    if (knobX > X1 - 4) knobX = X1 - 4;
+    s_display.fillRect(knobX, Y - 2, 5, 9, OLED_COLOR_BLACK);
+    s_display.drawRoundRect(knobX, Y - 2, 5, 9, 1, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(knobX + 2, Y, 5, OLED_COLOR_WHITE);
+}
+
+// 24x11 pill switch, knob right and track filled when on
+void drawToggle(bool on, int16_t x, int16_t y) {
+    s_display.drawRoundRect(x, y, 24, 11, 5, OLED_COLOR_WHITE);
+    if (on) {
+        s_display.fillRoundRect(x + 2, y + 2, 20, 7, 3, OLED_COLOR_WHITE);
+        s_display.fillCircle(x + 17, y + 5, 3, OLED_COLOR_BLACK);
+        s_display.drawCircle(x + 17, y + 5, 3, OLED_COLOR_WHITE);
+    } else {
+        s_display.drawCircle(x + 6, y + 5, 3, OLED_COLOR_WHITE);
+    }
+}
+
 void renderMenuOverlay() {
     s_display.clearDisplay();
 
-    // 1. Motorsport Header Box (Y: 0..10)
-    // Micro Checkered Flag (X: 0..7, Y: 1..8)
-    for (int8_t r = 0; r < 4; ++r) {
-        for (int8_t c = 0; c < 4; ++c) {
-            if ((r + c) % 2 == 0) {
-                s_display.fillRect(c * 2, 1 + r * 2, 2, 2, OLED_COLOR_WHITE);
-            }
-        }
-    }
-
-    // Inverted Drift Speed Banner (X: 9..83, Y: 0..10)
-    s_display.fillRect(9, 0, 75, 10, OLED_COLOR_WHITE);
-    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    s_display.setTextSize(1);
-    s_display.setCursor(11, 1);
-    s_display.print("/// DRIFTPAD // TUNE");
-
-    // Speed line accents
-    s_display.drawLine(86, 0, 81, 10, OLED_COLOR_WHITE);
-    s_display.drawLine(90, 0, 85, 10, OLED_COLOR_WHITE);
-
-    // Pill badge for MENU
-    s_display.drawRoundRect(93, 0, 34, 11, 2, OLED_COLOR_WHITE);
-    s_display.setTextColor(OLED_COLOR_WHITE);
-    s_display.setCursor(97, 2);
-    s_display.print("MENU");
-
-    // Hairline divider with accent tick
+    uint8_t page = static_cast<uint8_t>(s_currentMenu);
+    char pillBuf[8];
+    snprintf(pillBuf, sizeof(pillBuf), "%u/%u", page + 1, static_cast<uint8_t>(MenuMode::COUNT));
+    drawHeader("TUNING MENU", pillBuf);
     s_display.drawFastHLine(0, 11, 128, OLED_COLOR_WHITE);
-
-    // Tactical Corner HUD Brackets
-    s_display.drawFastHLine(0, 0, 8, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(0, 0, 6, OLED_COLOR_WHITE);
-    s_display.drawFastHLine(119, 0, 9, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(127, 0, 6, OLED_COLOR_WHITE);
-    s_display.drawFastHLine(0, 63, 8, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(0, 57, 7, OLED_COLOR_WHITE);
-    s_display.drawFastHLine(119, 63, 9, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(127, 57, 7, OLED_COLOR_WHITE);
+    drawCornerBrackets();
 
     s_display.setTextColor(OLED_COLOR_WHITE);
+    if (page < static_cast<uint8_t>(MenuMode::COUNT)) {
+        printCentered(MENU_TITLES[page], 64, 15);
+    }
 
     switch (s_currentMenu) {
         case MenuMode::ADJUST_RT: {
-            s_display.setCursor(8, 16);
-            s_display.print("RAPID TRIGGER SENS");
-
-            s_display.setTextSize(2);
-            s_display.setCursor(20, 27);
-            s_display.print(HallKey::getRtSensitivity(), 2);
-            s_display.setTextSize(1);
-            s_display.print(" mm");
-
-            // Precision Slider Bar (RT_SENS_MIN_MM to RT_SENS_MAX_MM)
-            s_display.drawRect(8, 44, 112, 7, OLED_COLOR_WHITE);
-            // Calibration ticks along slider
-            s_display.drawPixel(8 + 28, 42, OLED_COLOR_WHITE);
-            s_display.drawPixel(8 + 56, 42, OLED_COLOR_WHITE);
-            s_display.drawPixel(8 + 84, 42, OLED_COLOR_WHITE);
-
-            float ratio = (HallKey::getRtSensitivity() - HallKey::RT_SENS_MIN_MM) /
-                          (HallKey::RT_SENS_MAX_MM - HallKey::RT_SENS_MIN_MM);
-            if (ratio < 0.0f) ratio = 0.0f;
-            if (ratio > 1.0f) ratio = 1.0f;
-            int16_t knobX = 8 + (int16_t)(ratio * 108.0f);
-            s_display.fillRect(8, 44, (int16_t)(ratio * 112.0f), 7, OLED_COLOR_WHITE);
-            s_display.fillRect(knobX, 42, 4, 11, OLED_COLOR_WHITE);
+            drawValueWithUnit(String(HallKey::getRtSensitivity(), 2).c_str(), "mm", 26);
+            drawMenuSlider((HallKey::getRtSensitivity() - HallKey::RT_SENS_MIN_MM) /
+                           (HallKey::RT_SENS_MAX_MM - HallKey::RT_SENS_MIN_MM), 4);
             break;
         }
         case MenuMode::ADJUST_ACTUATION: {
-            s_display.setCursor(14, 16);
-            s_display.print("ACTUATION POINT");
-
-            s_display.setTextSize(2);
-            s_display.setCursor(20, 27);
-            s_display.print(HallKey::getActuationPoint(), 1);
-            s_display.setTextSize(1);
-            s_display.print(" mm");
-
-            // Precision Slider Bar (0.3mm to 3.6mm)
-            s_display.drawRect(8, 44, 112, 7, OLED_COLOR_WHITE);
-            s_display.drawPixel(8 + 34, 42, OLED_COLOR_WHITE);
-            s_display.drawPixel(8 + 68, 42, OLED_COLOR_WHITE);
-
-            float ratio = (HallKey::getActuationPoint() - 0.3f) / (3.6f - 0.3f);
-            if (ratio < 0.0f) ratio = 0.0f;
-            if (ratio > 1.0f) ratio = 1.0f;
-            int16_t knobX = 8 + (int16_t)(ratio * 108.0f);
-            s_display.fillRect(8, 44, (int16_t)(ratio * 112.0f), 7, OLED_COLOR_WHITE);
-            s_display.fillRect(knobX, 42, 4, 11, OLED_COLOR_WHITE);
+            // Encoder range is 0.3mm to 3.6mm
+            drawValueWithUnit(String(HallKey::getActuationPoint(), 1).c_str(), "mm", 26);
+            drawMenuSlider((HallKey::getActuationPoint() - 0.3f) / (3.6f - 0.3f), 4);
             break;
         }
         case MenuMode::TOGGLE_RT: {
-            s_display.setCursor(10, 16);
-            s_display.print("RAPID TRIGGER MODE");
-
+            bool on = HallKey::isRapidTrigger();
+            const char* state = on ? "ON" : "OFF";
+            int16_t x = 64 - (textWidth(state, 2) + 6 + 24) / 2;
             s_display.setTextSize(2);
-            s_display.setCursor(24, 27);
-            s_display.print(HallKey::isRapidTrigger() ? "ACTIVE" : "OFF");
-
-            s_display.setTextSize(1);
-            s_display.setCursor(8, 46);
-            if (HallKey::isRapidTrigger()) {
-                s_display.print("Continuous Reversal ON");
-            } else {
-                s_display.print("Fixed Actuation Only");
-            }
+            s_display.setCursor(x, 27);
+            s_display.print(state);
+            drawToggle(on, x + textWidth(state, 2) + 6, 29);
+            printCentered(on ? "Re-arms on lift" : "Fixed actuation", 64, 47);
             break;
         }
         case MenuMode::CYCLE_LAYER: {
-            s_display.setCursor(26, 16);
-            s_display.print("ACTIVE LAYER");
-
             uint8_t cur = configGet().activeLayer;
-            s_display.setTextSize(2);
-            s_display.setCursor(16, 27);
-            if (cur == 0) s_display.print("0: NUMPAD");
-            else if (cur == 1) s_display.print("1: NAV");
-            else s_display.print("2: GAMING");
+            printCentered(layerName(cur), 64, 26, 2);
 
-            s_display.setTextSize(1);
-            s_display.setCursor(14, 46);
-            s_display.print("Flash Stored Map");
+            // Layer chips: the active one is inverted
+            char chip[3];
+            for (uint8_t i = 0; i < NUM_LAYERS; ++i) {
+                int16_t bx = 64 - (NUM_LAYERS * 20 - 2) / 2 + i * 20;
+                if (i == cur) {
+                    s_display.fillRoundRect(bx, 44, 18, 10, 2, OLED_COLOR_WHITE);
+                    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
+                } else {
+                    s_display.drawRoundRect(bx, 44, 18, 10, 2, OLED_COLOR_WHITE);
+                    s_display.setTextColor(OLED_COLOR_WHITE);
+                }
+                snprintf(chip, sizeof(chip), "L%u", i);
+                printCentered(chip, bx + 9, 45);
+            }
+            s_display.setTextColor(OLED_COLOR_WHITE);
             break;
         }
         default:
             break;
     }
 
-    // Auto-return timeout indicator bar at bottom
+    // Auto-return countdown: a centered bar that shrinks toward the middle
     uint32_t elapsed = millis() - s_menuLastActive;
     if (elapsed < 2800) {
-        int16_t remW = 126 - (int16_t)((elapsed / 2800.0f) * 126.0f);
+        int16_t remW = 108 - (int16_t)((elapsed / 2800.0f) * 108.0f);
         if (remW > 0) {
-            s_display.drawFastHLine(1, 62, remW, OLED_COLOR_WHITE);
+            s_display.drawFastHLine(64 - remW / 2, 62, remW, OLED_COLOR_WHITE);
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// Main key screen. Left: the focused key (state label, key box, 0..4 mm travel scale and
+// readout) or standby. Right: the 4x4 keypad map. Positions are fixed across states.
+// ---------------------------------------------------------------------------------------
+constexpr int16_t KEY_BOX_X = 1;
+constexpr int16_t KEY_BOX_Y = 19;
+constexpr int16_t KEY_BOX_W = 76;
+constexpr int16_t KEY_BOX_H = 28;
+constexpr int16_t SCALE_X = 1;
+constexpr int16_t SCALE_W = 76;
+constexpr int16_t SCALE_Y = 49;     // fill rows 49..51, leaving two clear rows under the key box
+constexpr float SCALE_MAX_MM = 4.0f;  // full switch travel
+constexpr int16_t MAP_X = 83;
+constexpr int16_t MAP_Y = 9;
+constexpr int16_t MAP_CELL = 9;
+constexpr int16_t MAP_GAP = 3;
+
+const char* const LAYER_TITLES[] = {"Numpad", "Nav", "Gaming"};
+
+void printRight(const char* text, int16_t rightX, int16_t y) {
+    s_display.setTextSize(1);
+    s_display.setCursor(rightX - textWidth(text) + 1, y);
+    s_display.print(text);
+}
+
+// Header: inverted layer chip, // motif, layer name (active screens only), RT setting
+void drawKeyScreenHeader(uint8_t layer, bool showName) {
+    char chip[4];
+    snprintf(chip, sizeof(chip), "L%u", layer);
+    int16_t chipW = textWidth(chip) + 4;
+    s_display.fillRect(0, 0, chipW, 8, OLED_COLOR_WHITE);
+    s_display.setTextSize(1);
+    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
+    s_display.setCursor(2, 0);
+    s_display.print(chip);
+    s_display.setTextColor(OLED_COLOR_WHITE);
+    for (int16_t i = 0; i < 2; ++i) {
+        s_display.drawLine(chipW + 3 + i * 3, 7, chipW + 5 + i * 3, 1, OLED_COLOR_WHITE);
+    }
+    if (showName) {
+        s_display.setCursor(chipW + 12, 0);
+        s_display.print(layerName(layer));
+    }
+    if (HallKey::isRapidTrigger()) {
+        printRight((String("RT ") + String(HallKey::getRtSensitivity(), 2) + "mm").c_str(), 127, 0);
+    } else {
+        printRight("RT OFF", 127, 0);
+    }
+}
+
+// Key box: filled with a knocked-out label when actuated, outlined otherwise. The label
+// uses the largest font that keeps comfortable side padding inside the fixed box.
+void drawKeyBox(const char* label, bool actuated) {
+    int16_t x1, y1;
+    uint16_t w, h;
+    s_display.setFont(&FreeSansBold18pt7b);
+    s_display.getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
+    if (w > KEY_BOX_W - 16) {
+        s_display.setFont(&FreeSansBold12pt7b);
+        s_display.getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
+        if (w > KEY_BOX_W - 10) {
+            s_display.setFont(&FreeSansBold9pt7b);
+            s_display.getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
+        }
+    }
+    // Centre on the font's cap height so every label sits on the same line
+    int16_t cx1, cy1;
+    uint16_t cw, capH;
+    s_display.getTextBounds("H", 0, 0, &cx1, &cy1, &cw, &capH);
+    int16_t tx = KEY_BOX_X + (KEY_BOX_W - (int16_t)w + 1) / 2 - x1;
+    int16_t ty = KEY_BOX_Y + (KEY_BOX_H - (int16_t)capH + 1) / 2 + (int16_t)capH;
+
+    if (actuated) {
+        s_display.fillRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
+        s_display.setTextColor(OLED_COLOR_BLACK);
+    } else {
+        s_display.drawRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
+        s_display.setTextColor(OLED_COLOR_WHITE);
+    }
+    s_display.setCursor(tx, ty);
+    s_display.print(label);
+    s_display.setFont(nullptr);
+    s_display.setTextColor(OLED_COLOR_WHITE);
+}
+
+int16_t scaleX(float mm) {
+    return SCALE_X + (int16_t)(mm / SCALE_MAX_MM * (SCALE_W - 1) + 0.5f);
+}
+
+// Fixed 0..4 mm scale: 1px track, 3px fill, mm ticks, and the configured initial actuation
+// point as a line through the bar plus a pointer underneath
+void drawTravelScale(float travelMm) {
+    if (travelMm < 0.0f) travelMm = 0.0f;
+    if (travelMm > SCALE_MAX_MM) travelMm = SCALE_MAX_MM;
+
+    s_display.drawFastHLine(SCALE_X, SCALE_Y + 1, SCALE_W, OLED_COLOR_WHITE);
+    int16_t fillX = scaleX(travelMm);
+    if (travelMm > 0.0f) {
+        s_display.fillRect(SCALE_X, SCALE_Y, fillX - SCALE_X + 1, 3, OLED_COLOR_WHITE);
+    }
+    for (uint8_t mm = 0; mm <= 4; ++mm) {
+        s_display.drawPixel(scaleX(mm), SCALE_Y + 4, OLED_COLOR_WHITE);
+    }
+    int16_t ax = scaleX(HallKey::getActuationPoint());
+    bool filledPast = travelMm > 0.0f && ax <= fillX;
+    s_display.drawFastVLine(ax, SCALE_Y, 4, filledPast ? OLED_COLOR_BLACK : OLED_COLOR_WHITE);
+    s_display.drawPixel(ax, SCALE_Y + 4, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(ax - 1, SCALE_Y + 5, 3, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(ax - 2, SCALE_Y + 6, 5, OLED_COLOR_WHITE);
+
+    s_display.setTextSize(1);
+    s_display.setCursor(SCALE_X, 57);
+    s_display.print("0");
+}
+
+// Keypad map. Resting: outline. Travelling: outline with an inner level that keeps a dark
+// ring. Actuated: solid. Focus is marked by row and column pointers outside the grid, so
+// neighbouring actuated keys can never make it ambiguous.
+void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus) {
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        int16_t x = MAP_X + (i % 4) * (MAP_CELL + MAP_GAP);
+        int16_t y = MAP_Y + (i / 4) * (MAP_CELL + MAP_GAP);
+        if (actuated[i]) {
+            s_display.fillRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
+            continue;
+        }
+        s_display.drawRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
+        float mm = HallManager::getKey(i).getTravelMm();
+        if (mm >= FOCUS_REST_MM) {
+            int16_t rows = (int16_t)(mm / SCALE_MAX_MM * 5.0f + 0.5f);
+            if (rows < 1) rows = 1;
+            if (rows > 5) rows = 5;
+            s_display.fillRect(x + 2, y + MAP_CELL - 2 - rows, MAP_CELL - 4, rows, OLED_COLOR_WHITE);
+        }
+    }
+    if (focus < 0) return;
+
+    int16_t cx = MAP_X + (focus % 4) * (MAP_CELL + MAP_GAP) + MAP_CELL / 2;
+    int16_t cy = MAP_Y + (focus / 4) * (MAP_CELL + MAP_GAP) + MAP_CELL / 2;
+    s_display.drawFastVLine(MAP_X - 4, cy - 2, 5, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(MAP_X - 3, cy - 1, 3, OLED_COLOR_WHITE);
+    s_display.drawPixel(MAP_X - 2, cy, OLED_COLOR_WHITE);
+    int16_t gridBottom = MAP_Y + 4 * (MAP_CELL + MAP_GAP) - MAP_GAP;
+    s_display.drawPixel(cx, gridBottom + 2, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(cx - 1, gridBottom + 3, 3, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(cx - 2, gridBottom + 4, 5, OLED_COLOR_WHITE);
 }
 
 void renderFullScreen() {
@@ -457,336 +711,78 @@ void renderFullScreen() {
         s_gridCountersSynced = true;
     }
 
+    selectDisplayFocus(millis());
+    int8_t focus = s_focusKey;
+
+    // Focused key state, from the same latches as the map (read before the map consumes them).
+    // A release and re-press inside one frame shows one un-actuated frame so RT resets stay visible.
+    bool focusActuated = false;
+    if (focus >= 0) {
+        HallKey& k = HallManager::getKey((uint8_t)focus);
+        bool pressChanged = k.getPressCount() != s_lastPressCount[(uint8_t)focus];
+        bool releaseChanged = k.getReleaseCount() != s_lastReleaseCount[(uint8_t)focus];
+        focusActuated = (k.isPressed() || pressChanged) && !(k.isPressed() && releaseChanged);
+    }
+
+    // Keypad map state per key, then consume the latches
+    bool actuated[NUM_KEYS];
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        HallKey& k = HallManager::getKey(i);
+        uint8_t curPress = k.getPressCount();
+        uint8_t curRelease = k.getReleaseCount();
+        bool pressChanged = (curPress != s_lastPressCount[i]);
+        bool releaseChanged = (curRelease != s_lastReleaseCount[i]);
+        if (k.isPressed() && releaseChanged) {
+            actuated[i] = false;   // RT re-press within one frame: show the reset
+        } else {
+            actuated[i] = k.isPressed() || pressChanged;   // held, or a tap finished between frames
+        }
+        s_lastPressCount[i] = curPress;
+        s_lastReleaseCount[i] = curRelease;
+    }
+
     s_display.clearDisplay();
-
-    // 1. Header: Motorsport Checkered Flag + DriftPad V2 Banner + Status Pill (Y: 0..10)
-    // Micro Checkered Flag (X: 0..5, Y: 1..8) - 3 cols x 4 rows of 2x2 squares
-    for (int8_t r = 0; r < 4; ++r) {
-        for (int8_t c = 0; c < 3; ++c) {
-            if ((r + c) % 2 == 0) {
-                s_display.fillRect(c * 2, 1 + r * 2, 2, 2, OLED_COLOR_WHITE);
-            }
-        }
-    }
-
-    // Inverted Drift Speed Banner (X: 7..72, Y: 0..10) - 66 pixels wide
-    s_display.fillRect(7, 0, 66, 10, OLED_COLOR_WHITE);
-    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    s_display.setTextSize(1);
-    s_display.setCursor(8, 1);
-    s_display.print("DRIFTPAD V2"); // 11 chars * 6 - 1 = 65 px, spans X: 8..72 cleanly inside 7..72
-
-    // Slanted Kinetic Speed Chevrons /// (X: 77..85)
-    // 2px+ positive margin from banner at Y=10 (X: 72 vs X: 74)
-    s_display.drawLine(77, 0, 74, 10, OLED_COLOR_WHITE);
-    s_display.drawLine(81, 0, 78, 10, OLED_COLOR_WHITE);
-    s_display.drawLine(85, 0, 82, 10, OLED_COLOR_WHITE);
-
-    // Right Status Pill (X: 87..126, Y: 0..10) - 40 pixels wide
-    constexpr int16_t PILL_X = 87;
-    constexpr int16_t PILL_W = 40;
-    s_display.drawRoundRect(PILL_X, 0, PILL_W, 11, 2, OLED_COLOR_WHITE);
     s_display.setTextColor(OLED_COLOR_WHITE);
+    uint8_t layer = configGet().activeLayer;
+    drawKeyScreenHeader(layer, focus >= 0);
 
-    char pillBuf[12];
-    uint8_t curLayer = configGet().activeLayer;
-    snprintf(pillBuf, sizeof(pillBuf), "L%d:%s", curLayer, HallKey::isRapidTrigger() ? "RT" : "NRM");
-    int16_t pillTextW = (int16_t)(strlen(pillBuf) * 6 - 1);
-    int16_t pillTextX = PILL_X + (PILL_W - pillTextW) / 2;
-    s_display.setCursor(pillTextX, 2);
-    s_display.print(pillBuf);
-
-    // Hairline divider with accent gap (Y: 11)
-    s_display.drawFastHLine(0, 11, 65, OLED_COLOR_WHITE);
-    s_display.drawFastHLine(68, 11, 60, OLED_COLOR_WHITE);
-
-    // 2. Center Laser Divider (X: 66, Y: 12..62)
-    for (int16_t y = 13; y <= 61; y += 3) {
-        s_display.drawPixel(66, y, OLED_COLOR_WHITE);
-    }
-    s_display.drawFastHLine(64, 13, 5, OLED_COLOR_WHITE);
-    s_display.drawFastHLine(64, 61, 5, OLED_COLOR_WHITE);
-
-    // 3. Left Side: Showing what input in text you pressed (X: 1..65, Y: 12..63)
-    int8_t lastKey = HallManager::getLastActiveKey();
-    bool lastKeyPressChanged = (lastKey >= 0 && lastKey < NUM_KEYS && 
-        (HallManager::getKey((uint8_t)lastKey).getPressCount() != s_lastPressCount[(uint8_t)lastKey]));
-    bool lastKeyReleaseChanged = (lastKey >= 0 && lastKey < NUM_KEYS && 
-        (HallManager::getKey((uint8_t)lastKey).getReleaseCount() != s_lastReleaseCount[(uint8_t)lastKey]));
-
-    bool hasActiveKey = (lastKey >= 0 && lastKey < NUM_KEYS && 
-                        (HallManager::getKey((uint8_t)lastKey).isPressed() || 
-                         lastKeyPressChanged || 
-                         HallManager::getKey((uint8_t)lastKey).getTravelMm() > 0.10f));
-
-    if (hasActiveKey) {
-        HallKey& k = HallManager::getKey((uint8_t)lastKey);
-        const char* lbl = k.getLabel();
-        uint8_t len = strlen(lbl);
-        float currentTravel = k.getTravelMm();
-
-        // RT re-press within one frame: key was released while still pressed -> render unpressed frame
-        bool isRtRepress = (k.isPressed() && lastKeyReleaseChanged);
-        bool keyTriggered = (k.isPressed() || lastKeyPressChanged) && !isRtRepress;
-
-        s_display.setTextSize(1);
-        s_display.setTextColor(OLED_COLOR_WHITE);
-        s_display.setCursor(6, 13);
-        if (keyTriggered) {
-            s_display.print("TRIGGERED"); // 9 chars * 6 - 1 = 53 px, spans X: 6..58
-        } else {
-            s_display.print("STROKE:RT"); // 9 chars * 6 - 1 = 53 px, spans X: 6..58
-        }
-
-        // Cyber-Cockpit Chamfered Key Card (X: 5, Y: 23, W: 54, H: 26)
-        constexpr int16_t cx = 5;
-        constexpr int16_t cy = 23;
-        constexpr int16_t cw = 54;
-        constexpr int16_t ch = 26;
-
-        // Top/bottom framing accents with clear spacing (no collision with TRIGGERED font)
-        s_display.drawFastHLine(14, 21, 36, OLED_COLOR_WHITE);
-        s_display.drawFastHLine(14, 50, 36, OLED_COLOR_WHITE);
-
-        if (keyTriggered) {
-            // Inverted filled card with chamfered corners
-            s_display.fillRect(cx + 3, cy, cw - 3, ch, OLED_COLOR_WHITE);
-            s_display.fillRect(cx, cy + 3, 3, ch - 3, OLED_COLOR_WHITE);
-            // Diagonal cuts at top-left and bottom-right
-            s_display.drawPixel(cx, cy, OLED_COLOR_BLACK);
-            s_display.drawPixel(cx + 1, cy, OLED_COLOR_BLACK);
-            s_display.drawPixel(cx, cy + 1, OLED_COLOR_BLACK);
-            s_display.drawPixel(cx + cw - 1, cy + ch - 1, OLED_COLOR_BLACK);
-            s_display.drawPixel(cx + cw - 2, cy + ch - 1, OLED_COLOR_BLACK);
-            s_display.drawPixel(cx + cw - 1, cy + ch - 2, OLED_COLOR_BLACK);
-
+    if (focus >= 0) {
+        HallKey& k = HallManager::getKey((uint8_t)focus);
+        if (focusActuated) {
+            s_display.fillRect(1, 9, textWidth("ACTUATED") + 4, 9, OLED_COLOR_WHITE);
             s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-
-            // Inverted speed chevrons flanking letter // D //
-            if (len == 1) {
-                s_display.drawLine(12, 27, 9, 44, OLED_COLOR_BLACK);
-                s_display.drawLine(15, 27, 12, 44, OLED_COLOR_BLACK);
-                s_display.drawLine(49, 27, 46, 44, OLED_COLOR_BLACK);
-                s_display.drawLine(52, 27, 49, 44, OLED_COLOR_BLACK);
-            } else if (len == 2) {
-                s_display.drawLine(10, 27, 8, 44, OLED_COLOR_BLACK);
-                s_display.drawLine(54, 27, 52, 44, OLED_COLOR_BLACK);
-            }
-        } else {
-            // Outlined chamfered frame
-            s_display.drawLine(cx + 3, cy, cx + cw - 1, cy, OLED_COLOR_WHITE);
-            s_display.drawLine(cx + cw - 1, cy, cx + cw - 1, cy + ch - 4, OLED_COLOR_WHITE);
-            s_display.drawLine(cx + cw - 1, cy + ch - 4, cx + cw - 4, cy + ch - 1, OLED_COLOR_WHITE);
-            s_display.drawLine(cx + cw - 4, cy + ch - 1, cx, cy + ch - 1, OLED_COLOR_WHITE);
-            s_display.drawLine(cx, cy + ch - 1, cx, cy + 3, OLED_COLOR_WHITE);
-            s_display.drawLine(cx, cy + 3, cx + 3, cy, OLED_COLOR_WHITE);
-
+            s_display.setCursor(3, 10);
+            s_display.print("ACTUATED");
             s_display.setTextColor(OLED_COLOR_WHITE);
-        }
-
-        // Bold centered key label
-        if (len == 1) {
-            s_display.setTextSize(3);
-            s_display.setCursor(cx + (cw - 15) / 2, cy + (ch - 21) / 2);
-        } else if (len == 2) {
-            s_display.setTextSize(2);
-            s_display.setCursor(cx + (cw - 22) / 2, cy + (ch - 14) / 2);
-        } else if (len == 3) {
-            s_display.setTextSize(2);
-            s_display.setCursor(cx + (cw - 34) / 2, cy + (ch - 14) / 2);
-        } else if (len == 4) {
-            s_display.setTextSize(2);
-            s_display.setCursor(cx + (cw - 46) / 2, cy + (ch - 14) / 2);
         } else {
-            s_display.setTextSize(1);
-            s_display.setCursor(cx + 4, cy + (ch - 8) / 2);
+            s_display.setCursor(3, 10);
+            s_display.print("TRAVEL");
         }
-        s_display.print(lbl);
-
-        // Sub-Telemetry: Depth readout (X: 3..37) + Formula Drift Motec Tachometer (X: 41..63)
-        s_display.setTextColor(OLED_COLOR_WHITE);
-        s_display.setTextSize(1);
-        s_display.setCursor(3, 53);
-        s_display.print(displayTravelMm((uint8_t)lastKey, currentTravel), 1);
-        s_display.print("mm"); // spans X: 3..31
-
-        // 6-Stage Motec Tachometer with Angled Speed Chevrons /// (X: 41..63, Y: 52..59)
-        int8_t activeSegs = (int8_t)((currentTravel / 4.0f) * 6.0f);
-        if (keyTriggered && activeSegs < 3) activeSegs = 3;
-        if (activeSegs > 6) activeSegs = 6;
-
-        for (int8_t s = 0; s < 5; ++s) {
-            int16_t sx = 41 + s * 4;
-            if (s < activeSegs) {
-                s_display.drawLine(sx, 59, sx + 2, 53, OLED_COLOR_WHITE);
-                s_display.drawLine(sx + 1, 59, sx + 3, 53, OLED_COLOR_WHITE);
-            } else {
-                s_display.drawPixel(sx + 1, 59, OLED_COLOR_WHITE); // Track dot
-            }
-        }
-        // Segment 5: Redline Shift Block (X: 61..63)
-        if (activeSegs >= 6 || keyTriggered) {
-            if (keyTriggered && ((millis() / 50) % 2 == 0)) {
-                s_display.fillRect(61, 52, 3, 8, OLED_COLOR_WHITE); // Strobe F1 Shift Light!
-            } else {
-                s_display.drawRect(61, 52, 3, 8, OLED_COLOR_WHITE);
-            }
-        } else {
-            s_display.drawPixel(62, 59, OLED_COLOR_WHITE);
-        }
+        drawKeyBox(k.getLabel(), focusActuated);
+        drawTravelScale(k.getTravelMm());
+        printRight((String(displayTravelMm((uint8_t)focus, k.getTravelMm()), 1) + "mm").c_str(),
+                   KEY_BOX_X + KEY_BOX_W - 1, 57);
     } else {
-        // Cockpit Standby Telemetry Card (X: 4..60, Y: 14..61) - 57 pixels wide
-        s_display.drawRoundRect(4, 14, 57, 47, 2, OLED_COLOR_WHITE);
-        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setCursor(3, 10);
+        s_display.print("READY");
 
-        // Header: STATUS: with status diamond
-        s_display.setTextSize(1);
-        s_display.setCursor(8, 17);
-        s_display.print("STATUS:");
-        s_display.fillRect(50, 18, 5, 5, OLED_COLOR_WHITE);
-        s_display.drawPixel(50, 18, OLED_COLOR_BLACK);
-        s_display.drawPixel(54, 18, OLED_COLOR_BLACK);
-        s_display.drawPixel(50, 22, OLED_COLOR_BLACK);
-        s_display.drawPixel(54, 22, OLED_COLOR_BLACK);
+        const char* title = layer < 3 ? LAYER_TITLES[layer] : "?";
+        int16_t x1, y1;
+        uint16_t w, h;
+        s_display.setFont(&FreeSansBold9pt7b);
+        s_display.getTextBounds(title, 0, 0, &x1, &y1, &w, &h);
+        s_display.setCursor(KEY_BOX_X - x1, 33);
+        s_display.print(title);
+        s_display.setFont(nullptr);
 
-        // Bold Inverted STANDBY Badge (X: 7..57, W: 51)
-        s_display.fillRect(7, 26, 51, 10, OLED_COLOR_WHITE);
-        s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-        s_display.setCursor(13, 27);
-        s_display.print("STANDBY");
-        s_display.setTextColor(OLED_COLOR_WHITE);
-
-        // Informative Rapid Trigger Sensitivity Readout: "RT 0.15mm" (9 chars = 53 px, X: 6..58)
-        s_display.setCursor(6, 38);
-        s_display.print("RT ");
-        s_display.print(HallKey::getRtSensitivity(), 2);
-        s_display.print("mm");
-
-        // Active Layer Configuration (Centered at X=15, 35px wide)
-        s_display.setCursor(15, 47);
-        uint8_t l = configGet().activeLayer;
-        s_display.print(l == 0 ? "NUMPAD" : l == 1 ? "NAVIG" : "GAMING");
-
-        // Live Hall-Effect Sensor Telemetry Oscilloscope Waveform (X: 7..57, Y: 56..60)
-        const int8_t sineTable[16] = {0, 1, 2, 2, 3, 2, 2, 1, 0, -1, -2, -2, -3, -2, -2, -1};
-        uint8_t waveClock = (millis() / 35);
-        for (int16_t x = 7; x <= 57; ++x) {
-            int16_t wy = 58 + sineTable[(x + waveClock) % 16] / 2;
-            s_display.drawPixel(x, wy, OLED_COLOR_WHITE);
-        }
+        s_display.setCursor(1, 38);
+        s_display.print("ACT");
+        printRight((String(HallKey::getActuationPoint(), 1) + "mm").c_str(), KEY_BOX_X + KEY_BOX_W - 1, 38);
+        drawTravelScale(0.0f);
+        printRight("4mm", KEY_BOX_X + KEY_BOX_W - 1, 57);
     }
 
-    // 4. Right Side: Live Diagram of All 16 Buttons with A1 Plunge Animation (X: 69..123, Y: 15..60)
-    constexpr int16_t GRID_X = 69;
-    constexpr int16_t GRID_Y = 15;
-    constexpr int16_t BOX_W  = 11;
-    constexpr int16_t BOX_H  = 9;
-    constexpr int16_t GAP_X  = 3;
-    constexpr int16_t GAP_Y  = 3;
-
-    for (uint8_t row = 0; row < 4; ++row) {
-        for (uint8_t col = 0; col < 4; ++col) {
-            uint8_t keyIdx = row * 4 + col;
-            int16_t bx = GRID_X + col * (BOX_W + GAP_X);
-            int16_t by = GRID_Y + row * (BOX_H + GAP_Y);
-            HallKey& k = HallManager::getKey(keyIdx);
-
-            uint8_t curPress = k.getPressCount();
-            uint8_t curRelease = k.getReleaseCount();
-            bool livePressed = k.isPressed();
-            bool isMacro = (keyIdx == 4 || keyIdx == 8 || keyIdx == 12 || keyIdx == 13);
-
-            bool pressChanged = (curPress != s_lastPressCount[keyIdx]);
-            bool releaseChanged = (curRelease != s_lastReleaseCount[keyIdx]);
-
-            bool active = false;
-            int16_t inset = 0;
-
-            if (livePressed && releaseChanged) {
-                // RT re-press within one frame: key was released and re-actuated while held!
-                // Render one un-pressed frame so RT resets during a hold are visible.
-                active = false;
-                inset = (int16_t)(k.getTravelMm() / 4.0f * 4.0f + 0.5f);
-                if (inset > 3) inset = 3;
-                if (inset < 0) inset = 0;
-
-                s_lastReleaseCount[keyIdx] = curRelease;
-                s_lastPressCount[keyIdx] = curPress;
-            } else if (livePressed) {
-                // Key is actively pressed
-                active = true;
-                inset = (int16_t)(k.getTravelMm() / 4.0f * 4.0f + 0.5f);
-                if (inset > 3) inset = 3;
-                if (inset < 0) inset = 0;
-
-                s_lastPressCount[keyIdx] = curPress;
-                s_lastReleaseCount[keyIdx] = curRelease;
-            } else if (pressChanged) {
-                // Fast tap: actuation occurred between frames, but key is now released
-                active = true;
-                inset = (int16_t)(k.getTravelMm() / 4.0f * 4.0f + 0.5f);
-                if (inset > 3) inset = 3;
-                if (inset < 0) inset = 0;
-
-                s_lastPressCount[keyIdx] = curPress;
-                if (releaseChanged) {
-                    s_overshootFrames[keyIdx] = 1;
-                    s_lastReleaseCount[keyIdx] = curRelease;
-                }
-            } else if (releaseChanged || s_overshootFrames[keyIdx] > 0) {
-                // Release overshoot: 1-frame release spring rebound
-                active = false;
-                inset = -1; // cap top at by - 1
-                s_overshootFrames[keyIdx] = 0;
-
-                s_lastReleaseCount[keyIdx] = curRelease;
-                s_lastPressCount[keyIdx] = curPress;
-            } else {
-                // Normal resting / analog travel outline
-                active = false;
-                inset = (int16_t)(k.getTravelMm() / 4.0f * 4.0f + 0.5f);
-                if (inset > 3) inset = 3;
-                if (inset < 0) inset = 0;
-
-                s_lastPressCount[keyIdx] = curPress;
-                s_lastReleaseCount[keyIdx] = curRelease;
-            }
-
-            int16_t top = by + inset;
-
-            if (active) {
-                // A1 Plunge: Solid fill on actuation
-                s_display.fillRoundRect(bx, top, BOX_W, BOX_H - inset, 2, OLED_COLOR_WHITE);
-            } else {
-                // A1 Plunge: Unpressed outline sinking with analog travel
-                s_display.drawRoundRect(bx, top, BOX_W, BOX_H - inset, 1, OLED_COLOR_WHITE);
-                if (inset <= 0) {
-                    // Specular highlight line only when fully up
-                    s_display.drawFastHLine(bx + 2, top + 1, BOX_W - 4, OLED_COLOR_WHITE);
-                }
-                if (isMacro) {
-                    s_display.drawPixel(bx + 2, top + 2, OLED_COLOR_WHITE);
-                }
-            }
-
-            // Fixed switch-plate base lip (1px below box: by + BOX_H = by + 9)
-            s_display.drawFastHLine(bx + 1, by + BOX_H, BOX_W - 2, OLED_COLOR_WHITE);
-        }
-    }
-
-    // 5. Tactical HUD Corner Reticles / Brackets
-    // Top-Left
-    s_display.drawFastHLine(0, 0, 8, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(0, 0, 6, OLED_COLOR_WHITE);
-    // Top-Right
-    s_display.drawFastHLine(119, 0, 9, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(127, 0, 6, OLED_COLOR_WHITE);
-    // Bottom-Left
-    s_display.drawFastHLine(0, 63, 8, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(0, 57, 7, OLED_COLOR_WHITE);
-    // Bottom-Right
-    s_display.drawFastHLine(119, 63, 9, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(127, 57, 7, OLED_COLOR_WHITE);
+    drawKeypadMap(actuated, focus);
 
     mutex_enter_blocking(&s_wireMutex);
     s_display.display();
@@ -1329,10 +1325,31 @@ void oledInit() {
     }
 }
 
-void oledCycleMenu() {
+// Encoder input that lands on a sleeping or screensaver display only wakes it. The rest of
+// the spin (or switch bounce) that follows within the grace window is swallowed too, so a
+// wake never changes the menu or a setting.
+constexpr uint32_t ENCODER_WAKE_GRACE_MS = 300;
+static uint32_t s_encoderWakeTime = 0;
+static bool s_encoderWokeDisplay = false;
+
+static bool consumeEncoderWake() {
+    uint32_t now = millis();
     if (s_displaySleeping || s_screensaverActive) {
         oledWake();
+        s_encoderWakeTime = now;
+        s_encoderWokeDisplay = true;
+        return true;
     }
+    if (s_encoderWokeDisplay && (now - s_encoderWakeTime) < ENCODER_WAKE_GRACE_MS) {
+        return true;
+    }
+    s_encoderWokeDisplay = false;
+    return false;
+}
+
+void oledCycleMenu() {
+    if (consumeEncoderWake()) return;
+
     uint8_t next = (static_cast<uint8_t>(s_currentMenu) + 1) % static_cast<uint8_t>(MenuMode::COUNT);
     s_currentMenu = static_cast<MenuMode>(next);
     s_menuLastActive = millis();
@@ -1340,12 +1357,10 @@ void oledCycleMenu() {
     s_forceRender = true;
 }
 
-void oledAdjustCurrentSetting(int32_t delta) {
-    if (delta == 0) return;
+bool oledAdjustCurrentSetting(int32_t delta) {
+    if (delta == 0) return false;
+    if (consumeEncoderWake()) return false;
 
-    if (s_displaySleeping || s_screensaverActive) {
-        oledWake();
-    }
     s_menuLastActive = millis();
     s_lastActivityTime = millis();
 
@@ -1381,9 +1396,11 @@ void oledAdjustCurrentSetting(int32_t delta) {
             break;
         }
         default:
-            break;
+            s_forceRender = true;
+            return false;
     }
     s_forceRender = true;
+    return true;
 }
 
 void oledUpdate(bool force) {
