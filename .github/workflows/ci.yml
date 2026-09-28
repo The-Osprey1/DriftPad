@@ -1,0 +1,84 @@
+# Every push and pull request: the whole test suite in release mode (a fresh firmware build with
+# the toolchain of firmware/toolchain.lock.json, every suite, no skips), plus the build artifacts
+# and reports as a workflow artifact. Nothing is published or released from here.
+#
+# The same checks run locally with `python tests/run_all_tests.py --release`; see docs/testing.md.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Chrome's sandbox is refused by the runner's AppArmor profile; the pages under test are ours
+      DRIFTPAD_CHROME_NO_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Defect-reproduction tests compile files of earlier commits (e2031e2, 21834a8)
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read the toolchain lock
+        id: lock
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json
+          lock = json.load(open("firmware/toolchain.lock.json"))
+          print("pio=" + lock["platformio_core"]["version"])
+          print("platform=" + lock["platform"]["repo"] + "#" + lock["platform"]["commit"])
+          EOF
+
+      - name: Install Python tools (pinned)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tests/requirements-dev.txt -r tools/requirements.txt "platformio==${{ steps.lock.outputs.pio }}"
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/toolchain.lock.json', 'firmware/platformio.ini') }}
+
+      - name: Install the dev-platform at the locked commit
+        run: pio pkg install --global --platform "${{ steps.lock.outputs.platform }}"
+
+      - name: Project configuration pinned to the locked commit
+        run: |
+          mkdir -p "$RUNNER_TEMP/reports"
+          python tools/check_toolchain.py --write-pinned-conf "$RUNNER_TEMP/platformio.pinned.ini"
+
+      # The build inside the test run installs the framework, toolchain and libraries (into
+      # ~/.platformio and firmware/.pio, which git ignores, so the clean-tree check is unaffected).
+      - name: Tests (release mode)
+        env:
+          DRIFTPAD_PIO_PROJECT_CONF: ${{ runner.temp }}/platformio.pinned.ini
+        run: python tests/run_all_tests.py --release --clean --json "$RUNNER_TEMP/reports/test-results.json"
+
+      - name: Toolchain matches the lock
+        if: always()
+        run: python tools/check_toolchain.py --require-libs --json "$RUNNER_TEMP/reports/toolchain.json"
+
+      - name: Keep the reports and the build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: driftpad-ci-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/reports/
+            firmware/.pio/build/pico/firmware.uf2
+            firmware/.pio/build/pico/firmware.elf
+            firmware/.pio/build/pico/firmware.bin
+            firmware/.pio/build/pico/build_manifest.json

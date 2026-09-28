@@ -66,6 +66,9 @@ def run_page(url: str, budget_ms: int = 60000, timeout_s: int = 180) -> dict:
         cmd = [browser, "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
                "--disable-extensions", "--allow-file-access-from-files", f"--user-data-dir={profile}",
                f"--virtual-time-budget={budget_ms}", "--dump-dom", url]
+        # CI containers that forbid Chrome's sandbox (Ubuntu 24.04 AppArmor) set this; never by default
+        if os.environ.get("DRIFTPAD_CHROME_NO_SANDBOX", "").strip() in ("1", "true", "yes"):
+            cmd.insert(1, "--no-sandbox")
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                 timeout=timeout_s)
     m = re.search(r'<pre id="results">(.*?)</pre>', result.stdout, re.S)

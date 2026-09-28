@@ -71,3 +71,6 @@ desktop.ini
 
 # Host-compiled test artifacts
 tests/.host_build/
+
+# Release bundles made by tools/qualify_release.py (never committed)
+dist/

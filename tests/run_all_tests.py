@@ -112,6 +112,7 @@ REQUIRED_SUITES: List[Tuple[str, Tuple[str, ...]]] = [
     ("configurator fake vs firmware contract", ("test_configurator_contract",)),
     ("build + artifacts", ("test_build",)),
     ("flash layout (build artifacts)", ("test_flash_layout",)),
+    ("release tooling (host, fakes)", ("test_flash_tool", "test_release_tooling")),
     ("docs/contract consistency", (r"test_docs\w*", r"test_contract\w*")),
 ]
 
