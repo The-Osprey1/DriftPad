@@ -3,8 +3,9 @@ host_build.py - Compile firmware sources for the host so tests can run the produ
 
 Compiler discovery order:
   1. $CXX (a path or a command name)
-  2. g++, clang++, c++ on PATH
-  3. zig's bundled clang via the `ziglang` Python package (`python -m ziglang c++`)
+  2. zig's bundled clang via the `ziglang` Python package (`python -m ziglang c++`), pinned in
+     tests/requirements-dev.txt, so every machine that installed it compiles with the same clang
+  3. g++, clang++, c++ on PATH
 
 Builds are cached under tests/.host_build/ keyed by a hash of every source/header that can
 affect them plus the flags, so repeated runs are fast and a DLL that is still loaded by another
@@ -85,20 +86,21 @@ def find_compiler() -> Optional[Tuple[List[str], str]]:
         return _compiler
     _compiler_searched = True
 
-    candidates = []
-    env_cxx = os.environ.get("CXX")
-    if env_cxx:
-        candidates.append(env_cxx)
-    candidates += ["g++", "clang++", "c++"]
-    for c in candidates:
-        path = shutil.which(c)
-        if path:
-            kind = "clang" if "clang" in Path(path).name else "gcc"
-            if Path(path).suffix.lower() in (".cmd", ".bat"):
-                kind = "zig" if "zig" in Path(path).name.lower() else kind
-            _compiler = ([path], kind)
-            return _compiler
+    def on_path(name):
+        path = shutil.which(name)
+        if not path:
+            return None
+        kind = "clang" if "clang" in Path(path).name else "gcc"
+        if Path(path).suffix.lower() in (".cmd", ".bat"):
+            kind = "zig" if "zig" in Path(path).name.lower() else kind
+        return ([path], kind)
 
+    # 1. an explicit $CXX; 2. the pinned zig (tests/requirements-dev.txt), so every machine that
+    # installed it, CI included, compiles with the same clang; 3. whatever is on PATH.
+    env_cxx = os.environ.get("CXX")
+    if env_cxx and on_path(env_cxx):
+        _compiler = on_path(env_cxx)
+        return _compiler
     try:
         import importlib.util
         if importlib.util.find_spec("ziglang") is not None:
@@ -106,6 +108,11 @@ def find_compiler() -> Optional[Tuple[List[str], str]]:
             return _compiler
     except (ImportError, ValueError):
         pass
+    for name in ("g++", "clang++", "c++"):
+        found = on_path(name)
+        if found:
+            _compiler = found
+            return _compiler
     return None
 
 
