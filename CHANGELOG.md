@@ -42,6 +42,7 @@ work with this firmware and says so.
   them; dialogs, focus and screen-reader announcements; layout at 360 px.
 - A refused `CALIBRATE` (`keys_not_at_rest`) no longer releases keys that are being held.
 - A failed encoder save is retried after the next rest instead of being dropped.
+- `INFO.settings.source` names the slot just written after a `SAVE` (it kept saying `legacy_v1` with the new sequence number until the next power-up). Found when updating a real pad.
 - `tools/flash.py --drive` (a board in bootloader mode) no longer verifies against a different pad
   that was already connected.
 

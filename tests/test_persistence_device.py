@@ -338,6 +338,15 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual((info["settings"]["source"], info["settings"]["dirty"]), ("slot_a", False))
         self.assertEqual(bytes(self.lib.ff_legacy()[i] for i in range(4096)), legacy_before)
 
+    def test_info_names_the_slot_just_saved_without_a_reboot(self):
+        self.lib.write_legacy_image(v1_image(actuation=2.35))
+        d = self.reboot()
+        self.assertEqual(d.replies("INFO")[0]["settings"]["source"], "legacy_v1")
+        saved = self.one("SAVE", d)
+        settings = d.replies("INFO")[0]["settings"]
+        self.assertEqual((settings["source"], settings["seq"]), (saved["slot"], saved["seq"]),
+                         "source and seq must describe the same record")
+
     def test_corrupt_legacy_image_falls_back_to_defaults_and_says_so(self):
         image = bytearray(v1_image(actuation=2.0))
         image[20] ^= 0xFF                               # CRC no longer matches

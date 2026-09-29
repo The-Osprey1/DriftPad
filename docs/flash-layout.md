@@ -74,7 +74,7 @@ The sequence number increases by one per save, so the slots alternate A, B, A, B
 3. If neither slot holds one, the legacy v1 EEPROM image is migrated (below).
 4. Otherwise factory defaults are used.
 
-`INFO` reports the result: `settings.source` is `slot_a`, `slot_b`, `legacy_v1` or `defaults`, and
+`INFO` reports the result: `settings.source` is `slot_a`, `slot_b`, `legacy_v1` or `defaults` (after a save, the slot just written), and
 `settings.load_errors` lists what was found wrong (`slot_a_corrupt`, `slot_b_invalid`,
 `slot_a_newer_schema`, `legacy_invalid`, `legacy_repaired`, ...).
 

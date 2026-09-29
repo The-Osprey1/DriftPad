@@ -316,6 +316,7 @@ SaveResult configSave() {
         s_flashValid = true;
         s_forceDirty = false;
         s_report.seq = r.seq;
+        s_report.source = r.slot == 0 ? SettingsSource::SlotA : SettingsSource::SlotB;   // INFO names what was written last
     }
     updateDirty();
     return r;
