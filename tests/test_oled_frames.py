@@ -48,7 +48,7 @@ class OledFrames(unittest.TestCase):
     def test_actuated_key_shows_solid_box_and_map_cell(self):
         fb = oh.frame(self.lib, "actuated_ent")
         # the focus card is filled ("ACTUATED"), and ENT (key 14: row 3, column 2) is solid in the map
-        self.assertTrue(all(oh.pixel(fb, x, 21) for x in range(4, 74)), "key box is not filled")
+        self.assertTrue(all(oh.pixel(fb, x, 20) for x in range(4, 74)), "key box is not filled")
         x0, y0 = 83 + 2 * 12, 9 + 3 * 12
         self.assertTrue(all(oh.pixel(fb, x, y0 + 4) for x in range(x0, x0 + 9)), "map cell is not solid")
 
@@ -125,16 +125,21 @@ class OledFrames(unittest.TestCase):
             return bytes(buf.raw)
 
         card_top = lambda fb: sum(oh.pixel(fb, x, 19) for x in range(4, 74))     # the focus card's frame
-        card_mid = lambda fb: sum(oh.pixel(fb, x, 21) for x in range(4, 74))     # solid only when actuated
+        card_mid = lambda fb: sum(oh.pixel(fb, x, 20) for x in range(4, 74))     # solid only when actuated
         cell = lambda fb: sum(oh.pixel(fb, x, y) for x in range(95, 104) for y in range(21, 30))   # key 5 in the map
 
         for _ in range(8):   # long enough for any focus left by an earlier test to settle (100 ms)
             rest = step(0.0, 0, 0)
         self.assertEqual(card_top(rest), 0, "the focus card shows at rest")
-        moving = step(0.6, 0, 0)
+        first = step(0.6, 0, 0)
+        self.assertLess(card_top(first), 60, "the card is not revealed progressively")   # a wipe, not a pop
+        for _ in range(4):
+            moving = step(0.6, 0, 0)
         self.assertGreater(card_top(moving), 60, "the card does not appear when the key moves")
         self.assertLess(card_mid(moving), 5)
-        self.assertGreater(cell(moving), cell(rest), "the map cell does not fill as the key travels")
+        OUTLINE = 32   # a bare 9x9 cell outline; at rest in standby the cell also carries its legend
+        self.assertGreater(cell(rest), OUTLINE, "standby does not show the key's legend in the map")
+        self.assertGreater(cell(moving), OUTLINE + 5, "the map cell does not fill as the key travels")
         deeper = step(1.15, 0, 0)
         self.assertGreater(cell(deeper), cell(moving), "the map cell does not fill further with travel")
         fired = step(1.6, 1, 1)
@@ -143,8 +148,10 @@ class OledFrames(unittest.TestCase):
         released = step(1.0, 0, 1)
         self.assertLess(card_mid(released), 5, "the card stays solid after release")
         trail = [cell(step(0.0, 0, 1)) for _ in range(12)]
-        self.assertGreater(trail[0], cell(rest) + 20, "no afterglow after release")
-        self.assertTrue(all(a >= b for a, b in zip(trail, trail[1:])), f"the afterglow does not fade: {trail}")
+        self.assertGreater(trail[0], OUTLINE + 25, "no afterglow after release")
+        low = trail.index(min(trail))       # the fade runs down to the bare outline; then the legend returns
+        self.assertTrue(all(a >= b for a, b in zip(trail[:low + 1], trail[1:low + 1])), f"the afterglow does not fade: {trail}")
+        self.assertEqual(trail[-1], cell(rest), "the cell does not settle back to its resting look, legend and all")
         self.assertEqual(card_top(step(0.0, 0, 1)), 0, "the card does not go away once the key has settled")
 
     def test_mag_pulse_rings_keep_moving_and_spark_where_they_cross(self):

@@ -37,6 +37,12 @@ int oled_scene(int id, uint8_t* out) {
     s_menuLastActive = millis() - 10000;
     s_gridCountersSynced = false;
     s_focusKey = -1;
+    // Scenes are steady-state frames: no card reveal or press flourish under way
+    const bool sceneHasFocus = id == 1 || id == 2 || id == 3 || id == 5 || id == 6 || id == 7 || id == 8 || id == 9;
+    s_prevHadFocus = sceneHasFocus;
+    s_revealFrames = 0;
+    s_cardPunch = 0;
+    s_prevFocusActuated = id == 2 || id == 3 || id == 6 || id == 7 || id == 9;
     memset(s_focusSeenPress, 0, sizeof s_focusSeenPress);
     memset(s_lastPressCount, 0, sizeof s_lastPressCount);
     memset(s_lastReleaseCount, 0, sizeof s_lastReleaseCount);
@@ -234,6 +240,7 @@ int oled_intro_frame(uint32_t t_ms, uint8_t* out) {
     s_haveView = true;
     s_menuLastActive = millis() - 10000;
     s_menuVisible = false; s_modeTransition = false;
+    s_prevHadFocus = false; s_revealFrames = 0; s_cardPunch = 0; s_prevFocusActuated = false;
     presentIntro(t_ms);
     memcpy(out, s_display.getBuffer(), 128 * 64 / 8);
     return 0;

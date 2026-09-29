@@ -689,10 +689,16 @@ constexpr int16_t MAP_X = 83;
 constexpr int16_t MAP_Y = 9;
 constexpr int16_t MAP_CELL = 9;
 constexpr int16_t MAP_GAP = 3;
-constexpr uint8_t FLASH_FRAMES = 2;        // a new actuation pops a ring around its map cell
+constexpr uint8_t FLASH_FRAMES = 3;        // a new actuation sends a ring out from its map cell
+constexpr uint8_t PUNCH_FRAMES = 3;        // ... and a flourish around the focus card
+constexpr uint8_t REVEAL_FRAMES = 3;       // the left panel wipes in when it changes between card and standby
 
 static bool s_prevActuated[NUM_KEYS] = {false};
 static uint8_t s_keyFlash[NUM_KEYS] = {0};
+static uint8_t s_cardPunch = 0;            // frames of press flourish left on the focus card
+static bool s_prevFocusActuated = false;
+static bool s_prevHadFocus = false;        // whether the left panel showed the focus card last frame
+static uint8_t s_revealFrames = 0;         // frames of left-panel wipe left
 
 const char* const LAYER_TITLES[] = {"Numpad", "Nav", "Gaming"};
 
@@ -717,16 +723,30 @@ void drawKeyScreenHeader(uint8_t layer) {
     for (int16_t i = 0; i < 2; ++i) {
         s_display.drawLine(chipW + 3 + i * 3, 7, chipW + 5 + i * 3, 1, OLED_COLOR_WHITE);
     }
+    // The Rapid Trigger setting in tracked capitals, its last glyph ending on the right edge
+    char rt[16];
     if (s_view.rapidTrigger) {
-        printRight((String("RT ") + String(s_view.rtSensMm, 2) + "mm").c_str(), 127, 0);
+        snprintf(rt, sizeof(rt), "RT %.2fMM", (double)s_view.rtSensMm);
     } else {
-        printRight("RT OFF", 127, 0);
+        snprintf(rt, sizeof(rt), "RT OFF");
+    }
+    printTracked(rt, 123 - ((int16_t)strlen(rt) - 1) * 7, 0, 7);
+}
+
+// Rectangle outline drawn as dots, every `step`-th pixel of its perimeter
+void drawDottedRect(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t step) {
+    uint8_t n = 0;
+    for (int16_t i = 0; i < w; ++i, ++n) {
+        if (n % step == 0) { s_display.drawPixel(x + i, y, OLED_COLOR_WHITE); s_display.drawPixel(x + i, y + h - 1, OLED_COLOR_WHITE); }
+    }
+    for (int16_t j = 1; j < h - 1; ++j, ++n) {
+        if (n % step == 0) { s_display.drawPixel(x, y + j, OLED_COLOR_WHITE); s_display.drawPixel(x + w - 1, y + j, OLED_COLOR_WHITE); }
     }
 }
 
 // Key box: filled with a knocked-out label when actuated, outlined otherwise. The label
 // uses the largest font that keeps comfortable side padding inside the fixed box.
-void drawKeyBox(const char* label, bool actuated) {
+void drawKeyBox(const char* label, bool actuated, uint8_t punch) {
     int16_t x1, y1;
     uint16_t w, h;
     const GFXfont* font = &FreeSansBold18pt7b;
@@ -751,6 +771,16 @@ void drawKeyBox(const char* label, bool actuated) {
 
     if (actuated) {
         s_display.fillRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
+        if (punch > 0) {
+            // The press flourish: a dark bevel inside the card, and a frame just outside it that
+            // flashes solid, then breaks up into dots as it fades
+            s_display.drawRoundRect(KEY_BOX_X + 2, KEY_BOX_Y + 2, KEY_BOX_W - 4, KEY_BOX_H - 4, 2, OLED_COLOR_BLACK);
+            if (punch >= PUNCH_FRAMES) {
+                s_display.drawRoundRect(KEY_BOX_X - 1, KEY_BOX_Y - 1, KEY_BOX_W + 2, KEY_BOX_H + 2, 4, OLED_COLOR_WHITE);
+            } else {
+                drawDottedRect(KEY_BOX_X - 1, KEY_BOX_Y - 1, KEY_BOX_W + 2, KEY_BOX_H + 2, punch == 2 ? 2 : 3);
+            }
+        }
     } else {
         s_display.drawRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
     }
@@ -759,7 +789,7 @@ void drawKeyBox(const char* label, bool actuated) {
                    actuated ? OLED_COLOR_BLACK : OLED_COLOR_WHITE, 0.22f, [&] {
         s_display.setFont(font);
         s_display.setTextColor(OLED_COLOR_WHITE);
-        s_display.setCursor(tx, ty);
+        s_display.setCursor(tx, ty + (actuated ? 1 : 0));   // the keycap sinks a pixel when pressed
         s_display.print(label);
         s_display.setFont(nullptr);
     });
@@ -805,7 +835,7 @@ void drawTravelScale(float travelMm, float releaseMm = -1.0f) {
 // actuation point (a full cell is about to fire). Actuated: solid, with a ring around it for two
 // frames, then a dithered afterglow that thins out over GLOW_FRAMES. Focus is marked by row and column pointers outside the grid, so
 // neighbouring actuated keys can never make it ambiguous.
-void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus) {
+void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus, bool legends) {
     static const uint8_t kBayer4[4][4] = {
         { 0,  8,  2, 10}, {12,  4, 14,  6}, { 3, 11,  1,  9}, {15,  7, 13,  5}};
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
@@ -816,7 +846,12 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus) {
             s_prevActuated[i] = true;
             s_display.fillRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
             if (s_keyFlash[i] > 0) {
-                s_display.drawRect(x - 1, y - 1, MAP_CELL + 2, MAP_CELL + 2, OLED_COLOR_WHITE);
+                // A ring that leaves the cell: solid at once, then further out and breaking into dots
+                if (s_keyFlash[i] == FLASH_FRAMES) {
+                    s_display.drawRect(x - 1, y - 1, MAP_CELL + 2, MAP_CELL + 2, OLED_COLOR_WHITE);
+                } else {
+                    drawDottedRect(x - 2, y - 2, MAP_CELL + 4, MAP_CELL + 4, s_keyFlash[i] == 2 ? 2 : 3);
+                }
                 s_keyFlash[i]--;
             }
             s_keyGlow[i] = GLOW_FRAMES;
@@ -825,7 +860,8 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus) {
         s_prevActuated[i] = false;
         s_display.drawRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
         float mm = s_view.keys[i].travelMm;
-        if (s_keyGlow[i] > 0) {
+        const bool glowing = s_keyGlow[i] > 0;
+        if (glowing) {
             int16_t threshold = (int16_t)s_keyGlow[i] * 2 - 4;
             for (int16_t py = 1; py < MAP_CELL - 1; ++py) {
                 for (int16_t px = 1; px < MAP_CELL - 1; ++px) {
@@ -842,6 +878,12 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus) {
             if (rows < 1) rows = 1;
             if (rows > 5) rows = 5;
             s_display.fillRect(x + 2, y + MAP_CELL - 2 - rows, MAP_CELL - 4, rows, OLED_COLOR_WHITE);
+        } else if (legends && !glowing && s_view.keys[i].label[0]) {
+            // At rest with nothing focused the map doubles as the layout: each key's first character
+            s_display.setTextSize(1);
+            s_display.setTextColor(OLED_COLOR_WHITE);
+            s_display.setCursor(x + 2, y + 1);
+            s_display.print(s_view.keys[i].label[0]);
         }
     }
     if (focus < 0) return;
@@ -901,6 +943,23 @@ void renderKeysFrame(uint32_t now) {
         focusActuated = (k.pressed || pressChanged) && !(k.pressed && releaseChanged);
     }
 
+    // The press punch starts on the rising edge of the focused key's actuation and runs a few frames;
+    // the left panel wipes in when it changes between the focus card and standby, except when the
+    // key is already actuated, which always shows at once
+    uint8_t punch = 0;
+    if (focusActuated) {
+        if (!s_prevFocusActuated) s_cardPunch = PUNCH_FRAMES;
+        punch = s_cardPunch;
+        if (s_cardPunch > 0) --s_cardPunch;
+    } else {
+        s_cardPunch = 0;
+    }
+    s_prevFocusActuated = focusActuated;
+    if ((focus >= 0) != s_prevHadFocus) {
+        s_prevHadFocus = focus >= 0;
+        s_revealFrames = focusActuated ? 0 : REVEAL_FRAMES;
+    }
+
     // Keypad map state per key, then consume the latches
     bool actuated[NUM_KEYS];
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
@@ -926,7 +985,7 @@ void renderKeysFrame(uint32_t now) {
     if (focus >= 0) {
         const display_link::KeyView& k = s_view.keys[(uint8_t)focus];
         drawStatusLabel(focusActuated ? "ACTUATED" : nullptr, focusActuated);
-        drawKeyBox(k.label, focusActuated);
+        drawKeyBox(k.label, focusActuated, punch);
         float releaseAt = -1.0f;
         if (s_view.rapidTrigger && k.pressed) {
             releaseAt = s_keyPeak[(uint8_t)focus] - s_view.rtSensMm;
@@ -952,13 +1011,20 @@ void renderKeysFrame(uint32_t now) {
             s_display.setFont(nullptr);
         });
 
-        s_display.setCursor(1, 38);
-        s_display.print("ACT");
+        printTracked("ACT", 1, 38, 7);
         printRight((String(s_view.actuationMm, 1) + "mm").c_str(), KEY_BOX_X + KEY_BOX_W - 1, 38);
         drawTravelScale(0.0f);
     }
 
-    drawKeypadMap(actuated, focus);
+    // Left-panel wipe: everything right of a front that sweeps across is held back for a few frames
+    if (s_revealFrames > 0) {
+        const int16_t step = REVEAL_FRAMES - s_revealFrames + 1;
+        const int16_t front = 78 * step / (REVEAL_FRAMES + 1);
+        s_display.fillRect(front, 18, 79 - front, 39, OLED_COLOR_BLACK);
+        --s_revealFrames;
+    }
+
+    drawKeypadMap(actuated, focus, focus < 0);
 }
 
 void blendWipe(uint8_t* outgoing, const uint8_t* incoming, int16_t front);
