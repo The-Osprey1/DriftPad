@@ -165,5 +165,69 @@ class TestConfiguratorPages(unittest.TestCase):
         self.assertNotIn("<script", html)
 
 
+DOC_FILES = [ROOT / "README.md", ROOT / "CHANGELOG.md", ROOT / "tools" / "README.md",
+             *sorted((ROOT / "docs").glob("*.md"))]
+
+
+def firmware_commands() -> list:
+    block = js_block(read(FW_SRC / "commands.cpp"), "const proto::CommandDef TABLE[] =")
+    return re.findall(r'\{\s*"([A-Z_]+)",', block)
+
+
+class TestDocs(unittest.TestCase):
+    """The documents say what the code does, and point at files that exist."""
+
+    def test_every_relative_link_resolves(self):
+        broken = []
+        for doc in DOC_FILES:
+            text = read(doc)
+            text = re.sub(r"```.*?```", "", text, flags=re.S)          # code blocks are not links
+            for target in re.findall(r"\]\(([^)\s]+)\)", text):
+                if re.match(r"^[a-z]+:", target) or target.startswith("#"):
+                    continue                                            # URLs and in-page anchors
+                path = (doc.parent / target.split("#", 1)[0]).resolve()
+                if not path.exists():
+                    broken.append(f"{doc.relative_to(ROOT)} -> {target}")
+        self.assertEqual(broken, [])
+
+    def test_the_protocol_reference_covers_the_firmware(self):
+        text = read(ROOT / "docs" / "serial-protocol.md")
+        missing = [v for v in firmware_commands() if not re.search(rf"`{v}\b", text)]
+        self.assertEqual(missing, [], "commands in the firmware table but not in docs/serial-protocol.md")
+        codes = re.findall(r'inline constexpr const char\* \w+\s*=\s*"([a-z_]+)";', read(FW_INC / "protocol.h"))
+        self.assertEqual([c for c in codes if f"`{c}`" not in text], [], "error codes missing from the reference")
+        h = cpp_constexprs(read(FW_INC / "settings_limits.h"))
+        for name in ("ACTUATION_MIN_CMM", "ACTUATION_MAX_CMM", "ACTUATION_DEFAULT_CMM",
+                     "RT_SENS_MIN_CMM", "RT_SENS_MAX_CMM", "RT_SENS_DEFAULT_CMM"):
+            mm = f"{h[name] / 100:.2f}"
+            self.assertIn(mm, text, f"{name} ({mm} mm) not stated in docs/serial-protocol.md")
+        for name in ("LINE_MAX_LEN", "REQUEST_ID_MAX_LEN", "STREAM_HZ_MAX"):
+            self.assertRegex(text, rf"\b{h[name]}\b", f"{name} ({h[name]}) not stated in docs/serial-protocol.md")
+
+    def test_the_testing_guide_names_every_test_module(self):
+        text = read(ROOT / "docs" / "testing.md")
+        modules = sorted(p.stem for p in (ROOT / "tests").glob("test_*.py"))
+        self.assertEqual([m for m in modules if m not in text], [])
+
+    def test_the_readme_indexes_every_document(self):
+        text = read(ROOT / "README.md")
+        self.assertEqual([d.name for d in sorted((ROOT / "docs").glob("*.md")) if d.name not in text], [])
+
+    def test_the_changelog_has_the_current_version(self):
+        version = re.search(r'^#define DRIFTPAD_FW_VERSION "([^"]+)"', read(FW_INC / "build_info.h"), re.M).group(1)
+        self.assertRegex(read(ROOT / "CHANGELOG.md"), rf"(?m)^## \[?{re.escape(version)}\]?(\s|$)")
+
+    def test_no_reference_to_retired_documents(self):
+        retired = ("protocol-v2-draft.md",)
+        hits = []
+        for p in [*DOC_FILES, *sorted(FW_SRC.glob("*.cpp")), *sorted(FW_INC.glob("*.h")),
+                  *sorted((CFG / "js").glob("*.js")), *sorted((ROOT / "tests").glob("*.py")),
+                  *sorted((ROOT / "tools").glob("*.py"))]:
+            for r in retired:
+                if r in read(p) and p.name != "test_contract_consistency.py":
+                    hits.append(f"{p.relative_to(ROOT)} mentions {r}")
+        self.assertEqual(hits, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,5 +1,5 @@
 /*
- * fake_device.js - an in-browser DriftPad speaking serial protocol v2 (docs/protocol-v2-draft.md),
+ * fake_device.js - an in-browser DriftPad speaking serial protocol v2 (docs/serial-protocol.md),
  * plus a fake Web Serial port (ReadableStream / WritableStream based) and a navigator.serial
  * stand-in.
  *

@@ -109,7 +109,7 @@
         };
     }
 
-    // Telemetry frame (docs/protocol-v2-draft.md, STREAM; firmware sendTelemetry()):
+    // Telemetry frame (docs/serial-protocol.md, STREAM; firmware sendTelemetry()):
     //   "pressed", "active", "sim": 16-bit masks; "travel": 16 integers in centi-millimetres.
     // Returns {pressed[16], sending[16], travel[16] in mm, simMask}, or null for anything else.
     function parseTelemetry(ev) {

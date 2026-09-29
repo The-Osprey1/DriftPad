@@ -76,3 +76,16 @@ Defined in [`firmware/src/config.cpp`](../firmware/src/config.cpp) and restored 
 ## Design files
 
 KiCad sources belong in [`hardware/kicad/`](../hardware/kicad) and enclosure models in [`hardware/mechanical/stl/`](../hardware/mechanical/stl) and [`hardware/mechanical/step/`](../hardware/mechanical/step). These folders are placeholders until the files are published.
+
+## Hardware readiness
+
+| Item | State |
+|---|---|
+| Pin map, mux channel map, default keymaps | Taken from `pins.h` and `config.cpp`; checked against the code by the tests, **not** against a built board |
+| Firmware | Builds and passes every host test; has **never run on a physical pad** |
+| KiCad project, gerbers, BOM, enclosure STL/STEP, assembly guide, photographs | **Not in this repository.** `hardware/` holds placeholders |
+| Sensor part number and magnet polarity | Not recorded here (the firmware auto-detects polarity); needed for anyone building a pad |
+| Real-world figures (rest noise, actuation depth, latency, scan gaps, save pause, power-cut behaviour) | None measured; procedure in [hardware-acceptance.md](hardware-acceptance.md) |
+
+Until the acceptance record is signed, treat every behaviour claim in these documents as verified in
+software only. What is missing before an external beta is listed in [beta-checklist.md](beta-checklist.md).

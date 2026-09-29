@@ -509,6 +509,7 @@ class TestCiWorkflow(unittest.TestCase):
     """.github/workflows/ci.yml cannot be run here; these checks keep it tied to the lock and to the
     release runner, so it cannot silently build with another toolchain or skip suites."""
 
+    SCOPE = "source inspection"
     TEXT = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     def test_runs_on_every_push_and_pull_request(self):
@@ -534,6 +535,8 @@ class TestCiWorkflow(unittest.TestCase):
 
 
 class TestOfflinePages(unittest.TestCase):
+
+    SCOPE = "source inspection"
 
     def test_key_tester_needs_no_network(self):
         html = (TOOLS / "key_tester.html").read_text(encoding="utf-8")

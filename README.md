@@ -17,7 +17,7 @@
 
 DriftPad is a custom Hall-effect macropad built around analog magnetic key sensing. Instead of a simple on/off switch, every key reports how far it has travelled, which lets the firmware support adjustable actuation and release points, Rapid Trigger, live travel feedback on the OLED, and per-layer keymaps you can change from the browser.
 
-> **Status:** In development. Firmware V2 (Hall-effect engine, Rapid Trigger, OLED UI, WebSerial configurator) is implemented and verified in simulation. PCB and enclosure files are not yet in this repository.
+> **Status:** 2.1.0-beta.1, software-qualified and **not yet run on a physical pad**. Firmware, protocol v2 and the configurator pass the full automated suite (production C++ compiled on the host, headless-browser tests, tooling tests) and build for the RP2040. Hardware acceptance, PCB and enclosure files are still outstanding: see [docs/beta-checklist.md](docs/beta-checklist.md).
 
 ## Contents
 
@@ -33,14 +33,15 @@ DriftPad is a custom Hall-effect macropad built around analog magnetic key sensi
 ## Features
 
 - **Analog Hall-effect sensing** on all 16 keys through a CD74HC4067 analog multiplexer into the RP2040 ADC
-- **Adjustable actuation point** from 0.10 to 3.80 mm
+- **Adjustable actuation point** from 0.25 to 3.80 mm
 - **Rapid Trigger** with adjustable sensitivity from 0.10 to 2.00 mm, so a key re-actuates or releases as soon as it changes direction
 - **Noise and drift handling:** velocity-adaptive filtering, automatic rest baseline tracking and magnet polarity auto-detection
 - **Three keymap layers** out of the box: Numpad, Navigation and Gaming (WASD)
 - **128×64 OLED cockpit UI** showing live key travel, the active layer and Rapid Trigger settings
 - **Rotary encoder** for on-device menus: adjust actuation, adjust RT sensitivity, toggle RT and cycle layers
-- **Browser configurator** over WebSerial with no install and no external dependencies
-- **Settings stored in flash**, so calibration and keymaps survive a power cycle
+- **Browser configurator** over WebSerial with no install and no external dependencies: keymap editor, sensitivity, guided calibration, backup and restore
+- **Settings stored in verified A/B flash slots**, so an interrupted save never loses the previous settings
+- **Safe keyboard output:** off until the pad is calibrated, no stuck keys across remaps, layer changes, host sleep or unplugging
 
 ## Repository layout
 
@@ -49,9 +50,9 @@ DriftPad is a custom Hall-effect macropad built around analog magnetic key sensi
 | [`firmware/`](firmware) | PlatformIO project for the RP2040 (Arduino core by Earle Philhower) |
 | [`firmware/src/`](firmware/src) | `hall.cpp` sensing and Rapid Trigger, `oled.cpp` display UI, `config.cpp` flash settings and keymaps, `encoder.cpp`, `mux.cpp`, `main.cpp` serial command handler |
 | [`firmware/include/pins.h`](firmware/include/pins.h) | Pin assignments and key to multiplexer channel map |
-| [`configurator/`](configurator) | WebSerial configurator (`index.html`) and visual keymap editor (`keymap.html`) |
-| [`tests/`](tests) | Python test harness: DSP model, build checks and configurator protocol |
-| [`tools/`](tools) | OLED renderers, design concept generator and a live demo script |
+| [`configurator/`](configurator) | WebSerial configurator (`index.html`; `keymap.html` redirects to it) and its tests |
+| [`tests/`](tests) | Test harness: DSP model, firmware compiled on the host, configurator in headless Chrome, build checks, tooling |
+| [`tools/`](tools) | Flash, release qualification, toolchain check, hardware acceptance tools, OLED renderers |
 | [`docs/`](docs) | Documentation, OLED design concepts and rendered screenshots |
 | [`hardware/`](hardware) | KiCad PCB project and mechanical STL / STEP files (placeholders for now) |
 
@@ -69,25 +70,22 @@ pio run -t upload        # flash over USB
 
 The build output lands in `firmware/.pio/build/pico/`. You can also hold **BOOTSEL** while plugging in the Pico and copy `firmware.uf2` onto the drive that appears.
 
-On Windows, `pio run -t upload` fails unless picotool's WinUSB driver is installed (via Zadig). `python tools/flash.py COM3` avoids that: it builds, reboots the board into BOOTSEL over serial and copies the UF2 for you.
+On Windows, `pio run -t upload` fails unless picotool's WinUSB driver is installed. `python tools/flash.py` avoids that: it checks the image, finds the pad by asking it (`INFO`), refuses to lose unsaved settings, reboots it into BOOTSEL, copies the UF2 and reads `INFO` again to confirm the new version. It never flashes without asking (`--yes` skips the question). See [tools/README.md](tools/README.md).
 
 ### 2. Configure it
 
-Open [`configurator/index.html`](configurator/index.html) in Chrome, Edge or Opera (WebSerial is required), click **Connect DriftPad** and pick the board's serial port. From there you can remap keys, change actuation and Rapid Trigger settings, switch layers and save to flash.
+Open [`configurator/index.html`](configurator/index.html) in Chrome, Edge or Opera (WebSerial is required) and click **Connect DriftPad**. Keyboard output stays off until the pad is calibrated: use the calibration wizard on the Device tab, then Save. From there you can remap keys, tune actuation and Rapid Trigger, switch layers, back up and restore. Add `?simulate=1` to try it without a pad. See [docs/configurator.md](docs/configurator.md).
 
-To remap keys, open [`configurator/keymap.html`](configurator/keymap.html) (also linked from the configurator). It shows the pad as it physically sits, with the display and knob on top and the 4×4 grid below. Click a key, then pick what it sends or press the key on your keyboard. You can also give it a 4-character OLED label. Edits are saved in the browser, and **Write to device** sends only the keys that changed. Layer 0 defaults to the printed layout (Esc, 7 8 9, Macro1–4 on F13–F16, 0, Enter). You can export and import keymaps as JSON.
-
-Any serial terminal at 115200 baud works too. See the [serial command reference](docs/serial-protocol.md).
+Any serial terminal works too. See the [serial protocol reference](docs/serial-protocol.md).
 
 ### 3. Run the tests
 
-The harness only needs Python 3 and its standard library:
-
 ```bash
-python tests/run_all_tests.py
+python tests/run_all_tests.py             # everything that can run here, skips listed with reasons
+python tests/run_all_tests.py --release   # the CI gate: no skips, fresh build, clean git tree
 ```
 
-The build tests (`TC-13`, `TC-B1` to `TC-B3`) also need PlatformIO on your `PATH`. See [docs/testing.md](docs/testing.md) for what each test covers.
+The suite needs Python 3, PlatformIO (build tests), a host C++ compiler (`pip install -r tests/requirements-dev.txt` provides one) and Chrome or Edge (configurator tests). Nothing in it touches hardware; [docs/testing.md](docs/testing.md) says what each suite does and does not prove.
 
 ## Hardware
 
@@ -110,35 +108,35 @@ Unlike a traditional mechanical keyboard switch that provides a simple digital o
 3. **Actuate.** A key first fires when it passes the actuation point.
 4. **Rapid Trigger.** After that, the firmware tracks the deepest and shallowest points of the stroke. Lifting by the RT sensitivity releases the key; pressing down by the same amount re-actuates it, without needing to return to the top.
 
-The maths and the test results behind each step are in [docs/testing.md](docs/testing.md).
+The maths behind each step is in [docs/testing.md](docs/testing.md); the timing and core ownership in [docs/scheduling.md](docs/scheduling.md).
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [docs/hardware.md](docs/hardware.md) | Pinout, multiplexer channel map, default keymaps |
-| [docs/serial-protocol.md](docs/serial-protocol.md) | Every serial command the firmware accepts, with arguments and responses |
-| [docs/testing.md](docs/testing.md) | Test harness, test case list, filter and Rapid Trigger derivations |
+| [docs/serial-protocol.md](docs/serial-protocol.md) | Serial protocol v2: framing, every command, error codes, limits |
+| [docs/configurator.md](docs/configurator.md) | What the configurator does and guarantees |
+| [docs/flash-layout.md](docs/flash-layout.md) | Flash map, A/B settings slots, interrupted saves, migration from v1 |
+| [docs/scheduling.md](docs/scheduling.md) | Core ownership, the display snapshot, when flash is written |
+| [docs/hardware.md](docs/hardware.md) | Pinout, multiplexer channel map, default keymaps, hardware readiness |
+| [docs/testing.md](docs/testing.md) | Test suites and their scopes, requirements, filter and Rapid Trigger derivations |
+| [docs/hardware-acceptance.md](docs/hardware-acceptance.md) | What a real pad must pass, item by item |
+| [docs/beta-checklist.md](docs/beta-checklist.md) | Everything required before an external beta |
+| [CHANGELOG.md](CHANGELOG.md) | Versions, fixes, compatibility and migration |
 | [docs/oled_concepts/](docs/oled_concepts) | Alternative OLED layouts and key-press animations, with GIFs |
 | [docs/images/](docs/images) | Pixel-accurate OLED screenshots rendered from the firmware drawing code |
 | [tools/README.md](tools/README.md) | What each helper script does and how to run it |
 
 ## Roadmap
 
-- [x] Project concept and feature planning
-- [x] KiCad schematic and PCB design
-- [x] Mechanical / STL design
-- [x] PlatformIO firmware project setup
-- [x] Hall-effect sensor firmware and calibration
-- [x] Keyboard / HID output
-- [x] Adjustable actuation and Rapid Trigger logic
-- [x] OLED interface
-- [x] Rotary encoder integration
-- [x] WebSerial configurator
-- [ ] Publish KiCad and enclosure files to `hardware/`
-- [ ] Hardware bring-up and testing
-- [ ] Final enclosure and assembly
-- [ ] Performance measurements on real hardware
+- [x] Hall-effect sensing, Rapid Trigger, OLED UI, rotary encoder
+- [x] Keyboard output ownership, protocol v2, verified A/B settings, guided calibration
+- [x] Consolidated WebSerial configurator
+- [x] Reproducible build, CI, flash and release-qualification tools
+- [ ] Hardware acceptance on a built pad ([docs/hardware-acceptance.md](docs/hardware-acceptance.md))
+- [ ] Publish KiCad, BOM and enclosure files to `hardware/`
+- [ ] Assembly guide and photographs
+- [ ] External beta ([docs/beta-checklist.md](docs/beta-checklist.md))
 
 ## License
 

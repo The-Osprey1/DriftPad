@@ -46,7 +46,7 @@ Pass criteria are exact. "Events" means keydown/keyup lines in `tools/key_tester
 |---|---|---|---|
 | HW-01 | Update with the release tool | `python tools/flash.py --uf2 <bundle>/firmware.uf2` on a pad running any earlier firmware. | Ends with "Updated and verified" naming the bundle's fw version and build id. |
 | HW-02 | USB identity | Device Manager (or `lsusb`) with the pad connected. | One composite device 2E8A:000B with a CDC serial port and a keyboard; no unknown devices. |
-| HW-03 | Bootloader from the configurator | Device page, Advanced, "Restart into the bootloader", then `flash.py --drive <RPI-RP2 drive>`. | The RPI-RP2 drive appears within 5 s; flashing it ends "Updated and verified". |
+| HW-03 | Bootloader from the configurator | Device tab, "Restart into the bootloader", then `flash.py --drive <RPI-RP2 drive>`. | The RPI-RP2 drive appears within 5 s; flashing it ends "Updated and verified". |
 
 ### Sensors and calibration
 
@@ -54,7 +54,7 @@ Pass criteria are exact. "Events" means keydown/keyup lines in `tools/key_tester
 |---|---|---|---|
 | HW-04 | Uncalibrated pad stays silent | `RESET ALL`, `SAVE`, unplug, plug in. Press every key fully. | INFO shows calibration `missing`, output reason `calibration_missing`; 0 events. |
 | HW-05 | Guided calibration | Configurator, Device, Calibration: start with hands off, press each key to the bottom once, Finish, Save. Unplug and plug in. | All 16 keys marked done; INFO calibration `valid`, `keys_valid` 16, `faults` empty, after the power cycle too. |
-| HW-06 | Rest noise | Advanced, Raw sensor samples, "Capture 1 second" for every key, hands off. | Peak-to-peak ≤ 40 counts for every key (the rest tolerance floor, `calib::TOLERANCE_MIN_COUNTS`); record all 16 values. |
+| HW-06 | Rest noise | Device tab, Raw sensor samples, "Capture 1 second" for every key, hands off. | Peak-to-peak ≤ 40 counts for every key (the rest tolerance floor, `calib::TOLERANCE_MIN_COUNTS`); record all 16 values. |
 | HW-07 | Key held at power-up | Hold key 5 fully down while plugging in; keep it down 5 s, release, press again. | 0 events while held; INFO `held_at_boot` lists 5; the press after release gives one keydown/keyup pair. Other keys work throughout. |
 | HW-08 | Warm drift | Leave the pad plugged in 30 min typing occasionally, then unplug and plug in. | 0 events at rest during the 30 min and after re-plugging; INFO `faults` empty (a key in `drift` is acceptable, record it). |
 | HW-09 | Sensor fault is contained | *optional* (needs a rework-able board): lift one sensor's output so the mux reads a rail, power up. | That key in INFO `faults`, 0 events from it; the other 15 keys work. |
@@ -90,7 +90,7 @@ Pass criteria are exact. "Events" means keydown/keyup lines in `tools/key_tester
 | HW-24 | Idle, screensaver, sleep, wake | Close the configurator (every serial command counts as activity), leave the pad untouched 60 s; then send `SLEEP` (serial terminal or `tools/save_stress.py --command SLEEP`) and press a key. | Screensaver starts at 45 s; `SLEEP` turns the display off; the key press wakes it and types normally. |
 | HW-25 | Scan timing, idle | `python tools/timing_capture.py --label "idle, display on" --seconds 60` | PASS (max gap ≤ 2000 µs, no gap above 2 ms). |
 | HW-26 | Scan timing, typing with the configurator open | Configurator on the Keys page (telemetry streaming) while typing: `timing_capture.py --label "typing, configurator open" --seconds 120` | PASS. |
-| HW-27 | Scan timing, display commands | During a 60 s capture send `OLED_SCAN` and `OLED_TEST` 10 times each (Advanced, Serial or a script). | PASS: the display work on core 1 never shows as a scan gap. `OLED_SCAN` lists 60 (0x3C, the display). |
+| HW-27 | Scan timing, display commands | During a 60 s capture send `OLED_SCAN` and `OLED_TEST` 10 times each (Device tab or a script). | PASS: the display work on core 1 never shows as a scan gap. `OLED_SCAN` lists 60 (0x3C, the display). |
 | HW-28 | Save pause | During a 60 s capture with `--allow-save-gaps`, `SAVE` 10 times. | PASS; record `save_max_us` (the scan pause a save causes). |
 
 ### Configurator
