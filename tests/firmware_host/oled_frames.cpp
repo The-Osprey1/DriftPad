@@ -240,6 +240,26 @@ int oled_intro_frame(uint32_t t_ms, uint8_t* out) {
 }
 void oled_intro_restart() { s_introDone = false; s_introStart = millis(); }
 int oled_intro_done() { return s_introDone ? 1 : 0; }
+// One key-screen frame of a press on key 5 at the given travel, without resetting the display state:
+// lets a test or a preview play a whole press (travel up, actuate, hold, release, fade) frame by frame
+int oled_press_step(float travel_mm, int pressed, int press_count, uint8_t* out) {
+    static bool ready = false;
+    if (!ready) { ready = true; initDisplayHardware(); s_gridCountersSynced = false; s_haveView = true; }
+    s_menuVisible = false; s_modeTransition = false; s_menuLastActive = 0; s_screensaverActive = false;
+    host_clock_advance_us(33000);
+    display_link::Snapshot s;
+    memset(&s, 0, sizeof s);
+    static const char* labels[16] = {"7", "8", "9", "/", "4", "5", "6", "*", "1", "2", "3", "-", "0", ".", "ENT", "+"};
+    for (int i = 0; i < 16; i++) strcpy(s.keys[i].label, labels[i]);
+    s.rapidTrigger = true; s.actuationMm = 1.2f; s.rtSensMm = 0.2f;
+    s.keys[5].travelMm = travel_mm; s.keys[5].pressed = pressed != 0; s.keys[5].pressCount = (uint8_t)press_count;
+    s.lastActiveKey = (travel_mm > 0.0f || pressed) ? 5 : -1;
+    display_link::publish(s);
+    display_link::read(s_view);
+    renderFullScreen();
+    memcpy(out, s_display.getBuffer(), 128 * 64 / 8);
+    return 0;
+}
 void oled_last_frame(uint8_t* out) { memcpy(out, s_display.getBuffer(), 128 * 64 / 8); }
 // Lit pixels in the frame buffer as last presented
 int oled_lit_pixels() {

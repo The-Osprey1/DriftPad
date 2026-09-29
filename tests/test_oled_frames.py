@@ -115,6 +115,38 @@ class OledFrames(unittest.TestCase):
         early, late = card_ink(30), card_ink(140)
         self.assertGreater(early - late, 60, "the title card did not slide away")
 
+    def test_a_press_plays_travel_actuation_release_and_fade(self):
+        import ctypes
+        self.lib.oled_press_step.argtypes = [ctypes.c_float, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+
+        def step(travel, pressed, count):
+            buf = ctypes.create_string_buffer(1024)
+            self.lib.oled_press_step(travel, pressed, count, buf)
+            return bytes(buf.raw)
+
+        card_top = lambda fb: sum(oh.pixel(fb, x, 19) for x in range(4, 74))     # the focus card's frame
+        card_mid = lambda fb: sum(oh.pixel(fb, x, 21) for x in range(4, 74))     # solid only when actuated
+        cell = lambda fb: sum(oh.pixel(fb, x, y) for x in range(95, 104) for y in range(21, 30))   # key 5 in the map
+
+        for _ in range(8):   # long enough for any focus left by an earlier test to settle (100 ms)
+            rest = step(0.0, 0, 0)
+        self.assertEqual(card_top(rest), 0, "the focus card shows at rest")
+        moving = step(0.6, 0, 0)
+        self.assertGreater(card_top(moving), 60, "the card does not appear when the key moves")
+        self.assertLess(card_mid(moving), 5)
+        self.assertGreater(cell(moving), cell(rest), "the map cell does not fill as the key travels")
+        deeper = step(1.15, 0, 0)
+        self.assertGreater(cell(deeper), cell(moving), "the map cell does not fill further with travel")
+        fired = step(1.6, 1, 1)
+        self.assertGreater(card_mid(fired), 65, "the card does not flip solid on actuation")
+        self.assertGreaterEqual(cell(fired), 81, "the map cell is not solid on actuation")
+        released = step(1.0, 0, 1)
+        self.assertLess(card_mid(released), 5, "the card stays solid after release")
+        trail = [cell(step(0.0, 0, 1)) for _ in range(12)]
+        self.assertGreater(trail[0], cell(rest) + 20, "no afterglow after release")
+        self.assertTrue(all(a >= b for a, b in zip(trail, trail[1:])), f"the afterglow does not fade: {trail}")
+        self.assertEqual(card_top(step(0.0, 0, 1)), 0, "the card does not go away once the key has settled")
+
     def test_mag_pulse_rings_keep_moving_and_spark_where_they_cross(self):
         import ctypes
         self.lib.oled_screensaver_frame.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
