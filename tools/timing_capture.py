@@ -2,8 +2,8 @@
 """
 timing_capture.py - Record a DriftPad's scan timing while you use it, and judge it.
 
-Resets the pad's timing counters (TIMING RESET), samples TIMING every --interval seconds for
---seconds, and writes the samples plus a verdict to a JSON file. Run it once per scenario of the
+Resets the pad's timing counters (TIMING RESET), reads TIMING once at the end of
+--seconds (or every --interval seconds if asked), and writes the samples plus a verdict to a JSON file. Run it once per scenario of the
 hardware acceptance procedure (docs/hardware-acceptance.md), for example:
 
     python tools/timing_capture.py --label "idle, display on"            --seconds 60
@@ -47,9 +47,10 @@ def judge(final: Dict[str, Any], max_gap_us: int, allow_save_gaps: bool) -> Dict
     gap = int(final.get("max_gap_us", 0))
     saves = int(final.get("save_count", 0))
     if allow_save_gaps and saves > 0:
-        limit = int(final.get("save_max_us", 0)) + int(final.get("period_us", 1000))
+        # A save runs inside its SAVE command, whose parsing and reply add to the same gap
+        limit = int(final.get("save_max_us", 0)) + max_gap_us
         if gap > limit:
-            reasons.append(f"max_gap_us {gap} exceeds the longest save ({final.get('save_max_us')} us) plus one period")
+            reasons.append(f"max_gap_us {gap} exceeds the longest save ({final.get('save_max_us')} us) plus {max_gap_us} us")
     else:
         if gap > max_gap_us:
             reasons.append(f"max_gap_us {gap} > {max_gap_us}")
@@ -70,6 +71,11 @@ def capture(client: ds.DeviceClient, seconds: float, interval: float,
         raise RuntimeError(f"TIMING RESET failed: {reset.raw}")
     samples = []
     start = clock()
+    if interval <= 0:
+        # No polling while measuring: the pad answers TIMING between two scans, which costs the next
+        # scan about 1.2 ms, so every poll would show up as a gap in the very figures it reads
+        sleep(seconds)
+        seconds = 0.0
     while True:
         elapsed = clock() - start
         if elapsed >= seconds:
@@ -90,7 +96,8 @@ def main(argv: Optional[List[str]] = None, list_ports=ds.list_serial_ports, open
     ap = argparse.ArgumentParser(description="Record and judge a DriftPad's scan timing.")
     ap.add_argument("--port", help="the pad's serial port (default: the one DriftPad connected)")
     ap.add_argument("--seconds", type=float, default=60.0)
-    ap.add_argument("--interval", type=float, default=5.0)
+    ap.add_argument("--interval", type=float, default=0.0,
+                    help="seconds between progress reads (default 0: read once at the end; each read delays a scan by ~1.2 ms and is counted)")
     ap.add_argument("--label", required=True, help="what was done during the capture (goes into the record)")
     ap.add_argument("--out", help="JSON file (default timing-<timestamp>.json)")
     ap.add_argument("--max-gap-us", type=int, default=2000)

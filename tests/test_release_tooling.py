@@ -255,6 +255,9 @@ class TestTimingCapture(unittest.TestCase):
         self.assertFalse(tc.judge(with_(save_count=1, save_max_us=40000, max_gap_us=45000), 2000, True)["pass"],
                          "a gap longer than the save itself is not the save's")
         self.assertFalse(tc.judge(with_(tx_replies_rejected=1), 2000, False)["pass"])
+        # The SAVE command's own parsing and reply come with the save (measured: save 23.1 ms, gap 24.8 ms)
+        self.assertTrue(tc.judge(with_(save_count=10, save_max_us=23143, max_gap_us=24768, le_50000=9), 2000, True)["pass"])
+        self.assertFalse(tc.judge(with_(save_count=10, save_max_us=23143, max_gap_us=25500, le_50000=9), 2000, True)["pass"])
 
     def test_capture_resets_then_samples(self):
         link = ScriptedLink(lambda verb, args: {"reset": True} if args == ["RESET"] else dict(QUIET, type="timing"))
@@ -266,6 +269,14 @@ class TestTimingCapture(unittest.TestCase):
         self.assertTrue(all(re.match(r"^@\d+ TIMING$", l) for l in link.sent[1:]))
         self.assertGreaterEqual(len(result["samples"]), 1)
         self.assertEqual(result["final"]["max_gap_us"], 1080)
+
+    def test_the_default_capture_does_not_disturb_what_it_measures(self):
+        # Answering TIMING costs the scan loop about 1.2 ms on the pad: every extra poll is a gap
+        link = ScriptedLink(lambda verb, args: {"reset": True} if args == ["RESET"] else dict(QUIET, type="timing"))
+        now = clock()
+        tc.capture(ds.DeviceClient(link, now), seconds=60.0, interval=0,
+                   sleep=lambda s: None, clock=now)
+        self.assertEqual(len(link.sent), 2, "only the reset and the final read")
 
     def test_main_writes_a_record_with_the_verdict(self):
         info = {"type": "info", "device": "DriftPad", "protocol": 2, "fw": "2.1.0", "build": "b1", "hw": "V2"}

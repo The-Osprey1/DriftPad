@@ -88,7 +88,7 @@ Pass criteria are exact. "Events" means keydown/keyup lines in `tools/key_tester
 |---|---|---|---|
 | HW-23 | Display follows the keys | Watch the OLED while typing and while holding keys; press a key briefly (tap). | Pressed keys shown within one frame (no visible lag); taps visible; layer and settings pages match the configurator. |
 | HW-24 | Idle, screensaver, sleep, wake | Close the configurator (every serial command counts as activity), leave the pad untouched 60 s; then send `SLEEP` (serial terminal or `tools/save_stress.py --command SLEEP`) and press a key. | Screensaver starts at 45 s; `SLEEP` turns the display off; the key press wakes it and types normally. |
-| HW-25 | Scan timing, idle | `python tools/timing_capture.py --label "idle, display on" --seconds 60` | PASS (max gap ≤ 2000 µs, no gap above 2 ms). |
+| HW-25 | Scan timing, idle | `python tools/timing_capture.py --label "idle, display on" --seconds 60` (it reads TIMING once, at the end: every poll costs the scan loop about 1.2 ms and would count as a gap) | PASS (max gap ≤ 2000 µs, no gap above 2 ms). |
 | HW-26 | Scan timing, typing with the configurator open | Configurator on the Keys page (telemetry streaming) while typing: `timing_capture.py --label "typing, configurator open" --seconds 120` | PASS. |
 | HW-27 | Scan timing, display commands | During a 60 s capture send `OLED_SCAN` and `OLED_TEST` 10 times each (Device tab or a script). | PASS: the display work on core 1 never shows as a scan gap. `OLED_SCAN` lists 60 (0x3C, the display). |
 | HW-28 | Save pause | During a 60 s capture with `--allow-save-gaps`, `SAVE` 10 times. | PASS; record `save_max_us` (the scan pause a save causes). |

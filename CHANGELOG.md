@@ -45,6 +45,8 @@ work with this firmware and says so.
 - `INFO.settings.source` names the slot just written after a `SAVE` (it kept saying `legacy_v1` with the new sequence number until the next power-up). Found when updating a real pad.
 - `tools/flash.py --drive` (a board in bootloader mode) no longer verifies against a different pad
   that was already connected.
+- `tools/timing_capture.py` reads `TIMING` once at the end by default (each poll delays a scan by ~1.2 ms and was
+  counted as a gap), and judges a save's gap as the save plus 2 ms (the SAVE command's own handling).
 
 ### Added
 
