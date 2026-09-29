@@ -275,7 +275,7 @@ struct Ripple {
     float t;        // Progress 0..1 (negative: waiting to spawn); the radius eases out with it
     float step;     // Progress per frame
 };
-constexpr uint8_t NUM_RIPPLES = 4;
+constexpr uint8_t NUM_RIPPLES = 5;
 Ripple s_ripples[NUM_RIPPLES];
 bool s_ripplesInit = false;
 
@@ -1301,16 +1301,51 @@ void drawRippleRing(int16_t cx, int16_t cy, int16_t r, uint8_t skip) {
 }
 
 // Animation 4: Magnetic Pulse Ripples & Floating MAG PULSE Badge
+// Where two wavefronts cross, the fields interfere: a small spark marks each crossing point
+void rippleSpark(float fx, float fy) {
+    const int16_t x = (int16_t)lroundf(fx), y = (int16_t)lroundf(fy);
+    s_display.drawPixel(x, y, OLED_COLOR_WHITE);
+    s_display.drawPixel(x - 1, y, OLED_COLOR_WHITE);
+    s_display.drawPixel(x + 1, y, OLED_COLOR_WHITE);
+    s_display.drawPixel(x, y - 1, OLED_COLOR_WHITE);
+    s_display.drawPixel(x, y + 1, OLED_COLOR_WHITE);
+}
+
+// The (up to two) points where circle A (centre a, radius ra) meets circle B
+void rippleCrossings(const Ripple& a, int16_t ra, const Ripple& b, int16_t rb, bool twinkleOn) {
+    const float dx = (float)(b.x - a.x), dy = (float)(b.y - a.y);
+    const float d2 = dx * dx + dy * dy;
+    if (d2 < 1.0f || ra < 2 || rb < 2) return;
+    const float d = sqrtf(d2);
+    if (d > ra + rb || d < fabsf((float)(ra - rb))) return;
+    const float along = ((float)ra * ra - (float)rb * rb + d2) / (2.0f * d);
+    const float h2 = (float)ra * ra - along * along;
+    if (h2 < 0.0f) return;
+    const float h = sqrtf(h2);
+    const float mx = a.x + along * dx / d, my = a.y + along * dy / d;
+    if (twinkleOn) {
+        rippleSpark(mx + h * dy / d, my - h * dx / d);
+        rippleSpark(mx - h * dy / d, my + h * dx / d);
+    }
+}
+
+// Animation 4: Magnetic Pulse. Pulses leap out of their sources and ease to a stop, each leading
+// wavefront thick at first, then a chain of weaker echoes behind it; the rings break up into dots as
+// they fade, and every point where two wavefronts cross flickers with a spark, like interfering fields.
 void renderAnimRipples() {
+    static uint16_t frame = 0;
     if (!s_ripplesInit) {
         for (uint8_t i = 0; i < NUM_RIPPLES; ++i) {
             spawnRipple(s_ripples[i]);
         }
         s_ripplesInit = true;
     }
+    ++frame;
 
+    int16_t radius[NUM_RIPPLES];
     for (uint8_t i = 0; i < NUM_RIPPLES; ++i) {
         Ripple& rp = s_ripples[i];
+        radius[i] = 0;
         rp.t += rp.step;
         if (rp.t > 1.0f) {
             spawnRipple(rp);
@@ -1318,12 +1353,17 @@ void renderAnimRipples() {
         }
         if (rp.t <= 0.0f) continue;
 
-        // The droplet, then an outer wavefront trailed by a weaker echo ring; both break up into
-        // dots as the wave fades
+        // The source: a droplet, then a small crosshair that stays until the wave has gone
         if (rp.t < 0.07f) {
             s_display.fillCircle(rp.x, rp.y, 2, OLED_COLOR_WHITE);
         } else if (rp.t < 0.14f) {
             s_display.drawCircle(rp.x, rp.y, 3, OLED_COLOR_WHITE);
+        } else if (rp.t < 0.9f) {
+            s_display.drawPixel(rp.x, rp.y, OLED_COLOR_WHITE);
+            s_display.drawPixel(rp.x - 3, rp.y, OLED_COLOR_WHITE);
+            s_display.drawPixel(rp.x + 3, rp.y, OLED_COLOR_WHITE);
+            s_display.drawPixel(rp.x, rp.y - 3, OLED_COLOR_WHITE);
+            s_display.drawPixel(rp.x, rp.y + 3, OLED_COLOR_WHITE);
         }
         uint8_t skip = 0;
         if (rp.t > 0.75f) {
@@ -1331,13 +1371,29 @@ void renderAnimRipples() {
         } else if (rp.t > 0.5f) {
             skip = 2;
         }
-        int16_t r = rippleRadius(rp, rp.t);
+        const int16_t r = rippleRadius(rp, rp.t);
+        radius[i] = r;
         if (r > 0) {
             drawRippleRing(rp.x, rp.y, r, skip);
+            if (rp.t < 0.4f && r > 2) {
+                drawRippleRing(rp.x, rp.y, r - 1, 0);    // a thick, bright leading edge
+            }
         }
-        int16_t echo = rippleRadius(rp, rp.t - 0.17f);
-        if (echo > 1) {
-            drawRippleRing(rp.x, rp.y, echo, skip + 2);
+        // Two echoes trail the wavefront, each weaker than the one before
+        const int16_t echo1 = rippleRadius(rp, rp.t - 0.15f);
+        if (echo1 > 1) {
+            drawRippleRing(rp.x, rp.y, echo1, skip + 2);
+        }
+        const int16_t echo2 = rippleRadius(rp, rp.t - 0.30f);
+        if (echo2 > 1) {
+            drawRippleRing(rp.x, rp.y, echo2, skip + 4);
+        }
+    }
+
+    // Sparks where two live wavefronts cross (they twinkle rather than burn steadily)
+    for (uint8_t i = 0; i < NUM_RIPPLES; ++i) {
+        for (uint8_t j = i + 1; j < NUM_RIPPLES; ++j) {
+            rippleCrossings(s_ripples[i], radius[i], s_ripples[j], radius[j], ((frame + i + 2 * j) & 3) != 0);
         }
     }
 }

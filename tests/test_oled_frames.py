@@ -115,6 +115,28 @@ class OledFrames(unittest.TestCase):
         early, late = card_ink(30), card_ink(140)
         self.assertGreater(early - late, 60, "the title card did not slide away")
 
+    def test_mag_pulse_rings_keep_moving_and_spark_where_they_cross(self):
+        import ctypes
+        self.lib.oled_screensaver_frame.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+
+        def frame_at(n):
+            buf = ctypes.create_string_buffer(1024)
+            self.lib.oled_screensaver_frame(4, n, buf)
+            return bytes(buf.raw)
+
+        frames = [frame_at(n) for n in (60, 75, 100, 130)]
+        self.assertEqual(len(set(frames)), 4, "the pulses are not moving")
+        for fb in frames:
+            self.assertGreater(sum(bin(b).count("1") for b in fb), 150, "the animation is nearly empty")
+        # deterministic (seeded) and different frames are not just noise: a spark is a 5-pixel plus, so
+        # somewhere in the busy frames a lit pixel has all four neighbours lit
+        def has_plus(fb):
+            return any(oh.pixel(fb, x, y) and oh.pixel(fb, x - 1, y) and oh.pixel(fb, x + 1, y) and
+                       oh.pixel(fb, x, y - 1) and oh.pixel(fb, x, y + 1)
+                       for x in range(2, 126) for y in range(2, 62))
+        self.assertTrue(any(has_plus(fb) for fb in frames + [frame_at(n) for n in range(80, 140, 4)]),
+                        "no crossing spark ever appears")
+
     def test_intro_animates_and_lands_on_the_name(self):
         import ctypes
         self.lib.oled_intro_frame.argtypes = [ctypes.c_uint32, ctypes.c_char_p]
