@@ -37,6 +37,13 @@ struct KeyView {
     char    label[5];
 };
 
+// Whether key presses are turned into USB output, as far as the display needs to say so
+enum : uint8_t {
+    OUTPUT_ON = 0,
+    OUTPUT_NEEDS_CAL = 1,   // calibration missing, invalid or running
+    OUTPUT_OFF = 2,         // disabled for another reason (default at boot, user)
+};
+
 struct Snapshot {
     KeyView keys[NUM_KEYS];
     int8_t  lastActiveKey;  // -1 before the first press
@@ -44,6 +51,7 @@ struct Snapshot {
     bool    rapidTrigger;
     float   actuationMm;
     float   rtSensMm;
+    uint8_t outputStatus;   // OUTPUT_*
 };
 
 enum class Request : uint8_t {

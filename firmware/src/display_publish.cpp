@@ -3,6 +3,7 @@
 #include <cstring>
 #include "hall.h"
 #include "config.h"
+#include "keyboard_output.h"
 
 void displayBuildSnapshot(display_link::Snapshot& out) {
     memset(&out, 0, sizeof(out));
@@ -20,6 +21,20 @@ void displayBuildSnapshot(display_link::Snapshot& out) {
     out.rapidTrigger = HallKey::isRapidTrigger();
     out.actuationMm = HallKey::getActuationPoint();
     out.rtSensMm = HallKey::getRtSensitivity();
+    if (KeyboardOutput::isEnabled()) {
+        out.outputStatus = display_link::OUTPUT_ON;
+    } else {
+        switch (KeyboardOutput::reason()) {
+            case KeyboardOutput::Reason::CalibrationMissing:
+            case KeyboardOutput::Reason::CalibrationInvalid:
+            case KeyboardOutput::Reason::CalibrationInProgress:
+                out.outputStatus = display_link::OUTPUT_NEEDS_CAL;
+                break;
+            default:
+                out.outputStatus = display_link::OUTPUT_OFF;
+                break;
+        }
+    }
 }
 
 void displayPublish() {

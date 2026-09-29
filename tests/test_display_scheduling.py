@@ -41,7 +41,8 @@ class KeyView(ctypes.Structure):
 
 class Snapshot(ctypes.Structure):
     _fields_ = [("keys", KeyView * 16), ("lastActiveKey", ctypes.c_int8), ("activeLayer", ctypes.c_uint8),
-                ("rapidTrigger", ctypes.c_bool), ("actuationMm", ctypes.c_float), ("rtSensMm", ctypes.c_float)]
+                ("rapidTrigger", ctypes.c_bool), ("actuationMm", ctypes.c_float), ("rtSensMm", ctypes.c_float),
+                ("outputStatus", ctypes.c_uint8)]
 
 
 def fresh(lib) -> dh.Device:
@@ -94,7 +95,7 @@ class TestSnapshot(unittest.TestCase):
         return r[0]
 
     def test_layout_matches_the_firmware_struct(self):
-        self.assertEqual(ctypes.sizeof(Snapshot), 204)
+        self.assertEqual(ctypes.sizeof(Snapshot), 208)
 
     def test_published_after_every_scan(self):
         before = self.published()
@@ -159,10 +160,20 @@ class TestDisplayRequests(unittest.TestCase):
         replies = [j for j in dh.Device.json_lines(lines) if "status" in j]
         self.assertEqual([(r["id"], r["status"], r["code"]) for r in replies], [("s1", "error", "display_timeout")])
 
+    def test_read_only_queries_do_not_wake_the_display(self):
+        # a configurator tab polling in the background must not keep the screensaver away
+        before = self.lib.oled_stub_wakes()
+        for line in ("PING", "INFO", "STATUS", "GET_CONFIG"):
+            self.d.replies(line)
+        run_ms(self.d, 50)
+        self.assertEqual(self.lib.oled_stub_wakes(), before, "a read-only query woke the display")
+        self.d.replies("SET_ACTUATION 1.30")
+        self.assertGreater(self.lib.oled_stub_wakes(), before, "a settings change did not wake the display")
+
     def test_commands_post_display_requests_and_the_publish_is_timed(self):
         self.d.replies("TIMING RESET")
-        for _ in range(5):
-            self.d.replies("STATUS")
+        for i in range(5):
+            self.d.replies(f"SET_ACTUATION {1.20 + 0.05 * i:.2f}")
         run_ms(self.d, 50)
         t = self.d.replies("TIMING")[0]
         self.assertGreaterEqual(t["display_request_count"], 5)

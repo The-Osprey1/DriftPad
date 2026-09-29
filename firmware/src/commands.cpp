@@ -53,7 +53,9 @@ KeyboardOutput::Reason s_reasonBeforeCal = KeyboardOutput::Reason::DisabledDefau
 char s_eventBuf[proto::MAX_EVENT_LEN];
 proto::EventWriter s_events(s_eventBuf, sizeof(s_eventBuf));
 
-// Any command except the display-idle ones counts as user activity for the OLED, as in v1.
+// Commands that change something (settings, layer, keymap, calibration) count as user activity for
+// the OLED. Read-only queries (PING, INFO, STATUS, GET_CONFIG, STREAM) do not: a configurator tab or
+// a script polling in the background must not hold the screensaver off while the pad sits idle.
 // Posting the request is all core 0 does; core 1 wakes the display.
 void wakeDisplay() {
     Timing::Scoped t(*s_timing, Timing::Op::DisplayRequest);
@@ -206,13 +208,11 @@ HandlerResult configError(Reply& r, ConfigStatus st, const char* msg) {
 // ---- queries ---------------------------------------------------------------------------------
 
 HandlerResult cmdPing(const Args&, Reply& r, void*) {
-    wakeDisplay();
     r.ok().key("type").str("pong");
     return HandlerResult::Done;
 }
 
 HandlerResult cmdInfo(const Args&, Reply& r, void*) {
-    wakeDisplay();
     JsonWriter& w = r.ok();
     w.key("type").str("info");
     w.key("device").str(build_info::DEVICE);
@@ -246,7 +246,6 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
 }
 
 HandlerResult cmdGetConfig(const Args&, Reply& r, void*) {
-    wakeDisplay();
     const DeviceSettings& c = configGet();
     JsonWriter& w = r.ok();
     w.key("type").str("config");
@@ -273,7 +272,6 @@ HandlerResult cmdGetConfig(const Args&, Reply& r, void*) {
 }
 
 HandlerResult cmdStatus(const Args&, Reply& r, void*) {
-    wakeDisplay();
     JsonWriter& w = r.ok();
     w.key("type").str("status");
     w.key("active_layer").u32(configGet().activeLayer);
@@ -297,7 +295,6 @@ HandlerResult cmdStatus(const Args&, Reply& r, void*) {
 }
 
 HandlerResult cmdStream(const Args& a, Reply& r, void*) {
-    wakeDisplay();
     bool on;
     ParseResult pr = proto::parseBool(a[0], on);
     if (pr != ParseResult::Ok) return badValue(r, pr, "STREAM takes 0 or 1");
