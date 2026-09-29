@@ -195,7 +195,8 @@ class OledFrames(unittest.TestCase):
         self.assertEqual(self.lib.oled_idle_step(29000, 0), full, "dimmed before the screensaver started")
         self.assertEqual(self.lib.oled_idle_step(16000, 0), full, "dimmed the moment the screensaver started")
         self.assertEqual(self.lib.oled_idle_step(30000, 0), full, "dimmed before the screensaver had time to enjoy")
-        self.assertEqual(self.lib.oled_idle_step(31000, 0), dim, "screensaver never dims")
+        self.assertEqual(self.lib.oled_idle_step(100000, 0), full, "dimmed before the screensaver's three minutes")
+        self.assertEqual(self.lib.oled_idle_step(51000, 0), dim, "screensaver never dims")
         self.assertEqual([self.lib.oled_panel_level(i) for i in range(3)],
                          [self.lib.oled_panel_level_dim(i) for i in range(3)],
                          "contrast, pre-charge and VCOMH are not all lowered")

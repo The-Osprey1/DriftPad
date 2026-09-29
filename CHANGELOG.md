@@ -87,7 +87,7 @@ work with this firmware and says so.
   (deepest travel so far minus the RT sensitivity).
 - OLED: while key presses are not being sent to the computer (calibration missing, output off), the
   status label says `CAL NEEDED` or `OUTPUT OFF` in an inverted chip instead of `READY`/`TRAVEL`.
-- OLED: the screensaver dims 60 s after it starts (contrast, pre-charge and VCOMH all lowered, since contrast
+- OLED: the screensaver dims 3 minutes after it starts (contrast, pre-charge and VCOMH all lowered, since contrast
   alone is barely visible on some panels) and any input returns the panel to full brightness; the splash
   screen is centered and shows the firmware version instead of an unverified "USB Connected".
   `tests/test_oled_frames.py` renders the real screens on the host; `tools/render_oled_frames.py`
