@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/driftpad_oled_showcase.png" alt="DriftPad OLED: standby screen (left) and a key being actuated (right)" width="760">
+  <img src="docs/images/oled_showcase.png" alt="DriftPad OLED screens: standby, key travelling, key actuated, tuning menu and splash" width="760">
 </p>
 
 DriftPad is a custom Hall-effect macropad built around analog magnetic key sensing. Instead of a simple on/off switch, every key reports how far it has travelled, which lets the firmware support adjustable actuation and release points, Rapid Trigger, live travel feedback on the OLED, and per-layer keymaps you can change from the browser.

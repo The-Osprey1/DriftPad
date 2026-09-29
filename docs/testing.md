@@ -45,6 +45,7 @@ held, and in `--release` any skip, import error, missing tool, dirty tree or sta
 | `test_persistence_device` | compiled firmware on host | A/B slot saves, torn-write and corruption recovery, legacy migration, calibration lifecycle and rules |
 | `test_display_link` | compiled firmware on host | Core 0 to core 1 snapshot (seqlock) and request counters |
 | `test_display_scheduling` | compiled firmware on host + source inspection | Display work never delays a scan; deferred `OLED_TEST`/`OLED_SCAN`; the encoder save waits for typing to stop; core ownership in source |
+| `test_oled_frames` | compiled firmware on host (real Adafruit GFX) | Pixel checks on the real OLED screens: no text wrap or clipping at the right edge, key box fill, every screen draws, idle dimming and its restore. Skipped until a PlatformIO build has installed Adafruit GFX |
 | `test_timing` | compiled firmware on host | Scan statistics and the `TIMING` counters |
 | `test_config_schema` | test validator self-check + compiled firmware on host | Profile schema, adversarial profiles, protocol vectors against the firmware |
 | `test_configurator_contract` | headless browser + compiled firmware on host | `fake_device.js` answers exactly as the firmware does |

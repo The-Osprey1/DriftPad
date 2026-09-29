@@ -30,6 +30,7 @@ pip install -r tools/requirements.txt      # pyserial, Pillow
 |---|---|---|
 | [`serve_configurator.py`](serve_configurator.py) | Serves `configurator/` on `http://127.0.0.1:8791` for browsers or tools that cannot open it from the file system. Nothing is fetched from the internet. | - |
 | [`render_oled_png.py`](render_oled_png.py) | Renders pixel-accurate OLED screenshots into [`docs/images/`](../docs/images) using the same Adafruit GFX primitives and font as the firmware | Pillow, and a firmware build so `firmware/.pio/libdeps/pico/Adafruit GFX Library/glcdfont.c` exists |
+| [`render_oled_frames.py`](render_oled_frames.py) | Writes `docs/images/oled_showcase.png` by running the firmware's own `oled.cpp` on the host (real Adafruit GFX, stubbed panel), so it cannot drift from the firmware | Pillow, a host C++ compiler, and a firmware build so Adafruit GFX exists under `firmware/.pio/libdeps` |
 | [`oled_concepts.py`](oled_concepts.py) | Generates the alternative layouts and key-press animations in [`docs/oled_concepts/`](../docs/oled_concepts). Exits non-zero if any text overflows its region | Pillow, same font file as above |
 | [`demo_oled.py`](demo_oled.py) | Plays a short showcase on a connected DriftPad over serial using `SIM` commands | pyserial, a connected board |
 | [`driftpad_serial.py`](driftpad_serial.py) | Shared by the serial tools: finding DriftPads by USB id, identifying them with `INFO`, request/reply by id | - |
