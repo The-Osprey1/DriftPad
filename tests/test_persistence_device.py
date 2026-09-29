@@ -528,6 +528,20 @@ class TestCalibrationLifecycle(unittest.TestCase):
         r = self.one("CALIBRATE")
         self.assertEqual((r["status"], r["calibration"]), ("ok", "valid"))
 
+    def test_refused_quick_calibrate_leaves_a_held_key_typing(self):
+        calibrate(self.d)
+        self.assertEqual(self.one("SET_HID 1")["status"], "ok")
+        self.lib.set_travel(7, 2.0)
+        self.d.run(100 * LOOPS_PER_SCAN)
+        held = self.host()[1]
+        self.assertTrue(held, "the held key is down on the host")
+        self.assertEqual(self.one("CALIBRATE")["code"], "keys_not_at_rest")
+        self.d.run(50 * LOOPS_PER_SCAN)
+        self.assertEqual(self.host()[1], held, "a refused CALIBRATE must not release the key")
+        self.lib.set_travel(7, 0.0)
+        self.d.run(100 * LOOPS_PER_SCAN)
+        self.assertFalse(self.host()[1])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

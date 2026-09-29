@@ -40,6 +40,10 @@ work with this firmware and says so.
 - Configurator: values count as "on the pad" only from a correlated reply or a fresh `GET_CONFIG`;
   unanswered writes are read back and reconciled; telemetry frames are parsed as the firmware sends
   them; dialogs, focus and screen-reader announcements; layout at 360 px.
+- A refused `CALIBRATE` (`keys_not_at_rest`) no longer releases keys that are being held.
+- A failed encoder save is retried after the next rest instead of being dropped.
+- `tools/flash.py --drive` (a board in bootloader mode) no longer verifies against a different pad
+  that was already connected.
 
 ### Added
 
@@ -65,3 +69,10 @@ work with this firmware and says so.
 ### Known limits
 
 - Everything above is verified against models and fakes only. No physical pad has run this build.
+- `CALIBRATE` on a pad without valid calibration re-zeroes the running baselines only; it answers
+  `applied:true` and the `calibration` field stays `missing`/`invalid` until `CAL START`.
+- A knob turn saves every dirty setting, including edits made from the configurator that were not saved.
+- `flash.py --drive` cannot identify the board first, so it cannot warn about a downgrade or unsaved
+  settings; the confirmation prompt is the only guard.
+- The display link's request read can, in a rare race, show a test pattern twice; its sequence counter
+  costs one frame every ~24 days of uptime. Both are cosmetic.

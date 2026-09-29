@@ -498,12 +498,14 @@ HandlerResult cmdCalibrate(const Args&, Reply& r, void*) {
     CalibrationData data = configGet().calibration;
     uint16_t offRest = 0;
     const uint16_t pressed = HallManager::pressedMask();
-    KeyboardOutput::releaseAll(pressed);
     if (!Calibration::quickRestRecalibrate(data, rest, offRest)) {
         JsonWriter& w = r.error(err::KEYS_NOT_AT_REST, "release every key and try again");
         writeKeyList(w, "keys", offRest);
         return HandlerResult::Done;
     }
+    // Refused above: a key that is down keeps typing. Accepted: the state machines were reset, so
+    // whatever is down stays silent until released.
+    KeyboardOutput::releaseAll(pressed);
     const bool valid = calibrationEvaluate(data) == CalState::Valid;
     if (valid) configSetCalibration(data);
     JsonWriter& w = r.ok();

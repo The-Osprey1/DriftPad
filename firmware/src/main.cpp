@@ -174,8 +174,16 @@ void loop() {
     if (s_encoderSavePending && (nowMs - s_lastEncoderEdit) >= ENCODER_SAVE_DELAY_MS &&
         (nowMs - s_lastKeyChange) >= KEYS_QUIET_MS) {
         s_encoderSavePending = false;
-        Timing::Scoped t(s_timing, Timing::Op::Save);
-        configSave();
+        SaveResult sr;
+        {
+            Timing::Scoped t(s_timing, Timing::Op::Save);
+            sr = configSave();
+        }
+        if (!sr.ok) {
+            // The change is still only in RAM (INFO says dirty): try again after another rest
+            s_encoderSavePending = true;
+            s_lastEncoderEdit = nowMs;
+        }
     }
 
     // Heartbeat every 2 seconds

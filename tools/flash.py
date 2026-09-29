@@ -37,7 +37,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Tuple
 
 TOOLS = Path(__file__).resolve().parent
 if str(TOOLS) not in sys.path:
@@ -155,9 +155,13 @@ def _reboot_to_bootloader(env: Env, ident: ds.Identity) -> Optional[str]:
     return None
 
 
-def _find_returned_pad(env: Env, before: Optional[ds.Identity]) -> Optional[ds.Identity]:
+def _find_returned_pad(env: Env, before: Optional[ds.Identity],
+                       others: Tuple[Tuple[Optional[str], str], ...] = ()) -> Optional[ds.Identity]:
+    """The pad that came back. With no earlier identity (a board flashed from the bootloader), pads that
+    were already answering before the copy, `others` as (serial, device), are never the one."""
     serial = before.port.serial_number if before else None
     ports = ds.candidate_ports(env.list_ports())
+    ports = [p for p in ports if not any((s and s == p.serial_number) or (not s and d == p.device) for s, d in others)]
     if serial:
         ports = [p for p in ports if p.serial_number == serial]
     elif before is not None:
@@ -259,6 +263,7 @@ def flash(args: argparse.Namespace, env: Env) -> int:
             env.say("Several bootloader drives appeared at once; not guessing. Nothing was flashed.")
             return FAILED
         drive = new_drives[0]
+    others = tuple((p.serial_number, p.device) for p in ds.candidate_ports(env.list_ports())) if before is None else ()
     env.say(f"Copying {uf2.name} to {drive}...")
     try:
         env.copy(uf2, Path(drive) / uf2.name)
@@ -268,7 +273,7 @@ def flash(args: argparse.Namespace, env: Env) -> int:
 
     # 5. Verify
     env.say("Waiting for the pad to restart...")
-    after = _wait(env, RETURN_TIMEOUT_S, lambda: _find_returned_pad(env, before))
+    after = _wait(env, RETURN_TIMEOUT_S, lambda: _find_returned_pad(env, before, others))
     if after is None:
         env.say("The pad did not come back as a protocol-2 DriftPad. Check that it enumerates (Device Manager / "
                 "lsusb); if it is in bootloader mode again the image did not start.")

@@ -139,6 +139,8 @@ class World:
         for d in self.extra:
             if Path(dst).parent == d:
                 self.extra.remove(d)
+                if getattr(self, "board_dead", False):     # the image never starts
+                    break
                 self.pads.append(self.bootloader_board)
                 self.bootloader_board.boot_new_image()
                 break
@@ -315,6 +317,16 @@ class TestFlash(unittest.TestCase):
         code, log = self.run_flash(w2, "--yes")
         self.assertEqual(code, flash.REFUSED)
         self.assertIn("choose one with --drive", log)
+
+    def test_another_pad_is_not_mistaken_for_the_flashed_board(self):
+        w = World(extra_drives=["BOOT-X"])
+        w.bootloader_board = Pad(w, "COM9", "XYZ")
+        w.pads.remove(w.bootloader_board)
+        w.board_dead = True
+        Pad(w, "COM7", "OTHER", fw=NEW["fw_version"], build=NEW["build_id"])   # already on this build
+        code, log = self.run_flash(w, "--yes", "--drive", "BOOT-X")
+        self.assertEqual(code, flash.FAILED, log)
+        self.assertNotIn("Updated and verified", log)
 
     def test_a_bad_image_stops_before_any_pad_is_touched(self):
         make_build(Path(self.tmp.name) / "build", uf2=uf2_blocks(start=FS_START - 256, count=4))

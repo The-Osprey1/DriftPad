@@ -211,6 +211,14 @@ class TestEncoderSave(unittest.TestCase):
         self.assertEqual(self.lib.flash_writes(), writes + 1)
         self.lib.set_travel(3, 0.0)
 
+    def test_a_failed_save_is_tried_again(self):
+        self.lib.ff_fail_erase(1, 0)                 # the first erase fails, power stays on
+        self.edit()
+        run_ms(self.d, 3400)
+        self.assertTrue(self.d.config()["dirty"], "the failed save left the change unsaved")
+        run_ms(self.d, 3400)
+        self.assertFalse(self.d.config()["dirty"], "the save was never tried again")
+
 
 def typing_while(d: dh.Device, writes_before: int) -> int:
     """Taps key 3 every 200 ms for 5 s; returns the flash writes that happened meanwhile."""
