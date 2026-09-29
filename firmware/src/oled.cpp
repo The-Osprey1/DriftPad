@@ -3,6 +3,7 @@
 #include "display_link.h"
 #include "settings_limits.h"
 #include "encoder_menu.h"
+#include "build_info.h"
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -56,6 +57,13 @@ volatile bool s_screensaverActive = false;
 volatile bool s_displaySleeping = false;
 int8_t s_forcedAnim = -1;
 uint32_t s_screensaverStartTime = 0;
+constexpr uint8_t CONTRAST_FULL = 0xFF;
+constexpr uint8_t CONTRAST_DIM = 0x40;      // the screensaver runs at about a quarter of full contrast
+constexpr uint8_t PRECHARGE_FULL = 0xF1;   // also set by configure128x64Hardware()
+constexpr uint8_t PRECHARGE_DIM = 0x22;    // shorter phases: the pixel driver is on for less time
+constexpr uint8_t VCOMH_FULL = 0x40;
+constexpr uint8_t VCOMH_DIM = 0x20;        // lower COM deselect level
+constexpr uint32_t SCREENSAVER_DIM_DELAY_MS = 60000;    // the screensaver dims this long after it starts
 constexpr uint32_t SCREENSAVER_TIMEOUT_MS = 45000;       // 45s idle -> start screensaver
 constexpr uint32_t SCREENSAVER_ANIM_CYCLE_MS = 20000;   // 20s per animation cycle (0 -> 1 -> ... -> 5)
 constexpr uint32_t DISPLAY_SLEEP_TIMEOUT_MS = 3600000UL; // 1 hour (3600s) -> turn display OFF
@@ -74,6 +82,16 @@ static uint8_t s_lastPressCount[NUM_KEYS] = {0};
 static uint8_t s_lastReleaseCount[NUM_KEYS] = {0};
 static bool s_gridCountersSynced = false;
 
+// Key map afterglow: frames of fade left on a key that was just released, so a quick tap (one
+// frame of solid) leaves a trail the eye can catch. Display only, like everything here.
+constexpr uint8_t GLOW_FRAMES = 8;
+static uint8_t s_keyGlow[NUM_KEYS] = {0};
+
+// Deepest travel of a held key, kept only to show where Rapid Trigger will release it
+// (peak minus the RT sensitivity). Sampled per frame, so a very fast stroke can peak deeper than
+// it shows; the marker is a guide, the sensing engine decides the release.
+static float s_keyPeak[NUM_KEYS] = {0};
+
 // Display focus: which key the left panel shows. Display selection only; HID and the
 // Rapid Trigger state machine never read it. Keeps its own copy of the press counts so
 // it never consumes the grid latches above.
@@ -91,6 +109,8 @@ void discardGridLatches() {
         s_lastPressCount[i] = s_view.keys[i].pressCount;
         s_lastReleaseCount[i] = s_view.keys[i].releaseCount;
         s_focusSeenPress[i] = s_lastPressCount[i];
+        s_keyGlow[i] = 0;
+        s_keyPeak[i] = 0.0f;
     }
 }
 
@@ -176,36 +196,6 @@ void printCentered(const char* text, int16_t centerX, int16_t y, uint8_t size = 
     s_display.print(text);
 }
 
-// Shared header (Y: 0..10): checkered flag, inverted banner, speed chevrons, status pill
-void drawHeader(const char* banner, const char* pill) {
-    for (int8_t r = 0; r < 4; ++r) {
-        for (int8_t c = 0; c < 3; ++c) {
-            if ((r + c) % 2 == 0) {
-                s_display.fillRect(c * 2, 1 + r * 2, 2, 2, OLED_COLOR_WHITE);
-            }
-        }
-    }
-
-    // Banner X: 7..72 fits 11 characters
-    s_display.fillRect(7, 0, 66, 10, OLED_COLOR_WHITE);
-    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    s_display.setTextSize(1);
-    s_display.setCursor(7 + (67 - textWidth(banner)) / 2, 1);
-    s_display.print(banner);
-
-    s_display.drawLine(77, 0, 74, 10, OLED_COLOR_WHITE);
-    s_display.drawLine(81, 0, 78, 10, OLED_COLOR_WHITE);
-    s_display.drawLine(85, 0, 82, 10, OLED_COLOR_WHITE);
-
-    // Pill X: 87..126 fits 6 characters
-    constexpr int16_t PILL_X = 87;
-    constexpr int16_t PILL_W = 40;
-    s_display.drawRoundRect(PILL_X, 0, PILL_W, 11, 2, OLED_COLOR_WHITE);
-    s_display.setTextColor(OLED_COLOR_WHITE);
-    s_display.setCursor(PILL_X + (PILL_W - textWidth(pill)) / 2, 2);
-    s_display.print(pill);
-}
-
 void drawCornerBrackets() {
     s_display.drawFastHLine(0, 0, 8, OLED_COLOR_WHITE);
     s_display.drawFastVLine(0, 0, 6, OLED_COLOR_WHITE);
@@ -222,14 +212,10 @@ struct Star {
     int16_t x, y, z;
     int16_t prev_x, prev_y;
 };
-constexpr uint8_t NUM_STARS = 26;
+constexpr uint8_t NUM_STARS = 56;
 Star s_stars[NUM_STARS];
 bool s_starsInit = false;
 
-int16_t s_badgeX = 18;
-int16_t s_badgeY = 18;
-int8_t s_badgeDX = 1;
-int8_t s_badgeDY = 1;
 
 void initStarfield() {
     for (uint8_t i = 0; i < NUM_STARS; ++i) {
@@ -242,27 +228,41 @@ void initStarfield() {
     s_starsInit = true;
 }
 
-// Animation 1: Digital Matrix Rain
-struct RainDrop {
-    int8_t y;
-    int8_t speed;
-    uint8_t length;
-};
-constexpr uint8_t RAIN_COLS = 16;
-RainDrop s_rain[RAIN_COLS];
-bool s_rainInit = false;
+// Animation 1: Plasma. Four interfering sine fields (an integer sine table and a square-root table
+// for the distance from the centre, so a frame is table lookups only), banded, then Bayer-dithered.
+constexpr uint16_t PLASMA_LUT_SIZE = 848;        // (dx^2 + dy^2) / 8 for the screen's corners is 839
+uint8_t s_sin[256];                              // sin over one period, 0..255 (ensureSin())
+bool s_sinInit = false;
+uint8_t s_plasmaRoot[PLASMA_LUT_SIZE];           // distance from the centre (scaled) by squared distance / 8
+uint16_t s_plasmaDx2[SCREEN_WIDTH];              // squared horizontal distance from the centre
+bool s_plasmaInit = false;
+uint16_t s_plasmaT = 0;
 
-void initRain() {
-    for (uint8_t c = 0; c < RAIN_COLS; ++c) {
-        s_rain[c].y = rand() % 64;
-        s_rain[c].speed = (rand() % 2) + 1;
-        s_rain[c].length = (rand() % 8) + 6;
+void ensureSin() {
+    if (s_sinInit) return;
+    for (uint16_t i = 0; i < 256; ++i) {
+        s_sin[i] = (uint8_t)(127.5f + 127.5f * sinf(i * (6.2831853f / 256.0f)));
     }
-    s_rainInit = true;
+    s_sinInit = true;
 }
 
-// Animation 2: Oscilloscope Sine Flow
-float s_wavePhase = 0.0f;
+void initPlasma() {
+    ensureSin();
+    for (uint16_t i = 0; i < PLASMA_LUT_SIZE; ++i) {
+        s_plasmaRoot[i] = (uint8_t)(sqrtf((float)i * 8.0f) * 3.0f);
+    }
+    for (uint8_t x = 0; x < SCREEN_WIDTH; ++x) {
+        int16_t dx = (int16_t)x - 64;
+        s_plasmaDx2[x] = (uint16_t)(dx * dx);
+    }
+    s_plasmaInit = true;
+}
+
+// Animation 2: Tesseract. A 4-D hypercube spun in three planes, projected 4-D -> 3-D -> 2-D.
+constexpr uint8_t TESS_VERTS = 16;
+float s_tessA = 0.0f;
+float s_tessB = 0.0f;
+float s_tessC = 0.0f;
 
 // Animation 3: Synthwave Horizon Grid
 float s_gridScroll = 0.0f;
@@ -271,8 +271,9 @@ uint8_t s_gridFrame = 0;
 // Animation 4: Magnetic Pulse Ripples
 struct Ripple {
     int16_t x, y;
-    int16_t r;      // Current radius; <= 0 means waiting to spawn
     int16_t maxR;
+    float t;        // Progress 0..1 (negative: waiting to spawn); the radius eases out with it
+    float step;     // Progress per frame
 };
 constexpr uint8_t NUM_RIPPLES = 4;
 Ripple s_ripples[NUM_RIPPLES];
@@ -293,6 +294,7 @@ int8_t s_ssShownAnim = -1;       // Animation fully on screen (or the one being 
 int8_t s_ssIncomingAnim = -1;    // Animation being wiped in, -1 when no transition is running
 uint32_t s_ssTransitionStart = 0;
 uint32_t s_ssSessionStart = 0;   // Detects a fresh screensaver session so it starts without a wipe
+uint32_t s_ssLabelSince = 0;     // When the current animation began (its title card slides in then)
 uint8_t s_ssScratch[SCREEN_WIDTH * SCREEN_HEIGHT / 8];
 
 void configure128x64Hardware() {
@@ -305,11 +307,25 @@ void configure128x64Hardware() {
     s_display.ssd1306_command(SSD1306_SETCOMPINS);       // 0xDA
     s_display.ssd1306_command(0x12);                     // Alternative (interleaved) COM pin config
     s_display.ssd1306_command(SSD1306_SETCONTRAST);      // 0x81
-    s_display.ssd1306_command(0xFF);                     // Max brightness
+    s_display.ssd1306_command(CONTRAST_FULL);            // Max brightness
     s_display.ssd1306_command(SSD1306_SETPRECHARGE);     // 0xD9
-    s_display.ssd1306_command(0xF1);
+    s_display.ssd1306_command(PRECHARGE_FULL);
     s_display.ssd1306_command(SSD1306_SETVCOMDETECT);    // 0xDB
-    s_display.ssd1306_command(0x40);
+    s_display.ssd1306_command(VCOMH_FULL);
+}
+
+// Panel brightness only; the frame content is untouched. Contrast alone is barely visible on some
+// panels, so the pre-charge and VCOMH levels are lowered with it. dim(false) would restore the
+// library's default contrast, not the CONTRAST_FULL set in configure128x64Hardware(), so it is not
+// used.
+void setDimmed(bool dim) {
+    s_display.ssd1306_command(SSD1306_SETCONTRAST);
+    s_display.ssd1306_command(dim ? CONTRAST_DIM : CONTRAST_FULL);
+    s_display.ssd1306_command(SSD1306_SETPRECHARGE);
+    s_display.ssd1306_command(dim ? PRECHARGE_DIM : PRECHARGE_FULL);
+    s_display.ssd1306_command(SSD1306_SETVCOMDETECT);
+    s_display.ssd1306_command(dim ? VCOMH_DIM : VCOMH_FULL);
+    s_isDimmed = dim;
 }
 
 bool initDisplayHardware() {
@@ -317,6 +333,9 @@ bool initDisplayHardware() {
         return false;
     }
     configure128x64Hardware();
+    // Text that would cross the right edge is clipped, never wrapped onto the row below: a
+    // right-aligned "RT 0.20mm" ends on x=127 and its last glyph used to land on the next line
+    s_display.setTextWrap(false);
     return true;
 }
 
@@ -435,113 +454,207 @@ void renderSafeZoneScreen() {
     s_display.display();
 }
 
-const char* const MENU_TITLES[] = {"RT SENSITIVITY", "ACTUATION POINT", "RAPID TRIGGER", "ACTIVE LAYER"};
+// ---------------------------------------------------------------------------------------
+// The title screen's letterforms for any text: italic, and cut by a one-row slit through the middle
+// of the lettering. The text is printed normally into a scratch region, read back as a mask, the
+// region is restored, and the mask is redrawn sheared and slit. The region must lie on the display
+// and leave room to its right for the slant.
+// ---------------------------------------------------------------------------------------
+constexpr uint16_t STYLE_MAX_W = 96;
+constexpr uint16_t STYLE_MAX_H = 32;
+uint8_t s_styleSave[STYLE_MAX_W * (STYLE_MAX_H / 8 + 1)];
+uint8_t s_styleMask[STYLE_MAX_H][STYLE_MAX_W / 8];
 
-// Size-2 value and size-1 unit sharing a baseline, centered as one group
-void drawValueWithUnit(const char* value, const char* unit, int16_t y) {
-    int16_t valueW = textWidth(value, 2);
-    int16_t x = 64 - (valueW + 3 + textWidth(unit)) / 2;
-    s_display.setTextSize(2);
-    s_display.setCursor(x, y);
-    s_display.print(value);
-    s_display.setTextSize(1);
-    s_display.setCursor(x + valueW + 3, y + 7);
-    s_display.print(unit);
+template <typename PrintFn>
+void drawStyledText(int16_t rx, int16_t ry, uint16_t rw, uint16_t rh, uint16_t color, float shear,
+                    PrintFn printPlain) {
+    if (rw > STYLE_MAX_W) rw = STYLE_MAX_W;
+    if (rh > STYLE_MAX_H) rh = STYLE_MAX_H;
+    uint8_t* buf = s_display.getBuffer();
+    const int16_t p0 = ry >> 3, p1 = (ry + rh - 1) >> 3;
+
+    for (int16_t p = p0; p <= p1; ++p) memcpy(&s_styleSave[(p - p0) * rw], &buf[p * SCREEN_WIDTH + rx], rw);
+    s_display.fillRect(rx, ry, rw, rh, OLED_COLOR_BLACK);
+    printPlain();
+
+    memset(s_styleMask, 0, sizeof(s_styleMask));
+    int16_t minY = rh, maxY = -1;
+    for (uint16_t y = 0; y < rh; ++y) {
+        const int16_t sy = ry + y;
+        for (uint16_t x = 0; x < rw; ++x) {
+            if (buf[(rx + x) + (sy >> 3) * SCREEN_WIDTH] & (1 << (sy & 7))) {
+                s_styleMask[y][x >> 3] |= (uint8_t)(1 << (x & 7));
+                if ((int16_t)y < minY) minY = (int16_t)y;
+                if ((int16_t)y > maxY) maxY = (int16_t)y;
+            }
+        }
+    }
+    for (int16_t p = p0; p <= p1; ++p) memcpy(&buf[p * SCREEN_WIDTH + rx], &s_styleSave[(p - p0) * rw], rw);
+    if (maxY < 0) return;
+
+    const int16_t slit = (minY + maxY) / 2;
+    const float half = (maxY - minY) / 2.0f;
+    for (int16_t y = minY; y <= maxY; ++y) {
+        if (y == slit) continue;
+        const int16_t dx = (int16_t)lroundf(((maxY - y) - half) * shear);   // top leans right, centred
+        for (uint16_t x = 0; x < rw; ++x) {
+            if (s_styleMask[y][x >> 3] & (1 << (x & 7))) s_display.drawPixel(rx + x + dx, ry + y, color);
+        }
+    }
 }
 
-// Slider track (X: 10..117, Y: 46..50) with detent ticks under it and a knob on the fill edge
-void drawMenuSlider(float ratio, uint8_t steps) {
+// Tracked capitals: `pitch` px per character
+void printTracked(const char* text, int16_t x, int16_t y, int16_t pitch) {
+    s_display.setTextSize(1);
+    for (; *text; ++text, x += pitch) {
+        s_display.setCursor(x, y);
+        s_display.print(*text);
+    }
+}
+
+const char* const MENU_TITLES[] = {"RT SENSITIVITY", "ACTUATION POINT", "RAPID TRIGGER", "ACTIVE LAYER"};
+
+// A big value in italic slit lettering, with its unit in small capitals sharing the baseline; the
+// pair is centred. Values are size 3 (18 x 24 px cells), which needs a 28 row region.
+void drawBigValue(const char* value, const char* unit, int16_t top) {
+    const int16_t valueW = textWidth(value, 3);
+    const int16_t unitW = unit ? textWidth(unit) : 0;
+    const int16_t total = valueW + (unit ? 5 + unitW : 0);
+    const int16_t x = 64 - total / 2;
+    drawStyledText(x - 2, top - 2, (uint16_t)valueW + 12, 28, OLED_COLOR_WHITE, 0.22f, [&] {
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setTextSize(3);
+        s_display.setCursor(x, top);
+        s_display.print(value);
+        s_display.setTextSize(1);
+    });
+    if (unit) {
+        s_display.setTextSize(1);
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setCursor(x + valueW + 6, top + 17);
+        s_display.print(unit);
+    }
+}
+
+// The slider is the boot screen's ruler: a baseline with ticks (long at each detent), a bar under it
+// that fills to the value, and a pointer above it. It glides to a new value and snaps when the card
+// has just appeared or the page changed.
+void drawMenuRuler(float ratio, uint8_t steps) {
     constexpr int16_t X0 = 10;
     constexpr int16_t X1 = 117;
-    constexpr int16_t Y = 46;
+    constexpr int16_t Y = 51;
     if (ratio < 0.0f) ratio = 0.0f;
     if (ratio > 1.0f) ratio = 1.0f;
 
-    s_display.drawRoundRect(X0, Y, X1 - X0 + 1, 5, 2, OLED_COLOR_WHITE);
-    int16_t fillX = X0 + (int16_t)(ratio * (X1 - X0) + 0.5f);
-    if (fillX > X0 + 1) {
-        s_display.fillRoundRect(X0, Y, fillX - X0 + 1, 5, 2, OLED_COLOR_WHITE);
+    static float shown = 0.0f;
+    static uint8_t shownPage = 255;
+    static uint32_t lastDrawn = 0;
+    const uint8_t page = static_cast<uint8_t>(s_currentMenu);
+    const uint32_t nowMs = millis();
+    if (page != shownPage || nowMs - lastDrawn > 100) {
+        shown = ratio;
+        shownPage = page;
+    } else {
+        shown += (ratio - shown) * 0.4f;
+        if (fabsf(ratio - shown) < 0.004f) shown = ratio;
     }
-    for (uint8_t t = 0; t <= steps; ++t) {
-        s_display.drawPixel(X0 + (X1 - X0) * t / steps, 53, OLED_COLOR_WHITE);
-    }
+    lastDrawn = nowMs;
+    ratio = shown;
 
-    int16_t knobX = fillX - 2;
-    if (knobX < X0) knobX = X0;
-    if (knobX > X1 - 4) knobX = X1 - 4;
-    s_display.fillRect(knobX, Y - 2, 5, 9, OLED_COLOR_BLACK);
-    s_display.drawRoundRect(knobX, Y - 2, 5, 9, 1, OLED_COLOR_WHITE);
-    s_display.drawFastVLine(knobX + 2, Y, 5, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(X0, Y, X1 - X0 + 1, OLED_COLOR_WHITE);
+    const int16_t minors = steps * 5;
+    for (int16_t i = 0; i <= minors; ++i) {
+        const int16_t x = X0 + (X1 - X0) * i / minors;
+        const bool major = (i % 5) == 0;
+        s_display.drawFastVLine(x, major ? Y - 5 : Y - 3, major ? 5 : 3, OLED_COLOR_WHITE);
+    }
+    const int16_t fillX = X0 + (int16_t)(ratio * (X1 - X0) + 0.5f);
+    s_display.fillRect(X0, Y + 2, fillX - X0 + 1, 2, OLED_COLOR_WHITE);
+    s_display.fillTriangle(fillX - 3, Y - 10, fillX + 3, Y - 10, fillX, Y - 6, OLED_COLOR_WHITE);   // pointer
 }
 
-// 24x11 pill switch, knob right and track filled when on
+// 24x11 switch drawn as a ruler segment: a baseline box with the knob left (off) or right (on)
 void drawToggle(bool on, int16_t x, int16_t y) {
-    s_display.drawRoundRect(x, y, 24, 11, 5, OLED_COLOR_WHITE);
+    s_display.drawRect(x, y, 26, 11, OLED_COLOR_WHITE);
     if (on) {
-        s_display.fillRoundRect(x + 2, y + 2, 20, 7, 3, OLED_COLOR_WHITE);
-        s_display.fillCircle(x + 17, y + 5, 3, OLED_COLOR_BLACK);
-        s_display.drawCircle(x + 17, y + 5, 3, OLED_COLOR_WHITE);
+        s_display.fillRect(x + 14, y + 2, 10, 7, OLED_COLOR_WHITE);
+        s_display.fillRect(x + 2, y + 5, 10, 1, OLED_COLOR_WHITE);
     } else {
-        s_display.drawCircle(x + 6, y + 5, 3, OLED_COLOR_WHITE);
+        s_display.fillRect(x + 2, y + 2, 10, 7, OLED_COLOR_WHITE);
     }
 }
 
 void renderMenuOverlay() {
     s_display.clearDisplay();
-
-    uint8_t page = static_cast<uint8_t>(s_currentMenu);
-    char pillBuf[8];
-    snprintf(pillBuf, sizeof(pillBuf), "%u/%u", page + 1, static_cast<uint8_t>(MenuMode::COUNT));
-    drawHeader("TUNING MENU", pillBuf);
-    s_display.drawFastHLine(0, 11, 128, OLED_COLOR_WHITE);
     drawCornerBrackets();
 
+    // Header: the page's name in capitals, four page pips at the right, a hairline beneath
+    const uint8_t page = static_cast<uint8_t>(s_currentMenu);
     s_display.setTextColor(OLED_COLOR_WHITE);
     if (page < static_cast<uint8_t>(MenuMode::COUNT)) {
-        printCentered(MENU_TITLES[page], 64, 15);
+        printTracked(MENU_TITLES[page], 10, 4, 6);
     }
+    for (uint8_t i = 0; i < static_cast<uint8_t>(MenuMode::COUNT); ++i) {
+        const int16_t px = 105 + i * 4;
+        if (i == page) s_display.fillRect(px, 4, 3, 5, OLED_COLOR_WHITE);
+        else s_display.drawRect(px, 4, 3, 5, OLED_COLOR_WHITE);
+    }
+    s_display.drawFastHLine(10, 13, 108, OLED_COLOR_WHITE);
 
     switch (s_currentMenu) {
         case MenuMode::ADJUST_RT: {
-            drawValueWithUnit(String(s_view.rtSensMm, 2).c_str(), "mm", 26);
-            drawMenuSlider((s_view.rtSensMm - limits::cmmToMm(limits::RT_SENS_MIN_CMM)) /
-                           (limits::cmmToMm(limits::RT_SENS_MAX_CMM) - limits::cmmToMm(limits::RT_SENS_MIN_CMM)), 4);
+            drawBigValue(String(s_view.rtSensMm, 2).c_str(), "MM", 16);
+            drawMenuRuler((s_view.rtSensMm - limits::cmmToMm(limits::RT_SENS_MIN_CMM)) /
+                          (limits::cmmToMm(limits::RT_SENS_MAX_CMM) - limits::cmmToMm(limits::RT_SENS_MIN_CMM)), 4);
             break;
         }
         case MenuMode::ADJUST_ACTUATION: {
-            drawValueWithUnit(String(s_view.actuationMm, 2).c_str(), "mm", 26);
-            drawMenuSlider((s_view.actuationMm - limits::cmmToMm(limits::ACTUATION_MIN_CMM)) /
-                           (limits::cmmToMm(limits::ACTUATION_MAX_CMM) - limits::cmmToMm(limits::ACTUATION_MIN_CMM)), 4);
+            drawBigValue(String(s_view.actuationMm, 2).c_str(), "MM", 16);
+            drawMenuRuler((s_view.actuationMm - limits::cmmToMm(limits::ACTUATION_MIN_CMM)) /
+                          (limits::cmmToMm(limits::ACTUATION_MAX_CMM) - limits::cmmToMm(limits::ACTUATION_MIN_CMM)), 4);
             break;
         }
         case MenuMode::TOGGLE_RT: {
-            bool on = s_view.rapidTrigger;
+            const bool on = s_view.rapidTrigger;
             const char* state = on ? "ON" : "OFF";
-            int16_t x = 64 - (textWidth(state, 2) + 6 + 24) / 2;
-            s_display.setTextSize(2);
-            s_display.setCursor(x, 27);
-            s_display.print(state);
-            drawToggle(on, x + textWidth(state, 2) + 6, 29);
-            printCentered(on ? "Re-arms on lift" : "Fixed actuation", 64, 47);
+            const int16_t w = textWidth(state, 3);
+            const int16_t x = 64 - (w + 10 + 26) / 2;
+            drawStyledText(x - 2, 17, (uint16_t)w + 12, 28, OLED_COLOR_WHITE, 0.22f, [&] {
+                s_display.setTextColor(OLED_COLOR_WHITE);
+                s_display.setTextSize(3);
+                s_display.setCursor(x, 19);
+                s_display.print(state);
+                s_display.setTextSize(1);
+            });
+            drawToggle(on, x + w + 10, 26);
+            printTracked(on ? "RE-ARMS ON LIFT" : "FIXED ACTUATION", 64 - (int16_t)strlen(on ? "RE-ARMS ON LIFT" : "FIXED ACTUATION") * 7 / 2, 48, 7);
             break;
         }
         case MenuMode::CYCLE_LAYER: {
-            uint8_t cur = s_view.activeLayer;
-            printCentered(layerName(cur), 64, 26, 2);
+            const uint8_t cur = s_view.activeLayer;
+            const char* name = layerName(cur);
+            const int16_t w = textWidth(name, 2);
+            drawStyledText(64 - w / 2 - 2, 19, (uint16_t)w + 12, 24, OLED_COLOR_WHITE, 0.22f, [&] {
+                s_display.setTextColor(OLED_COLOR_WHITE);
+                s_display.setTextSize(2);
+                s_display.setCursor(64 - w / 2, 22);
+                s_display.print(name);
+                s_display.setTextSize(1);
+            });
 
-            // Layer chips: the active one is inverted
+            // Layer chips, on the ruler's pitch: the active one is solid
             char chip[3];
             for (uint8_t i = 0; i < limits::NUM_LAYERS; ++i) {
-                int16_t bx = 64 - (limits::NUM_LAYERS * 20 - 2) / 2 + i * 20;
+                const int16_t bx = 64 - (limits::NUM_LAYERS * 22 - 4) / 2 + i * 22;
                 if (i == cur) {
-                    s_display.fillRoundRect(bx, 44, 18, 10, 2, OLED_COLOR_WHITE);
+                    s_display.fillRect(bx, 46, 18, 10, OLED_COLOR_WHITE);
                     s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
                 } else {
-                    s_display.drawRoundRect(bx, 44, 18, 10, 2, OLED_COLOR_WHITE);
+                    s_display.drawRect(bx, 46, 18, 10, OLED_COLOR_WHITE);
                     s_display.setTextColor(OLED_COLOR_WHITE);
                 }
                 snprintf(chip, sizeof(chip), "L%u", i);
-                printCentered(chip, bx + 9, 45);
+                printCentered(chip, bx + 9, 47);
             }
             s_display.setTextColor(OLED_COLOR_WHITE);
             break;
@@ -550,12 +663,12 @@ void renderMenuOverlay() {
             break;
     }
 
-    // Auto-return countdown: a centered bar that shrinks toward the middle
-    uint32_t elapsed = millis() - s_menuLastActive;
+    // Auto-return countdown: a centred hairline that shrinks toward the middle
+    const uint32_t elapsed = millis() - s_menuLastActive;
     if (elapsed < 2800) {
-        int16_t remW = 108 - (int16_t)((elapsed / 2800.0f) * 108.0f);
+        const int16_t remW = 108 - (int16_t)((elapsed / 2800.0f) * 108.0f);
         if (remW > 0) {
-            s_display.drawFastHLine(64 - remW / 2, 62, remW, OLED_COLOR_WHITE);
+            s_display.drawFastHLine(64 - remW / 2, 61, remW, OLED_COLOR_WHITE);
         }
     }
 }
@@ -576,6 +689,10 @@ constexpr int16_t MAP_X = 83;
 constexpr int16_t MAP_Y = 9;
 constexpr int16_t MAP_CELL = 9;
 constexpr int16_t MAP_GAP = 3;
+constexpr uint8_t FLASH_FRAMES = 2;        // a new actuation pops a ring around its map cell
+
+static bool s_prevActuated[NUM_KEYS] = {false};
+static uint8_t s_keyFlash[NUM_KEYS] = {0};
 
 const char* const LAYER_TITLES[] = {"Numpad", "Nav", "Gaming"};
 
@@ -585,8 +702,9 @@ void printRight(const char* text, int16_t rightX, int16_t y) {
     s_display.print(text);
 }
 
-// Header: inverted layer chip, // motif, layer name (active screens only), RT setting
-void drawKeyScreenHeader(uint8_t layer, bool showName) {
+// Header: inverted layer chip, // motif, RT setting. The layer's name is not repeated here; standby
+// shows it large and the tuning card names it.
+void drawKeyScreenHeader(uint8_t layer) {
     char chip[4];
     snprintf(chip, sizeof(chip), "L%u", layer);
     int16_t chipW = textWidth(chip) + 4;
@@ -598,10 +716,6 @@ void drawKeyScreenHeader(uint8_t layer, bool showName) {
     s_display.setTextColor(OLED_COLOR_WHITE);
     for (int16_t i = 0; i < 2; ++i) {
         s_display.drawLine(chipW + 3 + i * 3, 7, chipW + 5 + i * 3, 1, OLED_COLOR_WHITE);
-    }
-    if (showName) {
-        s_display.setCursor(chipW + 12, 0);
-        s_display.print(layerName(layer));
     }
     if (s_view.rapidTrigger) {
         printRight((String("RT ") + String(s_view.rtSensMm, 2) + "mm").c_str(), 127, 0);
@@ -615,13 +729,16 @@ void drawKeyScreenHeader(uint8_t layer, bool showName) {
 void drawKeyBox(const char* label, bool actuated) {
     int16_t x1, y1;
     uint16_t w, h;
-    s_display.setFont(&FreeSansBold18pt7b);
+    const GFXfont* font = &FreeSansBold18pt7b;
+    s_display.setFont(font);
     s_display.getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
-    if (w > KEY_BOX_W - 16) {
-        s_display.setFont(&FreeSansBold12pt7b);
+    if (w > KEY_BOX_W - 20) {
+        font = &FreeSansBold12pt7b;
+        s_display.setFont(font);
         s_display.getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
-        if (w > KEY_BOX_W - 10) {
-            s_display.setFont(&FreeSansBold9pt7b);
+        if (w > KEY_BOX_W - 14) {
+            font = &FreeSansBold9pt7b;
+            s_display.setFont(font);
             s_display.getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
         }
     }
@@ -634,13 +751,18 @@ void drawKeyBox(const char* label, bool actuated) {
 
     if (actuated) {
         s_display.fillRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
-        s_display.setTextColor(OLED_COLOR_BLACK);
     } else {
         s_display.drawRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
-        s_display.setTextColor(OLED_COLOR_WHITE);
     }
-    s_display.setCursor(tx, ty);
-    s_display.print(label);
+    // The label in the title screen's lettering: italic, cut by a slit
+    drawStyledText(KEY_BOX_X + 2, KEY_BOX_Y + 2, KEY_BOX_W - 4, KEY_BOX_H - 4,
+                   actuated ? OLED_COLOR_BLACK : OLED_COLOR_WHITE, 0.22f, [&] {
+        s_display.setFont(font);
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setCursor(tx, ty);
+        s_display.print(label);
+        s_display.setFont(nullptr);
+    });
     s_display.setFont(nullptr);
     s_display.setTextColor(OLED_COLOR_WHITE);
 }
@@ -650,8 +772,9 @@ int16_t scaleX(float mm) {
 }
 
 // Fixed 0..4 mm scale: 1px track, 3px fill, mm ticks, and the configured initial actuation
-// point as a line through the bar plus a pointer underneath
-void drawTravelScale(float travelMm) {
+// point as a line through the bar plus a pointer underneath. With Rapid Trigger, releaseMm >= 0
+// adds a pointer above the bar: the depth at which the held key will release.
+void drawTravelScale(float travelMm, float releaseMm = -1.0f) {
     if (travelMm < 0.0f) travelMm = 0.0f;
     if (travelMm > SCALE_MAX_MM) travelMm = SCALE_MAX_MM;
 
@@ -670,26 +793,52 @@ void drawTravelScale(float travelMm) {
     s_display.drawFastHLine(ax - 1, SCALE_Y + 5, 3, OLED_COLOR_WHITE);
     s_display.drawFastHLine(ax - 2, SCALE_Y + 6, 5, OLED_COLOR_WHITE);
 
-    s_display.setTextSize(1);
-    s_display.setCursor(SCALE_X, 57);
-    s_display.print("0");
+    if (releaseMm >= 0.0f) {
+        int16_t rx = scaleX(releaseMm > SCALE_MAX_MM ? SCALE_MAX_MM : releaseMm);
+        s_display.drawFastHLine(rx - 1, SCALE_Y - 2, 3, OLED_COLOR_WHITE);
+        s_display.drawPixel(rx, SCALE_Y - 1, OLED_COLOR_WHITE);
+    }
+
 }
 
-// Keypad map. Resting: outline. Travelling: outline with an inner level that keeps a dark
-// ring. Actuated: solid. Focus is marked by row and column pointers outside the grid, so
+// Keypad map. Resting: outline. Travelling: outline with a level that rises toward the
+// actuation point (a full cell is about to fire). Actuated: solid, with a ring around it for two
+// frames, then a dithered afterglow that thins out over GLOW_FRAMES. Focus is marked by row and column pointers outside the grid, so
 // neighbouring actuated keys can never make it ambiguous.
 void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus) {
+    static const uint8_t kBayer4[4][4] = {
+        { 0,  8,  2, 10}, {12,  4, 14,  6}, { 3, 11,  1,  9}, {15,  7, 13,  5}};
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
         int16_t x = MAP_X + (i % 4) * (MAP_CELL + MAP_GAP);
         int16_t y = MAP_Y + (i / 4) * (MAP_CELL + MAP_GAP);
         if (actuated[i]) {
+            if (!s_prevActuated[i]) s_keyFlash[i] = FLASH_FRAMES;
+            s_prevActuated[i] = true;
             s_display.fillRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
+            if (s_keyFlash[i] > 0) {
+                s_display.drawRect(x - 1, y - 1, MAP_CELL + 2, MAP_CELL + 2, OLED_COLOR_WHITE);
+                s_keyFlash[i]--;
+            }
+            s_keyGlow[i] = GLOW_FRAMES;
             continue;
         }
+        s_prevActuated[i] = false;
         s_display.drawRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
         float mm = s_view.keys[i].travelMm;
+        if (s_keyGlow[i] > 0) {
+            int16_t threshold = (int16_t)s_keyGlow[i] * 2 - 4;
+            for (int16_t py = 1; py < MAP_CELL - 1; ++py) {
+                for (int16_t px = 1; px < MAP_CELL - 1; ++px) {
+                    if (kBayer4[py & 3][px & 3] < threshold) {
+                        s_display.drawPixel(x + px, y + py, OLED_COLOR_WHITE);
+                    }
+                }
+            }
+            s_keyGlow[i]--;
+        }
         if (mm >= FOCUS_REST_MM) {
-            int16_t rows = (int16_t)(mm / SCALE_MAX_MM * 5.0f + 0.5f);
+            float toAct = s_view.actuationMm > 0.1f ? s_view.actuationMm : 0.1f;
+            int16_t rows = (int16_t)(mm / toAct * 5.0f + 0.5f);
             if (rows < 1) rows = 1;
             if (rows > 5) rows = 5;
             s_display.fillRect(x + 2, y + MAP_CELL - 2 - rows, MAP_CELL - 4, rows, OLED_COLOR_WHITE);
@@ -708,22 +857,39 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus) {
     s_display.drawFastHLine(cx - 2, gridBottom + 4, 5, OLED_COLOR_WHITE);
 }
 
-void renderFullScreen() {
-    // If the rotary encoder was clicked or turned in the last 2.8s, show focused tuning card
-    if ((millis() - s_menuLastActive) < 2800) {
-        renderMenuOverlay();
-        discardGridLatches();
-        s_display.display();
-        return;
+// The top-left status of the left panel speaks only when there is something to say: ACTUATED (chip)
+// while a key is down, or, whenever key presses are not being sent to the computer, why not, so a
+// pad that looks alive but types nothing (no calibration yet, output switched off) is never
+// mistaken for a working one. Otherwise the slot stays empty.
+void drawStatusLabel(const char* normal, bool chip) {
+    const char* text = normal;
+    if (s_view.outputStatus == display_link::OUTPUT_NEEDS_CAL) text = "CAL NEEDED";
+    else if (s_view.outputStatus == display_link::OUTPUT_OFF) text = "OUTPUT OFF";
+    if (!text) return;
+    bool blocked = text != normal;
+    if (blocked || chip) {
+        s_display.fillRect(1, 9, textWidth(text) + 4, 9, OLED_COLOR_WHITE);
+        s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
     }
+    s_display.setCursor(3, 10);
+    s_display.print(text);
+    s_display.setTextColor(OLED_COLOR_WHITE);
+}
 
+// Draws the key screen into the frame buffer (no display() call); consumes the edge latches.
+void renderKeysFrame(uint32_t now) {
     if (!s_gridCountersSynced) {
         discardGridLatches();
         s_gridCountersSynced = true;
     }
 
-    selectDisplayFocus(millis());
+    selectDisplayFocus(now);
     int8_t focus = s_focusKey;
+
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        const display_link::KeyView& k = s_view.keys[i];
+        s_keyPeak[i] = k.pressed ? (k.travelMm > s_keyPeak[i] ? k.travelMm : s_keyPeak[i]) : 0.0f;
+    }
 
     // Focused key state, from the same latches as the map (read before the map consumes them).
     // A release and re-press inside one frame shows one un-actuated frame so RT resets stay visible.
@@ -755,76 +921,147 @@ void renderFullScreen() {
     s_display.clearDisplay();
     s_display.setTextColor(OLED_COLOR_WHITE);
     uint8_t layer = s_view.activeLayer;
-    drawKeyScreenHeader(layer, focus >= 0);
+    drawKeyScreenHeader(layer);
 
     if (focus >= 0) {
         const display_link::KeyView& k = s_view.keys[(uint8_t)focus];
-        if (focusActuated) {
-            s_display.fillRect(1, 9, textWidth("ACTUATED") + 4, 9, OLED_COLOR_WHITE);
-            s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-            s_display.setCursor(3, 10);
-            s_display.print("ACTUATED");
-            s_display.setTextColor(OLED_COLOR_WHITE);
-        } else {
-            s_display.setCursor(3, 10);
-            s_display.print("TRAVEL");
-        }
+        drawStatusLabel(focusActuated ? "ACTUATED" : nullptr, focusActuated);
         drawKeyBox(k.label, focusActuated);
-        drawTravelScale(k.travelMm);
+        float releaseAt = -1.0f;
+        if (s_view.rapidTrigger && k.pressed) {
+            releaseAt = s_keyPeak[(uint8_t)focus] - s_view.rtSensMm;
+            if (releaseAt < 0.0f) releaseAt = -1.0f;
+        }
+        drawTravelScale(k.travelMm, releaseAt);
         printRight((String(displayTravelMm((uint8_t)focus, k.travelMm), 1) + "mm").c_str(),
                    KEY_BOX_X + KEY_BOX_W - 1, 57);
     } else {
-        s_display.setCursor(3, 10);
-        s_display.print("READY");
+        drawStatusLabel(nullptr, false);
 
         const char* title = layer < 3 ? LAYER_TITLES[layer] : "?";
         int16_t x1, y1;
         uint16_t w, h;
         s_display.setFont(&FreeSansBold9pt7b);
         s_display.getTextBounds(title, 0, 0, &x1, &y1, &w, &h);
-        s_display.setCursor(KEY_BOX_X - x1, 33);
-        s_display.print(title);
         s_display.setFont(nullptr);
+        drawStyledText(KEY_BOX_X, 19, KEY_BOX_W, 18, OLED_COLOR_WHITE, 0.22f, [&] {
+            s_display.setFont(&FreeSansBold9pt7b);
+            s_display.setTextColor(OLED_COLOR_WHITE);
+            s_display.setCursor(KEY_BOX_X + 2 - x1, 33);
+            s_display.print(title);
+            s_display.setFont(nullptr);
+        });
 
         s_display.setCursor(1, 38);
         s_display.print("ACT");
         printRight((String(s_view.actuationMm, 1) + "mm").c_str(), KEY_BOX_X + KEY_BOX_W - 1, 38);
         drawTravelScale(0.0f);
-        printRight("4mm", KEY_BOX_X + KEY_BOX_W - 1, 57);
     }
 
     drawKeypadMap(actuated, focus);
+}
 
+void blendWipe(uint8_t* outgoing, const uint8_t* incoming, int16_t front);
+
+// Key screen, or the tuning card for 2.8 s after the encoder was used. Switching between the two
+// is a short dithered wipe with both screens live, so the menu arrives and leaves instead of
+// popping.
+constexpr uint32_t MENU_HOLD_MS = 2800;
+constexpr uint32_t MODE_TRANSITION_MS = 260;
+bool s_menuVisible = false;
+bool s_modeTransition = false;
+uint32_t s_modeChangeAt = 0;
+
+void renderFullScreen() {
+    uint32_t now = millis();
+    bool wantMenu = (now - s_menuLastActive) < MENU_HOLD_MS;
+    if (wantMenu != s_menuVisible) {
+        s_menuVisible = wantMenu;
+        s_modeTransition = true;
+        s_modeChangeAt = now;
+    }
+    uint32_t elapsed = now - s_modeChangeAt;
+    if (s_modeTransition && elapsed >= MODE_TRANSITION_MS) s_modeTransition = false;
+
+    if (!s_modeTransition) {
+        if (s_menuVisible) {
+            renderMenuOverlay();
+            discardGridLatches();
+        } else {
+            renderKeysFrame(now);
+        }
+        s_display.display();
+        return;
+    }
+
+    // Wipe from the old screen to the new one; both keep animating meanwhile
+    uint8_t* buf = s_display.getBuffer();
+    int16_t front = (int16_t)((elapsed * 256UL) / MODE_TRANSITION_MS);
+    if (s_menuVisible) {
+        renderMenuOverlay();
+        memcpy(s_ssScratch, buf, sizeof(s_ssScratch));
+        renderKeysFrame(now);
+    } else {
+        renderKeysFrame(now);
+        memcpy(s_ssScratch, buf, sizeof(s_ssScratch));
+        renderMenuOverlay();
+    }
+    blendWipe(buf, s_ssScratch, front);
     s_display.display();
 }
 
-void updateFloatingBadge(const char* text) {
-    const int16_t w = (int16_t)strlen(text) * 6 + 8;
-    const int16_t h = 14;
-    s_badgeX += s_badgeDX;
-    s_badgeY += s_badgeDY;
-    if (s_badgeX <= 1) { s_badgeX = 1; s_badgeDX = 1; }
-    if (s_badgeX + w >= 127) { s_badgeX = 127 - w; s_badgeDX = -1; }
-    if (s_badgeY <= 1) { s_badgeY = 1; s_badgeDY = 1; }
-    if (s_badgeY + h >= 63) { s_badgeY = 63 - h; s_badgeDY = -1; }
+// Title card naming the animation: slides up from the bottom edge when an animation starts, stays
+// for BADGE_MS, then slides away and leaves the animation clear.
+constexpr uint32_t BADGE_MS = 3500;
+constexpr uint32_t BADGE_SLIDE_MS = 300;
 
-    // Clear area behind badge and draw framing card with rounded corners
-    s_display.fillRect(s_badgeX - 1, s_badgeY - 1, w + 2, h + 2, OLED_COLOR_BLACK);
-    s_display.drawRoundRect(s_badgeX - 1, s_badgeY - 1, w + 2, h + 2, 2, OLED_COLOR_WHITE);
+void drawBadge(const char* text, uint32_t sinceMs) {
+    if (sinceMs >= BADGE_MS) return;
+    const int16_t pitch = 7;                                   // tracked capitals
+    const int16_t w = (int16_t)strlen(text) * pitch - 1 + 16;
+    const int16_t h = 15;
+    const int16_t restY = 63 - h - 1;
+    int16_t offset = 0;                          // pixels below the resting position
+    if (sinceMs < BADGE_SLIDE_MS) {
+        offset = (int16_t)((BADGE_SLIDE_MS - sinceMs) * (h + 3) / BADGE_SLIDE_MS);
+    } else if (sinceMs > BADGE_MS - BADGE_SLIDE_MS) {
+        offset = (int16_t)((sinceMs - (BADGE_MS - BADGE_SLIDE_MS)) * (h + 3) / BADGE_SLIDE_MS);
+    }
+    const int16_t x = 64 - w / 2;
+    const int16_t y = restY + offset;
+    s_display.fillRect(x, y, w, h, OLED_COLOR_BLACK);
+    // Corner brackets around the name, like the frame of the title screen
+    const int16_t a = 4;
+    s_display.drawFastHLine(x, y, a, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(x, y, a, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(x + w - a, y, a, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(x + w - 1, y, a, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(x, y + h - 1, a, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(x, y + h - a, a, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(x + w - a, y + h - 1, a, OLED_COLOR_WHITE);
+    s_display.drawFastVLine(x + w - 1, y + h - a, a, OLED_COLOR_WHITE);
     s_display.setTextColor(OLED_COLOR_WHITE);
-    s_display.setTextSize(1);
-    s_display.setCursor(s_badgeX + 4, s_badgeY + (h - 8) / 2);
-    s_display.print(text);
+    printTracked(text, x + 8, y + 4, pitch);
 }
 
 // Animation 0: 3D Warp Starfield & Floating DRIFTPAD Badge
 void renderAnimStarfield() {
+    static uint16_t frame = 0;
     if (!s_starsInit) {
         initStarfield();
     }
+    ensureSin();
+
+    // The ship breathes: cruise speed swells into a hyperspace surge (long streaks) every ~9 s,
+    // and the vanishing point drifts in a slow loop, as if steering
+    ++frame;
+    const int16_t swell = s_sin[(uint8_t)(frame >> 1)];                 // 0..255
+    const int16_t speed = 2 + (int16_t)(((int32_t)swell * swell) >> 13);  // 2..9
+    const int16_t cx = 64 + (s_sin[(uint8_t)(frame / 3)] - 128) / 8;
+    const int16_t cy = 32 + (s_sin[(uint8_t)(frame / 4 + 64)] - 128) / 14;
 
     for (uint8_t i = 0; i < NUM_STARS; ++i) {
-        s_stars[i].z -= 2;
+        s_stars[i].z -= speed;
         if (s_stars[i].z <= 2) {
             s_stars[i].x = (rand() % 240) - 120;
             s_stars[i].y = (rand() % 120) - 60;
@@ -833,14 +1070,18 @@ void renderAnimStarfield() {
             s_stars[i].prev_y = -1;
         }
 
-        // Project 3D (x, y, z) to 2D screen center (64, 32)
-        int16_t sx = 64 + (s_stars[i].x * 45) / s_stars[i].z;
-        int16_t sy = 32 + (s_stars[i].y * 45) / s_stars[i].z;
+        // Project 3D (x, y, z) to 2D around the vanishing point
+        int16_t sx = cx + (s_stars[i].x * 45) / s_stars[i].z;
+        int16_t sy = cy + (s_stars[i].y * 45) / s_stars[i].z;
 
         if (sx >= 0 && sx < 128 && sy >= 0 && sy < 64) {
-            s_display.drawPixel(sx, sy, OLED_COLOR_WHITE);
-            // Draw streak tail for fast stars close to viewer
-            if (s_stars[i].z < 35 && s_stars[i].prev_x >= 0) {
+            // Far stars are single dots, near ones grow into 2x2 blocks with a streak behind them
+            if (s_stars[i].z < 22) {
+                s_display.fillRect(sx, sy, 2, 2, OLED_COLOR_WHITE);
+            } else {
+                s_display.drawPixel(sx, sy, OLED_COLOR_WHITE);
+            }
+            if (s_stars[i].prev_x >= 0) {
                 s_display.drawLine(s_stars[i].prev_x, s_stars[i].prev_y, sx, sy, OLED_COLOR_WHITE);
             }
             s_stars[i].prev_x = sx;
@@ -856,60 +1097,96 @@ void renderAnimStarfield() {
     }
 }
 
-// Animation 1: Digital Cyber Rain & Floating CYBER RT Badge
-void renderAnimMatrixRain() {
-    if (!s_rainInit) {
-        initRain();
+// Animation 1: Plasma
+void renderAnimPlasma() {
+    static const uint8_t kBayer4[4][4] = {
+        { 0,  8,  2, 10}, {12,  4, 14,  6}, { 3, 11,  1,  9}, {15,  7, 13,  5}};
+    if (!s_plasmaInit) {
+        initPlasma();
     }
+    s_plasmaT += 2;
+    const uint8_t t1 = (uint8_t)s_plasmaT;
+    const uint8_t t2 = (uint8_t)(s_plasmaT * 3 / 2);
+    const uint8_t t3 = (uint8_t)(s_plasmaT / 2);
+    const int16_t bias = (int16_t)(s_sin[(uint8_t)(s_plasmaT >> 2)] >> 5) - 5;   // -5..+2: swells and ebbs
 
-    for (uint8_t c = 0; c < RAIN_COLS; ++c) {
-        int16_t x = c * 8 + 3;
-        s_rain[c].y += s_rain[c].speed;
-
-        if (s_rain[c].y - s_rain[c].length > 64) {
-            s_rain[c].y = -(rand() % 16);
-            s_rain[c].speed = (rand() % 2) + 1;
-            s_rain[c].length = (rand() % 8) + 6;
-        }
-
-        int16_t headY = s_rain[c].y;
-        if (headY >= 0 && headY < 64) {
-            s_display.drawPixel(x, headY, OLED_COLOR_WHITE);
-            if (headY > 0) {
-                s_display.drawPixel(x, headY - 1, OLED_COLOR_WHITE);
-            }
-        }
-
-        // Draw sparse falling tail dots (< 2% duty cycle)
-        for (uint8_t k = 2; k < s_rain[c].length; k += 2) {
-            int16_t ty = headY - k;
-            if (ty >= 0 && ty < 64) {
-                s_display.drawPixel(x, ty, OLED_COLOR_WHITE);
+    uint8_t* buf = s_display.getBuffer();
+    for (uint8_t y = 0; y < SCREEN_HEIGHT; ++y) {
+        const uint8_t sy = s_sin[(uint8_t)(y * 6 + t2)];
+        const int16_t dy = ((int16_t)y - 32) * 8 / 5;   // vertical distance, stretched: pixels are not square to the eye
+        const uint16_t dy2 = (uint16_t)(dy * dy);
+        for (uint8_t x = 0; x < SCREEN_WIDTH; ++x) {
+            uint16_t v = s_sin[(uint8_t)(x * 3 + t1)] + sy +
+                         s_sin[(uint8_t)((x + y) * 2 + t3)] +
+                         s_sin[(uint8_t)(s_plasmaRoot[(s_plasmaDx2[x] + dy2) >> 3] - t1)];
+            uint8_t band = s_sin[(uint8_t)((v >> 2) * 2)];   // fold the sum into soft bands
+            if (kBayer4[y & 3][x & 3] < (int16_t)(band >> 4) + bias) {
+                buf[x + (y >> 3) * SCREEN_WIDTH] |= 1 << (y & 7);
             }
         }
     }
 }
 
-// Animation 2: Dual Harmonic Oscilloscope Flux Wave & Floating HALL FLUX Badge
-void renderAnimOscilloscope() {
-    s_wavePhase += 0.08f;
-    if (s_wavePhase > 62.8318f) {
-        s_wavePhase -= 62.8318f;
+// Animation 2: Tesseract
+// Projects the 16 vertices for the given rotation angles (X-W, Y-Z and X-Z planes)
+void projectTesseract(float a, float b, float c, int16_t* px, int16_t* py) {
+    const float ca = cosf(a), sa = sinf(a);
+    const float cb = cosf(b), sb = sinf(b);
+    const float cc = cosf(c), sc = sinf(c);
+    for (uint8_t i = 0; i < TESS_VERTS; ++i) {
+        float x = (i & 1) ? 1.0f : -1.0f;
+        float y = (i & 2) ? 1.0f : -1.0f;
+        float z = (i & 4) ? 1.0f : -1.0f;
+        float w = (i & 8) ? 1.0f : -1.0f;
+        float t;
+        t = x * ca - w * sa; w = x * sa + w * ca; x = t;
+        t = y * cb - z * sb; z = y * sb + z * cb; y = t;
+        t = x * cc - z * sc; z = x * sc + z * cc; x = t;
+        float k4 = 1.0f / (2.6f - w * 0.55f);                // 4-D -> 3-D
+        x *= k4; y *= k4; z *= k4;
+        float k3 = 1.0f / (3.1f - z * 0.9f);                 // 3-D -> 2-D
+        px[i] = 64 + (int16_t)(x * k3 * 100.0f);
+        py[i] = 32 + (int16_t)(y * k3 * 100.0f);
     }
+}
 
-    // Two interlaced harmonic flux waveforms
-    for (int16_t x = 0; x < 128; x += 2) {
-        float fx = (float)x * 0.065f;
-        // Primary analog wave
-        int16_t y1 = 32 + (int16_t)(sinf(fx + s_wavePhase) * 14.0f + sinf(fx * 0.45f - s_wavePhase * 0.7f) * 7.0f);
-        if (y1 >= 0 && y1 < 64) {
-            s_display.drawPixel(x, y1, OLED_COLOR_WHITE);
+void drawDottedLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
+    int16_t dx = x1 - x0, dy = y1 - y0;
+    int16_t n = abs(dx) > abs(dy) ? abs(dx) : abs(dy);
+    for (int16_t i = 0; i <= n; i += 2) {
+        s_display.drawPixel(n ? x0 + dx * i / n : x0, n ? y0 + dy * i / n : y0, OLED_COLOR_WHITE);
+    }
+}
+
+void renderAnimTesseract() {
+    s_tessA += 0.021f;
+    s_tessB += 0.033f;
+    s_tessC += 0.012f;
+
+    // A dotted ghost of where the cube was a few frames ago trails the solid one, so the spin leaves
+    // a wake
+    int16_t gx[TESS_VERTS], gy[TESS_VERTS], px[TESS_VERTS], py[TESS_VERTS];
+    projectTesseract(s_tessA - 0.13f, s_tessB - 0.20f, s_tessC - 0.07f, gx, gy);
+    projectTesseract(s_tessA, s_tessB, s_tessC, px, py);
+    // 32 edges: vertices whose indices differ in exactly one bit
+    for (uint8_t i = 0; i < TESS_VERTS; ++i) {
+        for (uint8_t bit = 1; bit < TESS_VERTS; bit <<= 1) {
+            uint8_t j = i ^ bit;
+            if (j > i) {
+                drawDottedLine(gx[i], gy[i], gx[j], gy[j]);
+            }
         }
-        // Secondary harmonic wave
-        int16_t y2 = 32 + (int16_t)(cosf(fx * 0.85f - s_wavePhase * 1.3f) * 11.0f);
-        if (y2 >= 0 && y2 < 64) {
-            s_display.drawPixel(x + 1, y2, OLED_COLOR_WHITE);
+    }
+    for (uint8_t i = 0; i < TESS_VERTS; ++i) {
+        for (uint8_t bit = 1; bit < TESS_VERTS; bit <<= 1) {
+            uint8_t j = i ^ bit;
+            if (j > i) {
+                s_display.drawLine(px[i], py[i], px[j], py[j], OLED_COLOR_WHITE);
+            }
         }
+    }
+    for (uint8_t i = 0; i < TESS_VERTS; ++i) {
+        s_display.fillRect(px[i] - 1, py[i] - 1, 3, 3, OLED_COLOR_WHITE);
     }
 }
 
@@ -949,6 +1226,15 @@ void renderAnimSynthGrid() {
         s_display.drawFastHLine(64 - half, HORIZON + dy, half * 2 + 1, OLED_COLOR_WHITE);
     }
 
+    // Distant mountains in silhouette, drifting sideways; the sun sinks behind them
+    ensureSin();
+    const uint8_t drift = (uint8_t)(s_gridFrame / 2);
+    for (int16_t x = 0; x < 128; ++x) {
+        int16_t h = 1 + s_sin[(uint8_t)(x * 3 + drift)] / 50 + s_sin[(uint8_t)(x * 7 + 90 - 2 * drift)] / 90;
+        s_display.drawFastVLine(x, HORIZON - h, h, OLED_COLOR_BLACK);
+        s_display.drawPixel(x, HORIZON - h, OLED_COLOR_WHITE);
+    }
+
     s_display.drawFastHLine(0, HORIZON, 128, OLED_COLOR_WHITE);
 
     // Floor rails converging on the vanishing point
@@ -957,12 +1243,16 @@ void renderAnimSynthGrid() {
     }
 
     // Cross ties rushing toward the viewer (perspective y = horizon + k / depth)
+    // Ties bunch up toward the horizon; a tie less than 3 px under the previous line would merge
+    // into a solid band, so it is left out
+    int16_t lastY = HORIZON;
     for (uint8_t k = 0; k < 9; ++k) {
         float depth = (float)k + 1.0f - s_gridScroll;
         if (depth < 0.5f) continue;
         int16_t y = HORIZON + (int16_t)(33.0f / depth);
-        if (y > HORIZON + 1 && y < 64) {
+        if (y < 64 && y - lastY >= 3) {
             s_display.drawFastHLine(0, y, 128, OLED_COLOR_WHITE);
+            lastY = y;
         }
     }
 }
@@ -970,8 +1260,16 @@ void renderAnimSynthGrid() {
 void spawnRipple(Ripple& rp) {
     rp.x = rand() % 128;
     rp.y = rand() % 64;
-    rp.r = -(rand() % 24);          // Staggered start so rings don't pulse in lockstep
-    rp.maxR = 22 + (rand() % 26);
+    rp.t = -0.02f * (float)(rand() % 24);    // Staggered start so rings don't pulse in lockstep
+    rp.step = 0.013f + 0.0015f * (float)(rand() % 8);
+    rp.maxR = 24 + (rand() % 28);
+}
+
+// Ease-out: the ring leaps away from the impact and settles as it spreads
+int16_t rippleRadius(const Ripple& rp, float t) {
+    if (t <= 0.0f) return 0;
+    float e = 1.0f - (1.0f - t) * (1.0f - t);
+    return (int16_t)(rp.maxR * e);
 }
 
 // Midpoint circle; skip > 0 draws only every skip-th step so fading rings break up into dots
@@ -1013,26 +1311,33 @@ void renderAnimRipples() {
 
     for (uint8_t i = 0; i < NUM_RIPPLES; ++i) {
         Ripple& rp = s_ripples[i];
-        rp.r++;
-        if (rp.r > rp.maxR) {
+        rp.t += rp.step;
+        if (rp.t > 1.0f) {
             spawnRipple(rp);
             continue;
         }
-        if (rp.r <= 0) continue;
+        if (rp.t <= 0.0f) continue;
 
-        // Impact flash, then an outer wavefront trailed by a weaker echo ring
-        if (rp.r <= 2) {
-            s_display.fillCircle(rp.x, rp.y, 3 - rp.r, OLED_COLOR_WHITE);
+        // The droplet, then an outer wavefront trailed by a weaker echo ring; both break up into
+        // dots as the wave fades
+        if (rp.t < 0.07f) {
+            s_display.fillCircle(rp.x, rp.y, 2, OLED_COLOR_WHITE);
+        } else if (rp.t < 0.14f) {
+            s_display.drawCircle(rp.x, rp.y, 3, OLED_COLOR_WHITE);
         }
         uint8_t skip = 0;
-        if (rp.r > rp.maxR * 3 / 4) {
+        if (rp.t > 0.75f) {
             skip = 3;
-        } else if (rp.r > rp.maxR / 2) {
+        } else if (rp.t > 0.5f) {
             skip = 2;
         }
-        drawRippleRing(rp.x, rp.y, rp.r, skip);
-        if (rp.r > 7) {
-            drawRippleRing(rp.x, rp.y, rp.r - 7, skip + 2);
+        int16_t r = rippleRadius(rp, rp.t);
+        if (r > 0) {
+            drawRippleRing(rp.x, rp.y, r, skip);
+        }
+        int16_t echo = rippleRadius(rp, rp.t - 0.17f);
+        if (echo > 1) {
+            drawRippleRing(rp.x, rp.y, echo, skip + 2);
         }
     }
 }
@@ -1139,8 +1444,8 @@ struct ScreensaverAnim {
 
 const ScreensaverAnim kScreensaverAnims[NUM_SCREENSAVER_ANIMS] = {
     {renderAnimStarfield,    "DRIFTPAD"},
-    {renderAnimMatrixRain,   "CYBER RT"},
-    {renderAnimOscilloscope, "HALL FLUX"},
+    {renderAnimPlasma,       "PLASMA"},
+    {renderAnimTesseract,    "TESSERACT"},
     {renderAnimSynthGrid,    "DRIFT GRID"},
     {renderAnimRipples,      "MAG PULSE"},
     {renderAnimLava,         "LAVA LAMP"},
@@ -1192,6 +1497,7 @@ void renderScreensaver() {
         s_ssSessionStart = sessionStart;
         s_ssShownAnim = target;
         s_ssIncomingAnim = -1;
+        s_ssLabelSince = now;
     } else if (s_ssIncomingAnim < 0 && target != s_ssShownAnim) {
         s_ssIncomingAnim = target;
         s_ssTransitionStart = now;
@@ -1201,9 +1507,11 @@ void renderScreensaver() {
     if (s_ssIncomingAnim >= 0 && elapsed >= SCREENSAVER_TRANSITION_MS) {
         s_ssShownAnim = s_ssIncomingAnim;
         s_ssIncomingAnim = -1;
+        s_ssLabelSince = s_ssTransitionStart + SCREENSAVER_TRANSITION_MS / 2;   // the title switched mid-wipe
     }
 
     const char* badge = kScreensaverAnims[s_ssShownAnim].label;
+    uint32_t badgeSince = now - s_ssLabelSince;
     s_display.clearDisplay();
 
     if (s_ssIncomingAnim < 0) {
@@ -1220,11 +1528,308 @@ void renderScreensaver() {
         blendWipe(buf, s_ssScratch, front);
         if (front >= 128) {
             badge = kScreensaverAnims[s_ssIncomingAnim].label;
+            badgeSince = elapsed - SCREENSAVER_TRANSITION_MS / 2;
         }
     }
 
-    updateFloatingBadge(badge);
+    drawBadge(badge, badgeSince);
 
+    s_display.display();
+}
+
+// ---------------------------------------------------------------------------------------
+// Power-up / reset intro, drawn like an instrument coming up: corner brackets and a ruler along the
+// bottom edge (the scale the key screen measures travel with) come on; the wordmark, a heavy
+// extended italic with chamfered corners cut by a fine slit, arrives as two halves that DRIFT in from
+// opposite sides and lock together, and a glint crosses it; a swell settles on a fine horizon
+// beneath, and a tracked tagline types in while the ruler's bar fills. The tagline then erases itself
+// and the pad's real status types in (calibration needed, output off or ready), a second glint
+// crosses, and the whole screen wipes into the key screen. Any key press ends it early; otherwise it
+// runs INTRO_MS and then INTRO_WIPE_MS of wipe.
+// ---------------------------------------------------------------------------------------
+constexpr uint32_t INTRO_MS = 5400;        // the intro proper
+constexpr uint32_t INTRO_WIPE_MS = 700;    // then a dithered wipe into the key screen
+uint32_t s_introStart = 0;
+bool s_introDone = false;
+
+// 0 before `a`, 1 after `b`, linear between (times in ms)
+float introSpan(uint32_t t, uint32_t a, uint32_t b) {
+    if (t <= a) return 0.0f;
+    if (t >= b) return 1.0f;
+    return (float)(t - a) / (float)(b - a);
+}
+
+float introEaseOut(float p) {          // fast start, soft landing
+    float q = 1.0f - p;
+    return 1.0f - q * q * q;
+}
+
+// ---- the wordmark -----------------------------------------------------------------------------
+// Each capital is a few filled polygons in an 18-unit-tall design space (stems 3 units, corners
+// chamfered), slanted and squeezed a little to fit, then split into an upper and a lower half so the
+// halves can drift independently. Counters are drawn last, in black.
+struct IntroPt { float x, y; };
+
+// Fills a polygon on screen rows [rowMin, rowMax] (scanline, even-odd), transformed from glyph units
+void introFillPoly(const IntroPt* p, uint8_t n, int16_t ox, int16_t oy, int16_t rowMin, int16_t rowMax,
+                   uint16_t color) {
+    constexpr float SX = 0.85f;         // horizontal squeeze
+    constexpr float SHEAR = 0.22f;      // italic slant: the top leans right
+    float px[12], py[12];
+    float lo = 1e9f, hi = -1e9f;
+    for (uint8_t i = 0; i < n; ++i) {
+        px[i] = ox + (p[i].x + (18.0f - p[i].y) * SHEAR) * SX;
+        py[i] = oy + p[i].y;
+        if (py[i] < lo) lo = py[i];
+        if (py[i] > hi) hi = py[i];
+    }
+    int16_t y0 = (int16_t)floorf(lo), y1 = (int16_t)ceilf(hi) - 1;
+    if (y0 < rowMin) y0 = rowMin;
+    if (y1 > rowMax) y1 = rowMax;
+    for (int16_t y = y0; y <= y1; ++y) {
+        const float yc = y + 0.5f;
+        float xs[8];
+        uint8_t k = 0;
+        for (uint8_t i = 0; i < n; ++i) {
+            uint8_t j = (i + 1) % n;
+            if ((py[i] <= yc && py[j] > yc) || (py[j] <= yc && py[i] > yc)) {
+                if (k < 8) xs[k++] = px[i] + (yc - py[i]) * (px[j] - px[i]) / (py[j] - py[i]);
+            }
+        }
+        for (uint8_t a = 1; a < k; ++a) {       // sort the crossings
+            float v = xs[a];
+            int8_t b = (int8_t)a - 1;
+            while (b >= 0 && xs[b] > v) { xs[b + 1] = xs[b]; --b; }
+            xs[b + 1] = v;
+        }
+        for (uint8_t a = 0; a + 1 < k; a += 2) {
+            int16_t xa = (int16_t)lroundf(xs[a]), xb = (int16_t)lroundf(xs[a + 1]);
+            if (xb > xa) s_display.drawFastHLine(xa, y, xb - xa, color);
+        }
+    }
+}
+
+#define IP(...) __VA_ARGS__
+// Draws one glyph's white shapes then its counters, on the rows given. Returns the advance (in
+// glyph units, before the squeeze).
+float introGlyphHalf(char c, int16_t ox, int16_t oy, int16_t rowMin, int16_t rowMax) {
+    auto white = [&](std::initializer_list<IntroPt> pts) {
+        IntroPt buf[12];
+        uint8_t n = 0;
+        for (const IntroPt& q : pts) if (n < 12) buf[n++] = q;
+        introFillPoly(buf, n, ox, oy, rowMin, rowMax, OLED_COLOR_WHITE);
+    };
+    auto black = [&](std::initializer_list<IntroPt> pts) {
+        IntroPt buf[12];
+        uint8_t n = 0;
+        for (const IntroPt& q : pts) if (n < 12) buf[n++] = q;
+        introFillPoly(buf, n, ox, oy, rowMin, rowMax, OLED_COLOR_BLACK);
+    };
+    switch (c) {
+        case 'D':
+            white({{0, 0}, {8, 0}, {12, 4}, {12, 14}, {8, 18}, {0, 18}});
+            black({{3, 3}, {7, 3}, {9, 5}, {9, 13}, {7, 15}, {3, 15}});
+            return 12;
+        case 'R':
+            white({{0, 0}, {9, 0}, {12, 3}, {12, 9}, {9, 11}, {0, 11}});
+            white({{0, 0}, {3, 0}, {3, 18}, {0, 18}});
+            white({{6, 11}, {10, 11}, {13, 18}, {9, 18}});
+            black({{3, 3}, {8, 3}, {9, 4}, {9, 7}, {8, 8}, {3, 8}});
+            return 13;
+        case 'I':
+            white({{0, 0}, {3, 0}, {3, 18}, {0, 18}});
+            return 3;
+        case 'F':
+            white({{0, 0}, {12, 0}, {10.5f, 3}, {0, 3}});
+            white({{0, 0}, {3, 0}, {3, 18}, {0, 18}});
+            white({{0, 8}, {9, 8}, {8, 11}, {0, 11}});
+            return 12;
+        case 'T':
+            white({{0, 0}, {14, 0}, {12.5f, 3}, {1.5f, 3}});
+            white({{5.5f, 0}, {8.5f, 0}, {8.5f, 18}, {5.5f, 18}});
+            return 14;
+        case 'P':
+            white({{0, 0}, {9, 0}, {12, 3}, {12, 9}, {9, 12}, {0, 12}});
+            white({{0, 0}, {3, 0}, {3, 18}, {0, 18}});
+            black({{3, 3}, {8, 3}, {9, 4}, {9, 8}, {8, 9}, {3, 9}});
+            return 12;
+        case 'A':
+            white({{0, 18}, {5, 0}, {9, 0}, {14, 18}, {10.5f, 18}, {9.6f, 14.5f}, {4.4f, 14.5f}, {3.5f, 18}});
+            black({{5.4f, 11.5f}, {8.6f, 11.5f}, {7, 5.5f}});
+            return 14;
+        default:
+            return 8;
+    }
+}
+#undef IP
+
+constexpr int16_t WORD_TOP = 13;          // top row of the capitals (18 rows)
+constexpr int16_t WORD_LEFT = 8;
+constexpr int16_t WORD_WIDTH = 111;       // the drawn extent, used for the horizon beneath
+constexpr int16_t WORD_GAP = 4;           // px between letters
+constexpr int16_t SLIT_ROW = 9;           // the empty row that cuts every letter, from WORD_TOP
+
+// Draws the wordmark at time t: each letter's upper half drifts in from the left and its lower half
+// from the right, letters staggered, easing to rest and locking together
+void drawIntroWordmark(uint32_t t) {
+    static const char kName[] = "DRIFTPAD";
+    int16_t x = WORD_LEFT;
+    for (uint8_t i = 0; i < 8; ++i) {
+        const float p = introEaseOut(introSpan(t, 350 + 80u * i, 1150 + 80u * i));
+        const int16_t away = (int16_t)lroundf((1.0f - p) * 10.0f);
+        float adv = 0;
+        if (p > 0.0f) {
+            adv = introGlyphHalf(kName[i], x - away, WORD_TOP, WORD_TOP, WORD_TOP + SLIT_ROW - 1);
+            introGlyphHalf(kName[i], x + away, WORD_TOP, WORD_TOP + SLIT_ROW + 1, WORD_TOP + 17);
+        } else {
+            // Not started yet: still advance the pen by this letter's width
+            static const uint8_t kWidth[] = {12, 13, 3, 12, 14, 12, 14, 12};
+            adv = kWidth[i];
+        }
+        x += (int16_t)lroundf(adv * 0.85f) + WORD_GAP;
+    }
+}
+
+// One glint crossing the finished wordmark: a slanted band inverts the lit pixels under it
+void drawIntroGlint(uint32_t t, uint32_t from, uint32_t to) {
+    const float p = introSpan(t, from, to);
+    if (p <= 0.0f || p >= 1.0f) return;
+    uint8_t* buf = s_display.getBuffer();
+    const float center = WORD_LEFT - 12 + p * (WORD_WIDTH + 30);
+    for (int16_t y = WORD_TOP; y < WORD_TOP + 18; ++y) {
+        const float lean = (18.0f - (y - WORD_TOP)) * 0.22f * 0.85f;
+        for (int16_t x = (int16_t)(center + lean) - 3; x <= (int16_t)(center + lean) + 3; ++x) {
+            if (x < 0 || x > 127) continue;
+            if (buf[x + (y >> 3) * 128] & (1 << (y & 7))) {
+                buf[x + (y >> 3) * 128] &= (uint8_t)~(1 << (y & 7));   // a lit pixel under the glint goes dark
+            }
+        }
+    }
+}
+
+// ---- the rest of the frame ---------------------------------------------------------------------
+// The horizon under the wordmark, with a low swell riding on it that keeps rolling
+void drawIntroHorizon(uint32_t t) {
+    const float ts = t / 1000.0f;
+    const int16_t revealedTo = WORD_LEFT + (int16_t)(introSpan(t, 1100, 2000) * WORD_WIDTH);
+    const int16_t y0 = 39;
+    int16_t px = 0, py = 0;
+    for (int16_t x = WORD_LEFT; x < WORD_LEFT + WORD_WIDTH && x <= revealedTo; ++x) {
+        float k = (float)(x - WORD_LEFT) / WORD_WIDTH;
+        float envelope = sinf(k * 3.1415926f);                        // calm at both ends
+        int16_t y = y0 + (int16_t)lroundf(sinf(x * 0.30f - ts * 3.2f) * 2.2f * envelope);
+        if (x > WORD_LEFT) s_display.drawLine(px, py, x, y, OLED_COLOR_WHITE);
+        px = x;
+        py = y;
+    }
+    // End caps, like the ends of a scale
+    if (revealedTo > WORD_LEFT) s_display.drawFastVLine(WORD_LEFT, y0 - 3, 7, OLED_COLOR_WHITE);
+    if (revealedTo >= WORD_LEFT + WORD_WIDTH - 1) {
+        s_display.drawFastVLine(WORD_LEFT + WORD_WIDTH - 1, y0 - 3, 7, OLED_COLOR_WHITE);
+    }
+}
+
+void drawIntroFrame(uint32_t t) {
+    // Corner brackets
+    const int16_t arm = (int16_t)(7 * introSpan(t, 0, 350));
+    if (arm > 0) {
+        s_display.drawFastHLine(0, 0, arm, OLED_COLOR_WHITE);
+        s_display.drawFastVLine(0, 0, arm, OLED_COLOR_WHITE);
+        s_display.drawFastHLine(128 - arm, 0, arm, OLED_COLOR_WHITE);
+        s_display.drawFastVLine(127, 0, arm, OLED_COLOR_WHITE);
+        s_display.drawFastHLine(0, 63, arm, OLED_COLOR_WHITE);
+        s_display.drawFastVLine(0, 64 - arm, arm, OLED_COLOR_WHITE);
+        s_display.drawFastHLine(128 - arm, 63, arm, OLED_COLOR_WHITE);
+        s_display.drawFastVLine(127, 64 - arm, arm, OLED_COLOR_WHITE);
+    }
+
+    // The ruler along the bottom: a baseline with ticks (long every 20 px), and a bar filling under it
+    const int16_t rulerEnd = 4 + (int16_t)(120 * introSpan(t, 0, 500));
+    if (rulerEnd > 4) {
+        s_display.drawFastHLine(4, 59, rulerEnd - 4, OLED_COLOR_WHITE);
+        for (int16_t x = 4; x <= rulerEnd; x += 4) {
+            const bool major = (x - 4) % 20 == 0;
+            s_display.drawFastVLine(x, major ? 54 : 56, major ? 5 : 3, OLED_COLOR_WHITE);
+        }
+    }
+    const int16_t fill = (int16_t)(120UL * (t > INTRO_MS ? INTRO_MS : t) / INTRO_MS);
+    if (fill > 0) s_display.fillRect(4, 61, fill, 2, OLED_COLOR_WHITE);
+}
+
+void renderIntroFrame(uint32_t t) {
+    s_display.clearDisplay();
+
+    drawIntroWordmark(t);
+    drawIntroGlint(t, 1900, 2500);
+    drawIntroGlint(t, 4700, 5300);
+    drawIntroHorizon(t);
+
+    // Tagline in tracked capitals, typed in, later erased; then the pad's real status types in
+    {
+        static const char kTag[] = "HALL-EFFECT";
+        const uint8_t tagLen = sizeof(kTag) - 1;
+        int16_t shown = 0;
+        if (t >= 2000) shown = (int16_t)((t - 2000) / 55);
+        if (shown > tagLen) shown = tagLen;
+        if (t >= 3300) shown = tagLen - (int16_t)((t - 3300) / 30);    // erased again
+        if (shown < 0) shown = 0;
+        const int16_t pitch = 8;
+        const int16_t left = 64 - (int16_t)(tagLen * pitch) / 2 + 1;
+        s_display.setTextSize(1);
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        for (int16_t i = 0; i < shown; ++i) {
+            s_display.setCursor(left + i * pitch, 46);
+            s_display.print(kTag[i]);
+        }
+        const bool typing = (t >= 2000 && t < 2000 + 55u * tagLen) || (t >= 3300 && shown > 0);
+        if (typing) s_display.fillRect(left + shown * pitch, 46, 5, 7, OLED_COLOR_WHITE);   // cursor
+
+        if (t >= 3700) {
+            const char* status;
+            switch (s_view.outputStatus) {
+                case display_link::OUTPUT_ON:        status = "OUTPUT READY"; break;
+                case display_link::OUTPUT_NEEDS_CAL: status = "CALIBRATION NEEDED"; break;
+                default:                             status = "OUTPUT OFF"; break;
+            }
+            const int16_t len = (int16_t)strlen(status);
+            int16_t typed = (int16_t)((t - 3700) / 45);
+            if (typed > len) typed = len;
+            char buf[24];
+            memcpy(buf, status, typed);
+            buf[typed] = '\0';
+            const int16_t sx = 64 - len * 6 / 2;
+            s_display.setCursor(sx, 46);
+            s_display.print(buf);
+            if (typed < len || ((t / 400) & 1)) s_display.fillRect(sx + typed * 6, 46, 5, 7, OLED_COLOR_WHITE);
+        }
+    }
+    // The firmware version, top right, once the name is up
+    if (t >= 2300) {
+        const char* ver = "v" DRIFTPAD_FW_VERSION;
+        s_display.setTextSize(1);
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setCursor(120 - textWidth(ver), 3);
+        s_display.print(ver);
+    }
+
+    drawIntroFrame(t);
+}
+
+// One intro frame, and after INTRO_MS a dithered wipe into the key screen (both keep animating)
+void presentIntro(uint32_t t) {
+    if (t < INTRO_MS) {
+        renderIntroFrame(t);
+        s_display.display();
+        return;
+    }
+    const uint32_t now = millis();
+    uint8_t* buf = s_display.getBuffer();
+    renderKeysFrame(now);
+    memcpy(s_ssScratch, buf, sizeof(s_ssScratch));
+    renderIntroFrame(t);
+    int16_t front = (int16_t)(((t - INTRO_MS) * 256UL) / INTRO_WIPE_MS);
+    if (front > 256) front = 256;
+    blendWipe(buf, s_ssScratch, front);
     s_display.display();
 }
 
@@ -1280,17 +1885,15 @@ void drawSplash() {
     s_display.setTextColor(OLED_COLOR_WHITE);
 
     if (s_fullScreenMode) {
-        s_display.drawRect(0, 0, 128, 64, OLED_COLOR_WHITE);
+        s_display.drawRoundRect(0, 0, 128, 64, 3, OLED_COLOR_WHITE);
         s_display.setTextSize(2);
-        s_display.setCursor(16, 8);
-        s_display.println("DRIFTPAD");
+        s_display.setCursor(64 - textWidth("DRIFTPAD", 2) / 2, 9);
+        s_display.print("DRIFTPAD");
         s_display.setTextSize(1);
-        s_display.setCursor(20, 28);
-        s_display.println("Rapid Trigger");
-        s_display.setCursor(14, 40);
-        s_display.println("128x64 OLED Mode");
-        s_display.setCursor(18, 52);
-        s_display.println("USB Connected");
+
+        s_display.drawFastHLine(8, 29, 112, OLED_COLOR_WHITE);
+        printCentered("RAPID TRIGGER", 64, 35);
+        printCentered("v" DRIFTPAD_FW_VERSION, 64, 49);
     } else {
         // Safe splash screen in Y: 25..63
         s_display.drawFastHLine(0, 25, 128, OLED_COLOR_WHITE);
@@ -1346,7 +1949,7 @@ void wakeDisplay(uint32_t now) {
     }
     s_screensaverActive = false;
     if (s_isDimmed) {
-        if (s_initialized) s_display.dim(false);
+        if (s_initialized) setDimmed(false);
         s_isDimmed = false;
     }
     if (wasHidden) discardGridLatches();
@@ -1427,6 +2030,7 @@ void setup1() {
     initI2cBus();
     delay(100);
     s_lastInitAttempt = millis();
+    s_introStart = millis();
     if (initDisplayHardware()) {
         drawSplash();
         s_initialized = true;
@@ -1478,6 +2082,24 @@ void loop1() {
         delay(10);
         return;
     }
+    // Power-up / reset intro. A key press ends it early; nothing else waits for it (core 0 already
+    // scans and types), it only holds the display.
+    if (!s_introDone) {
+        if (now - s_introStart >= INTRO_MS + INTRO_WIPE_MS || (s_haveView && keysShowActivity())) {
+            s_introDone = true;
+            s_lastActivityTime = now;
+            s_forceRender = true;
+        } else {
+            if (now - s_lastRenderTime >= RENDER_INTERVAL_MS) {
+                s_lastRenderTime = now;
+                presentIntro(now - s_introStart);
+            } else {
+                delay(2);
+            }
+            return;
+        }
+    }
+
     if (!s_haveView || (int32_t)(now - s_testPatternUntil) < 0) {
         delay(2);   // splash (nothing published yet) or the test pattern stays on screen
         return;
@@ -1495,6 +2117,11 @@ void loop1() {
         } else if (!s_screensaverActive && (idleMs >= SCREENSAVER_TIMEOUT_MS)) {
             startScreensaver(now, s_forcedAnim);
         }
+    }
+
+    // The screensaver dims after it has been on for a while (any input wakes it to full brightness)
+    if (s_screensaverActive && !s_isDimmed && now - s_screensaverStartTime >= SCREENSAVER_DIM_DELAY_MS) {
+        setDimmed(true);
     }
 
     if (s_displaySleeping) {
