@@ -72,10 +72,12 @@ def read_uf2(data: bytes) -> Uf2Image:
 def elf_symbols(data: bytes, names: Iterable[str]) -> Dict[str, int]:
     """Values of the named symbols in a little-endian ELF32 file (as built for the RP2040)."""
     want = set(names)
-    if data[:4] != b"\x7fELF" or data[4] != 1 or data[5] != 1:
+    if len(data) < 52 or data[:4] != b"\x7fELF" or data[4] != 1 or data[5] != 1:
         raise ImageError("not a little-endian ELF32 file")
     shoff, = struct.unpack_from("<I", data, 0x20)
     shentsize, shnum, _shstrndx = struct.unpack_from("<HHH", data, 0x2E)
+    if shentsize < 40 or shoff > len(data) or shnum * shentsize > len(data) - shoff:
+        raise ImageError("ELF section table is truncated or malformed")
     sections = []
     for i in range(shnum):
         sh = struct.unpack_from("<10I", data, shoff + i * shentsize)
@@ -84,12 +86,26 @@ def elf_symbols(data: bytes, names: Iterable[str]) -> Dict[str, int]:
     for sec in sections:
         if sec["type"] != 2:           # SHT_SYMTAB
             continue
+        if sec["link"] >= len(sections):
+            raise ImageError("ELF symbol table has an invalid string-table index")
         strtab = sections[sec["link"]]
+        if strtab["type"] != 3 or strtab["offset"] > len(data) or strtab["size"] > len(data) - strtab["offset"]:
+            raise ImageError("ELF symbol table has a truncated or invalid string table")
+        if sec["offset"] > len(data) or sec["size"] > len(data) - sec["offset"]:
+            raise ImageError("ELF symbol table is truncated")
         entsize = sec["entsize"] or 16
+        if entsize < 16 or sec["size"] % entsize:
+            raise ImageError("ELF symbol table has a malformed entry size")
         for off in range(sec["offset"], sec["offset"] + sec["size"], entsize):
             st_name, st_value = struct.unpack_from("<II", data, off)
-            end = data.index(b"\0", strtab["offset"] + st_name)
-            name = data[strtab["offset"] + st_name:end].decode("ascii", "replace")
+            if st_name >= strtab["size"]:
+                raise ImageError("ELF symbol name is outside the string table")
+            start = strtab["offset"] + st_name
+            limit = strtab["offset"] + strtab["size"]
+            end = data.find(b"\0", start, limit)
+            if end < 0:
+                raise ImageError("ELF symbol name is not NUL-terminated")
+            name = data[start:end].decode("ascii", "replace")
             if name in want:
                 found[name] = st_value
     return found
@@ -132,7 +148,7 @@ def check_image(uf2: Path, elf: Optional[Path], manifest_path: Optional[Path],
             code_end = syms.get("_FS_start")
             if code_end is None:
                 problems.append(f"{elf}: no _FS_start symbol (settings slots not reserved in this build)")
-        except (OSError, ImageError, struct.error, ValueError) as e:
+        except (OSError, ImageError, struct.error, ValueError, IndexError) as e:
             problems.append(f"{elf}: {e}")
     if image.start < FLASH_BASE:
         problems.append(f"image starts at {image.start:#010x}, below flash ({FLASH_BASE:#010x})")
@@ -144,19 +160,33 @@ def check_image(uf2: Path, elf: Optional[Path], manifest_path: Optional[Path],
     if manifest_path is None or not Path(manifest_path).is_file():
         problems.append("no build_manifest.json: the pad cannot be verified after the update")
     else:
+        manifest = {}
         try:
-            manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            value = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError("manifest must be a JSON object")
+            manifest = value
         except (OSError, ValueError) as e:
             problems.append(f"{manifest_path}: {e}")
+        if not isinstance(manifest.get("artifacts"), dict):
+            problems.append("the manifest has no valid artifacts object")
+            arts = {}
+        else:
+            arts = manifest["artifacts"]
         if manifest:
-            arts = manifest.get("artifacts") or {}
             for path in [p for p in (uf2, elf) if p is not None and Path(p).is_file()]:
                 entry = arts.get(Path(path).name)
-                if not entry:
+                if not isinstance(entry, dict):
                     problems.append(f"the manifest does not list {Path(path).name}")
-                elif entry.get("sha256") != sha256(path):
+                    continue
+                expected_hash = entry.get("sha256")
+                expected_size = entry.get("size")
+                actual_size = Path(path).stat().st_size
+                if not isinstance(expected_hash, str) or expected_hash != sha256(path):
                     problems.append(f"{Path(path).name} is not the file the manifest describes (sha256 differs): "
                                     "rebuild, or flash the files of one build together")
+                if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != actual_size:
+                    problems.append(f"{Path(path).name} size does not match the build manifest")
             for key in ("fw_version", "build_id", "protocol"):
                 if not manifest.get(key):
                     problems.append(f"the manifest has no {key}")

@@ -17,7 +17,7 @@
 
 DriftPad is a custom Hall-effect macropad built around analog magnetic key sensing. Instead of a simple on/off switch, every key reports how far it has travelled, which lets the firmware support adjustable actuation and release points, Rapid Trigger, live travel feedback on the OLED, and per-layer keymaps you can change from the browser.
 
-> **Status:** 2.1.0-beta.1, software-qualified and **not yet run on a physical pad**. Firmware, protocol v2 and the configurator pass the full automated suite (production C++ compiled on the host, headless-browser tests, tooling tests) and build for the RP2040. Hardware acceptance, PCB and enclosure files are still outstanding: see [docs/beta-checklist.md](docs/beta-checklist.md).
+> **Status:** 2.1.0-beta.1, software checks pass; hardware acceptance for this exact build is unverified. The latest completed Linux CI for the current branch passed before the local release-hardening edits. Automated tests cover production C++ on the host, configurator pages in headless Chrome and release tools against fakes. See the [hardware acceptance audit](docs/hardware-acceptance.md), [calibration guide](docs/calibration.md), and [beta checklist](docs/beta-checklist.md).
 
 ## Contents
 
@@ -81,11 +81,15 @@ Any serial terminal works too. See the [serial protocol reference](docs/serial-p
 ### 3. Run the tests
 
 ```bash
-python tests/run_all_tests.py             # everything that can run here, skips listed with reasons
-python tests/run_all_tests.py --release   # the CI gate: no skips, fresh build, clean git tree
+python tests/run_all_tests.py             # diagnostic run: skips and reasons are listed
+python tests/run_all_tests.py --release   # release gate: no skips, fresh build, clean git tree
 ```
 
 The suite needs Python 3, PlatformIO (build tests), a host C++ compiler (`pip install -r tests/requirements-dev.txt` provides one) and Chrome or Edge (configurator tests). Nothing in it touches hardware; [docs/testing.md](docs/testing.md) says what each suite does and does not prove.
+
+On this Windows development machine, Python is not on PATH. Run tests with
+`C:/Users/devyn/anaconda3/python.exe -X utf8` before the commands above. On other machines use that
+machine's Python 3.9+ executable.
 
 ## Hardware
 
@@ -117,6 +121,7 @@ The maths behind each step is in [docs/testing.md](docs/testing.md); the timing 
 | [docs/serial-protocol.md](docs/serial-protocol.md) | Serial protocol v2: framing, every command, error codes, limits |
 | [docs/configurator.md](docs/configurator.md) | What the configurator does and guarantees |
 | [docs/flash-layout.md](docs/flash-layout.md) | Flash map, A/B settings slots, interrupted saves, migration from v1 |
+| [docs/calibration.md](docs/calibration.md) | Guided calibration limits, rest noise, quick re-zero and output gating |
 | [docs/scheduling.md](docs/scheduling.md) | Core ownership, the display snapshot, when flash is written |
 | [docs/hardware.md](docs/hardware.md) | Pinout, multiplexer channel map, default keymaps, hardware readiness |
 | [docs/testing.md](docs/testing.md) | Test suites and their scopes, requirements, filter and Rapid Trigger derivations |

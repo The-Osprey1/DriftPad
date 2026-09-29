@@ -40,8 +40,12 @@ Each `loop()` pass (`firmware/src/main.cpp`):
 5. Deferred replies, telemetry, raw capture chunks (`commands::service()`); TX drain (non-blocking).
 6. Encoder: menu changes apply at once; the save is scheduled (below).
 
-Nothing in the pass waits for the host or for core 1. The only operations that stop the scan are
-flash writes.
+Most of the pass is non-blocking, but key-edge reports call the Arduino `Keyboard` library. When
+the USB host stops polling reports, that library can wait for up to its 500 ms `HIDReady()` timeout
+([`keyboard_output.h`](../firmware/include/keyboard_output.h),
+[`keyboard_output_hal.h`](../firmware/include/keyboard_output_hal.h)). `KeyboardOutput::service()`
+itself does not wait. OLED work does not make core 0 wait for core 1. Flash writes also stop the
+scan while the RP2040 erases and programs flash, as described below.
 
 ## Flash writes
 

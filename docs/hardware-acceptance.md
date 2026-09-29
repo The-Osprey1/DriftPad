@@ -2,9 +2,9 @@
 
 Everything in this repository's automated test suite runs without a DriftPad: production C++ on the
 host with fake sensors, flash, USB and display, the configurator in headless Chrome against a fake
-device, and tooling against fake ports. What those tests cannot establish is listed here. A build
-goes to external beta only after every required item below passed **on real hardware, with that
-exact build**, and the record is signed off.
+device, and tooling against fake ports. Some checks have useful software coverage; none of those
+results counts as a hardware pass. A build goes to external beta only after every required item
+below passed **on real hardware, with that exact build**, and the record is signed off.
 
 ## How to run it
 
@@ -35,6 +35,26 @@ and start a new record for the new build. Records are never edited to pass.
   counts repeats and flags keys still held).
 * A USB hub with per-port power switches, or a USB power-cut switch, for the power-loss items.
 * A depth reference for the actuation items: feeler gauges or a caliper with a depth rod.
+
+## Before the event checks
+
+1. Run the software qualification and save its build identity and bundle. Start an acceptance record
+   against that bundle's `build_manifest.json`; never reuse a record for a different build.
+2. Complete HW-01 through HW-05 first. Guided calibration must complete for all 16 keys and survive
+   a power cycle. Each saved sensor range must be at least 600 ADC counts; firmware reports a lower
+   range as invalid rather than claiming the full 4 mm travel scale. If calibration reports a
+   failed/noisy rest phase, fix the noise or motion and restart the calibration before proceeding.
+3. With the pad connected, open Device → **Turn keyboard output on** and confirm `INFO.output.enabled`
+   is true. This is a runtime setting and is not saved. It is required for the keyboard-event checks
+   below; tests that explicitly require silence turn it back off. The **Force** button is for bench
+   testing only and is not a substitute for a valid calibration.
+4. For HW-13 and HW-14, configure and verify the actual labels/codes first: seven unique printable
+   keys for rollover, and `SHFT`, `A`, `CTRL`, and `S` on layer 2 for the modifier sequence. Record any
+   mapping you changed so the check can be repeated consistently.
+
+`RESET ALL` removes calibration and turns output off. Recalibrate before continuing after that
+command. `SET_HID 1` is runtime only; enable it again after each reboot unless standalone boot
+output is deliberately enabled as a separately saved setting.
 
 ## Items
 
@@ -102,3 +122,46 @@ Pass criteria are exact. "Events" means keydown/keyup lines in `tools/key_tester
 | HW-31 | Unplug during a write | Start writing 10 key changes and unplug mid-write. | The page shows "Connection lost" (announced), no key stuck "writing"; after reconnect the pending keys are listed and a second write completes. |
 | HW-32 | Screen reader smoke test | NVDA (Windows) or VoiceOver: connect, move through keys with arrows, change a key, lose the connection. | Connection, key labels, "not written" state and the lost connection are announced. |
 | HW-33 | Other hosts | *optional*: repeat HW-02, HW-13 and HW-29 on macOS and on Linux. | Same results as on Windows. |
+
+## Software coverage audit
+
+This table records what automated code can check, not which hardware rows are complete. **Every
+required row still needs its physical procedure and an acceptance record for the release build.**
+The repo currently has no signed hardware acceptance record, PCB fabrication files, BOM or enclosure
+files.
+
+| Check | Existing software evidence | What still requires physical hardware |
+|---|---|---|
+| Check HW-01 | `test_flash_tool.py`, `firmware_image.py`: image safety, fake update, identity/readback rules. | Real board update and its reported build identity. |
+| Check HW-02 | Firmware build and identity output are checked in host tests. | USB enumeration and one CDC plus HID device on the target PC. |
+| Check HW-03 | Fake flash-tool tests cover the BOOTSEL/update control path. | Real reset into BOOTSEL, drive appearance and update. |
+| Check HW-04 | `test_protocol_device.py`, `test_keyboard_output.py`: missing-calibration gate and silent output. | RESET/save/power cycle, all 16 physical keys and zero host events. |
+| Check HW-05 | `test_persistence_device.py`, `test_configurator_js.py`: guided phases, completion and settings persistence against fakes. | Calibration of the assembled sensors, all keys and power-cycle readback. |
+| Check HW-06 | DSP/calibration tests exercise synthetic noise and thresholds. | One-second raw measurements from all 16 sensors. |
+| Check HW-07 | `test_keyboard_output.py`: boot-held suppression and release recovery in the host harness. | Plugging in with an actual key held and checking host events. |
+| Check HW-08 | DSP tests cover modeled drift. | Half-hour thermal drift, real typing and unplug/replug. |
+| Check HW-09 | Host tests exercise guarded fault handling. | A reworkable board, a physically faulted sensor and the remaining 15 keys. |
+| Check HW-10 | Host tests verify calibration-to-travel/actuation calculations. | Measured depths with a real key and the specified tolerance. |
+| Check HW-11 | `test_firmware_parity.py` exercises the real sensing C++ on generated input. | 20 real reversals and exact keyboard-event ordering. |
+| Check HW-12 | DSP and parity tests cover modeled RT-floor noise/chatter. | Finger-rest behavior at two physical depths. |
+| Check HW-13 | `test_keyboard_output.py` checks 6-key rollover and cleanup in the harness. | Seven real simultaneous USB key presses, overflow status and host cleanup. |
+| Check HW-14 | Host tests check HID key/modifier codes and ownership. | Shift/A and Ctrl/S behavior on the target host, including modifier cleanup. |
+| Check HW-15 | `test_keyboard_output.py` covers held-key remap and release ownership. | Write a remap through WebSerial while the real key is held. |
+| Check HW-16 | `test_keyboard_output.py` covers layer changes while a key is held. | Change the physical pad's layer while a key is down. |
+| Check HW-17 | Host tests simulate link loss and reconciliation. | PC sleep/wake, real USB delivery recovery and host key state. |
+| Check HW-18 | Host tests check connection loss and held-key cleanup. | Unplug/replug a physically held switch. |
+| Check HW-19 | `test_persistence_device.py` checks A/B save, recovery and readback using fake flash. | Ten real power cycles with calibration and settings readback each time. |
+| Check HW-20 | Host persistence tests simulate interrupted writes and sector recovery. | Twenty random USB power cuts during actual flash saves. |
+| Check HW-21 | Persistence tests exercise the legacy v1 data migration. | Updating an actual pad running legacy firmware and checking its saved configuration. |
+| Check HW-22 | `test_display_scheduling.py` checks deferred encoder-save timing and sequencing. | Encoder use while typing and the real on-device save time. |
+| Check HW-23 | `test_oled_frames.py` renders firmware drawing code and checks layout. | Visible lag, brief taps, layer state and settings on the fitted panel. |
+| Check HW-24 | Host frame/state tests cover screensaver and sleep logic. | Real 45-second idle, dimming, wake input and key output. |
+| Check HW-25 | `test_timing.py` checks counter calculations. | Maximum scan gap for 60 seconds on the RP2040. |
+| Check HW-26 | Compiled firmware tests exercise scan/telemetry paths. | 120-second capture with real typing and configurator telemetry. |
+| Check HW-27 | `test_display_scheduling.py` checks core ownership and deferred replies. | I2C scan and OLED test-pattern behavior during real device timing capture. |
+| Check HW-28 | Host tests exercise save handling and scan scheduling. | Flash-write scan pause on the powered board. |
+| Check HW-29 | `test_configurator_js.py` and `test_configurator_contract.py` run pages against a fake device and compare protocol replies. | Chrome or Edge WebSerial with the physical pad, unplug and reconnect. |
+| Check HW-30 | Browser and protocol tests check backup/restore against a fake device. | Backup from one real pad, restore/readback on a second pad and calibration isolation. |
+| Check HW-31 | Browser tests simulate disconnect and pending writes. | Unplugging the pad while its WebSerial write is in flight. |
+| Check HW-32 | Source and browser checks cover labels and announcements. | A real NVDA or VoiceOver keyboard-navigation smoke test. |
+| Check HW-33 | No other-host automated acceptance run is configured. | Repeat the listed smoke tests on actual macOS and Linux hosts. |

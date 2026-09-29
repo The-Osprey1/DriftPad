@@ -144,6 +144,34 @@ class TestProtocolDevice(unittest.TestCase):
         self.assertEqual(len(replies), 1, f"{line!r} produced {len(replies)} replies: {replies}")
         return replies[0]
 
+    def test_busy_display_request_does_not_replace_the_pending_ticket(self):
+        for _ in range(3):
+            self.assertEqual(self.one("OLED_SCAN")["status"], "ok")
+        self.lib.oled_stub_stall(1)
+        try:
+            self.assertEqual(self.d.replies("@first OLED_TEST"), [])
+            busy = self.one("@second OLED_SCAN")
+            self.assertEqual((busy["id"], busy["code"], busy["pending"]),
+                             ("second", "busy", "OLED_TEST"))
+        finally:
+            self.lib.oled_stub_stall(0)
+        self.d.run(100)
+        replies = [j for j in self.d.json_lines(self.d.drain()) if "status" in j]
+        self.assertEqual([(r["id"], r["status"]) for r in replies], [("first", "ok")])
+
+    def test_disconnected_host_does_not_receive_an_old_deferred_reply_on_reconnect(self):
+        self.lib.oled_stub_stall(1)
+        try:
+            self.assertEqual(self.d.replies("@old OLED_SCAN"), [])
+            self.lib.serial_fake_set_dtr(0)
+            self.d.run(100)
+        finally:
+            self.lib.oled_stub_stall(0)
+        self.d.run(100)
+        self.lib.serial_fake_set_dtr(1)
+        replies = self.d.replies("@new PING")
+        self.assertEqual([(r["id"], r["status"]) for r in replies], [("new", "ok")])
+
     # -- the regression scenarios -------------------------------------------------------------
 
     def test_regression_scenarios_are_correct(self):

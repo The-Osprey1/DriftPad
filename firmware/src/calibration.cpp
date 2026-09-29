@@ -5,8 +5,8 @@
 //
 // Constants (calibration.h, namespace calib):
 //   REST_MIN / REST_MAX (64 / 4031)   plausible rest reading: 64 counts clear of either ADC rail
-//   RANGE_MIN (300)                   smallest bottom-out excursion accepted: 0.30 of the nominal
-//                                     1000-count swing, well above EMI (20 counts) and rest noise
+//   RANGE_MIN (600)                   smallest bottom-out excursion accepted, matching the DSP
+//                                     range floor so an accepted calibration spans nominal 4 mm
 //   RAIL_LOW / RAIL_HIGH (16 / 4079)  a reading beyond these is a railed (shorted/open) sensor
 //   REST_NOISE_P2P_MAX (120)          guided REST phase: peak-to-peak noise allowed at rest (60 Hz
 //                                     EMI of 20 counts amplitude plus thermal noise, with margin)
@@ -186,7 +186,12 @@ BootReport applyAtBoot(const CalibrationData& stored, const uint16_t measuredRes
             r.heldMask |= bit;
         } else {
             applied.restRaw = m;
-            if (dev < -tol) {
+            if (!calibrationKeyPlausible(applied)) {
+                // Moving rest also moves the implied bottom-out. Keep the trusted calibration
+                // if the measured zero would put either endpoint outside the accepted ADC span.
+                applied = cal;
+                r.driftMask |= bit;
+            } else if (dev < -tol) {
                 r.driftMask |= bit;     // moved away from the press direction: adopt, but report
             } else {
                 r.adoptedMask |= bit;   // normal drift re-zero
@@ -235,6 +240,12 @@ bool quickRestRecalibrate(CalibrationData& data, const uint16_t measuredRest[NUM
             rest = data.keys[i].restRaw;
             polarity = data.keys[i].polarity;
             range = data.keys[i].rangeCounts;
+            KeyCalibration candidate = data.keys[i];
+            candidate.restRaw = m;
+            if (!calibrationKeyPlausible(candidate)) {
+                offRestMask |= bit;
+                continue;
+            }
         } else {
             // No trusted calibration: compare against the running baseline instead
             HallKey& key = HallManager::getKey(i);

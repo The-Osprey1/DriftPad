@@ -124,6 +124,11 @@ Migrated settings are marked dirty and are not written until the user saves. Bec
 sector is never written, downgrading to v1 firmware finds the settings as they were before the
 upgrade.
 
+Saved schema-2 calibration records remain loadable, but calibration with a per-key range below the
+current 600-count minimum is now reported as `calibration_invalid` and keyboard output stays off.
+The other settings remain available; run and save guided calibration to restore the full travel
+range. See [calibration.md](calibration.md).
+
 ## Save timing
 
 A save erases one 4 KB sector and programs three 256-byte pages, with interrupts off and core 1

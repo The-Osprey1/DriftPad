@@ -8,18 +8,25 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
     env:
       PYTHONUNBUFFERED: "1"
-      # Chrome's sandbox is refused by the runner's AppArmor profile; the pages under test are ours
-      DRIFTPAD_CHROME_NO_SANDBOX: "1"
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,6 +71,9 @@ jobs:
       - name: Tests (release mode)
         env:
           DRIFTPAD_PIO_PROJECT_CONF: ${{ runner.temp }}/platformio.pinned.ini
+          # Explicit opt-in for Ubuntu AppArmor restrictions, only on our local test pages.
+          # Local runs and Windows keep Chrome's sandbox enabled.
+          DRIFTPAD_CHROME_NO_SANDBOX: ${{ runner.os == 'Linux' && '1' || '0' }}
         run: python tests/run_all_tests.py --release --clean --json "$RUNNER_TEMP/reports/test-results.json"
 
       - name: Toolchain matches the lock
@@ -74,7 +84,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: driftpad-ci-${{ github.sha }}
+          name: driftpad-ci-${{ runner.os }}-${{ github.sha }}
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/reports/
@@ -82,3 +92,4 @@ jobs:
             firmware/.pio/build/pico/firmware.elf
             firmware/.pio/build/pico/firmware.bin
             firmware/.pio/build/pico/build_manifest.json
+            firmware/.pio/build/pico/driftpad_build.log

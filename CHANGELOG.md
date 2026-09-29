@@ -42,6 +42,18 @@ work with this firmware and says so.
   them; dialogs, focus and screen-reader announcements; layout at 360 px.
 - A refused `CALIBRATE` (`keys_not_at_rest`) no longer releases keys that are being held.
 - `CALIBRATE` without a valid calibration answers `applied:false` (only the running baselines are re-zeroed).
+- Guided calibration now requires at least 600 ADC counts per key, the minimum used by the travel
+  converter; a lower-range sensor can no longer calibrate "valid" while high actuation values remain
+  unreachable. Quick rest calibration refuses changes that would put a saved endpoint outside the
+  ADC range.
+- `REVERT` now reapplies changed saved calibration to the live sensor engine, suppresses keys already
+  held off rest, and stays busy during guided calibration. A failed calibration restores output
+  before later commands in that same loop.
+- Deferred display replies are discarded at serial disconnect, and a second busy display command no
+  longer replaces the active request. Chrome path discovery is shared with release-gate reporting;
+  a non-zero browser process exit is now a test failure even when it leaves partial output.
+- Acceptance records now reject malformed/duplicate results and require a match on build id, firmware
+  version, and source commit before qualification.
 - The encoder's delayed save no longer commits settings that a command changed and left unsaved; those stay
   unsaved (INFO `dirty`) until `SAVE`.
 - The display link's sequence counter no longer looks "unpublished" after wrapping (one frame lost every ~24 days).
@@ -110,10 +122,15 @@ work with this firmware and says so.
 - Firmware older than this version (protocol 1) is refused by the configurator; update it with
   `tools/flash.py`.
 - Downgrading from a newer settings format and saving twice discards the newer firmware's settings.
+- Schema-2 settings retain their layout, but stored calibration with a 300–599-count range is now
+  reported as `calibration_invalid`; keyboard output stays disabled until guided calibration is
+  rerun and saved. Other saved keymaps and sensitivity settings are retained.
 
 ### Known limits
 
-- Everything above is verified against models and fakes only. No physical pad has run this build.
+- The 2.1.0-beta.1 build has no signed hardware acceptance record in this repository. A prior update
+  was observed on a real pad, but that does not qualify this exact image or replace the 33-step
+  acceptance procedure.
 - `flash.py --drive` cannot identify the board first, so it cannot warn about a downgrade or unsaved
   settings; the confirmation prompt is the only guard.
 - The display link's request read can, in a rare race, show a test pattern twice (cosmetic).

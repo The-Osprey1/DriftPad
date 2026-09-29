@@ -207,6 +207,9 @@ public:
     // for a reply. Call every loop (CommandScheduler::step does).
     void service(uint32_t nowMs);
 
+    // Drop a reply owned by a disconnected serial session; no response is sent to the next host.
+    void cancelDeferred() { _pending.active = false; }
+
     bool deferredPending() const { return _pending.active; }
     const char* deferredCmd() const { return _pending.active ? _pending.cmd : ""; }
 

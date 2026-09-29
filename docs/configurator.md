@@ -23,6 +23,9 @@ open files. `keymap.html` only redirects to `index.html#keys`.
 - Firmware it does not understand (protocol other than 2) is refused before anything is written.
 - A backup holds keymaps and sensitivity settings; restore validates the file and reports written,
   failed and mismatched keys. Calibration belongs to one pad's sensors and is never restored.
+- Guided calibration needs a 600-count full-press range on every key; it refuses weaker readings
+  because those cannot reach the whole travel scale. The thresholds and output lifecycle are in
+  [calibration.md](calibration.md).
 - Open `index.html?simulate=1` to use an in-browser pad with no hardware. It is marked "SIMULATED
   DEVICE", keeps its state in memory and never touches your saved keymap draft.
 

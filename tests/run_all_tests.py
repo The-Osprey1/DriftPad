@@ -54,6 +54,7 @@ for _p in (str(SCRIPT_DIR), str(PROJECT_ROOT)):
         sys.path.insert(0, _p)
 
 import build_state  # noqa: E402
+from chrome_host import find_browser, no_sandbox_requested  # noqa: E402
 
 RESULT_SCHEMA = "driftpad-test-results/1"
 BUILD_FIRST = ("test_build",)
@@ -97,6 +98,7 @@ SCOPE_RULES: List[Tuple[str, Optional[str], Optional[str], str]] = [
     ("test_contract_consistency", None, None, SOURCE),
     ("test_flash_tool", None, None, TOOLING),
     ("test_release_tooling", None, None, TOOLING),
+    ("test_chrome_host", None, None, TOOLING),
 ]
 
 # Suites a release needs (contract section 8): (label, module name patterns)
@@ -284,31 +286,6 @@ def test_meta(module_short: str, cls: type, method: str) -> Tuple[str, str]:
 # Tools
 # ----------------------------------------------------------------------------
 
-BROWSER_ENV = ("DRIFTPAD_CHROME", "CHROME_PATH", "CHROME_BIN")
-BROWSER_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")
-
-
-def find_browser(env=os.environ, which=shutil.which, exists=os.path.isfile) -> Optional[str]:
-    for var in BROWSER_ENV:
-        p = env.get(var)
-        if p and exists(p):
-            return p
-    for name in BROWSER_NAMES:
-        p = which(name)
-        if p:
-            return p
-    candidates = []
-    for base in (env.get("ProgramFiles"), env.get("ProgramFiles(x86)"), env.get("LOCALAPPDATA"),
-                 "C:/Program Files", "C:/Program Files (x86)"):
-        if base:
-            candidates.append(os.path.join(base, "Google", "Chrome", "Application", "chrome.exe"))
-    candidates.append("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
-    for c in candidates:
-        if exists(c):
-            return c
-    return None
-
-
 def detect_tools() -> Dict[str, Dict[str, Any]]:
     tools: Dict[str, Dict[str, Any]] = {}
     try:
@@ -318,7 +295,8 @@ def detect_tools() -> Dict[str, Dict[str, Any]]:
     except Exception as e:  # host_build is lead-owned; never let it break the runner
         tools["host_cxx"] = {"found": False, "detail": f"tests/host_build.py unusable: {e}"}
     browser = find_browser()
-    tools["browser"] = {"found": browser is not None, "detail": browser or "none"}
+    tools["browser"] = {"found": browser is not None, "detail": browser or "none",
+                        "no_sandbox": no_sandbox_requested()}
     pio = build_state.find_platformio()
     tools["platformio"] = {"found": pio is not None, "detail": pio[1] if pio else "none"}
     return tools

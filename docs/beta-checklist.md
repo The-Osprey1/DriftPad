@@ -11,7 +11,8 @@ in this repository publishes, tags or uploads anything; that is a separate, deli
       section, toolchain equal to `firmware/toolchain.lock.json`, every suite in release mode with a
       fresh build, UF2/ELF/manifest checked). Keep `dist/driftpad-<version>-<build>/` and its
       `SHA256SUMS`.
-- [ ] CI is green on the same commit (same command, locked toolchain, Linux).
+- [ ] CI is green on the same commit on both Ubuntu 24.04 and Windows Server 2022 (same release
+      test command and locked firmware toolchain on each runner).
 - [ ] The bundle's `RELEASE.md` counts show no skipped test and no failed test.
 - [ ] `CHANGELOG.md` states compatibility and migration for this version.
 
@@ -21,7 +22,9 @@ in this repository publishes, tags or uploads anything; that is a separate, deli
       hardware with this build, and `python tools/acceptance_record.py check` reports nothing open.
 - [ ] The record is signed (`acceptance_record.py sign`) and `qualify_release.py --acceptance` marks
       the bundle ready.
-- [ ] Failed or skipped optional items (HW-09, HW-21, HW-33) are written down in the beta notes.
+- [ ] Any unavailable optional item (HW-09, HW-21, HW-33) is marked `n/a` with a reason in the
+      signed record and mentioned in the beta notes. An optional item marked `fail` still blocks
+      sign-off.
 
 ## Assets that do not exist yet
 

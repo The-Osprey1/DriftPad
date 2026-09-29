@@ -384,6 +384,34 @@ class TestAcceptanceRecord(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("HW-99 is missing", problems[0])
 
+    def test_invalid_duplicate_and_malformed_rows_fail_closed(self):
+        self.pass_all(self.rec)
+        self.rec["items"][0]["result"] = "unknown"
+        ok, problems = ar.evaluate(self.rec, MANIFEST, self.items)
+        self.assertFalse(ok)
+        self.assertTrue(any("invalid result" in p for p in problems))
+        self.pass_all(self.rec)
+        self.rec["items"].append(dict(self.rec["items"][0]))
+        ok, problems = ar.evaluate(self.rec, MANIFEST, self.items)
+        self.assertFalse(ok)
+        self.assertTrue(any("appears twice" in p for p in problems))
+        self.assertEqual(ar.evaluate({"schema": ar.SCHEMA, "items": [None]}, items=self.items)[0], False)
+
+    def test_manifest_match_covers_version_and_source_commit(self):
+        self.pass_all(self.rec)
+        ar.sign(self.rec, "reviewer", self.items)
+        for changed in ({"fw_version": "2.2.0"}, {"git_commit": "b" * 40}):
+            ok, problems = ar.evaluate(self.rec, dict(MANIFEST, **changed), self.items)
+            self.assertFalse(ok, changed)
+            self.assertTrue(any("does not match the manifest" in p for p in problems), problems)
+
+    def test_empty_tester_and_signer_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "tester"):
+            ar.new_record(MANIFEST, " ", self.items)
+        self.pass_all(self.rec)
+        with self.assertRaisesRegex(ValueError, "signer"):
+            ar.sign(self.rec, " \t", self.items)
+
     def test_cli(self):
         with tempfile.TemporaryDirectory() as d:
             m = Path(d) / "build_manifest.json"
@@ -498,7 +526,8 @@ class TestQualifyRelease(unittest.TestCase):
     def test_only_a_complete_signed_record_of_this_build_makes_it_beta_ready(self):
         repo = FakeRepo(self.root / "r")
         items = ar.doc_items(repo.root / "docs" / "hardware-acceptance.md")
-        rec = ar.new_record({"build_id": "bbbbbbbbbbbb", "fw_version": "2.1.0"}, "t", items)
+        rec = ar.new_record({"build_id": "bbbbbbbbbbbb", "fw_version": "2.1.0",
+                             "git_commit": FakeRepo.COMMIT}, "t", items)
         path = self.root / "acceptance.json"
         path.write_text(json.dumps(rec))
         q = repo.qualifier()
@@ -538,6 +567,14 @@ class TestCiWorkflow(unittest.TestCase):
         self.assertRegex(self.TEXT, r"run_all_tests\.py --release --clean --json")
         self.assertIn("fetch-depth: 0", self.TEXT)
         self.assertNotRegex(self.TEXT, r"continue-on-error:\s*true")
+
+    def test_runner_temp_and_browser_sandbox_are_step_scoped(self):
+        self.assertIn("matrix:\n        os: [ubuntu-24.04, windows-2022]", self.TEXT)
+        self.assertIn("${{ runner.temp }}/platformio.pinned.ini", self.TEXT)
+        job_env = self.TEXT.split("    env:\n", 1)[1].split("    steps:\n", 1)[0]
+        self.assertNotIn("DRIFTPAD_PIO_PROJECT_CONF", job_env)
+        self.assertIn("DRIFTPAD_CHROME_NO_SANDBOX: ${{ runner.os == 'Linux' && '1' || '0' }}", self.TEXT)
+        self.assertNotIn("DRIFTPAD_CHROME_NO_SANDBOX", job_env)
 
     def test_publishes_nothing(self):
         self.assertIn("contents: read", self.TEXT)

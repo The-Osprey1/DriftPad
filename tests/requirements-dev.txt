@@ -1,6 +1,6 @@
 # Host tools for the test suite (tests/run_all_tests.py). The tests themselves are stdlib-only.
 #
 # Host C++ compiler for the compiled-firmware suites. tests/host_build.py uses, in order: $CXX,
-# g++/clang++ on PATH, then this package (`python -m ziglang c++`, clang + libc++, no other
+# this package, then g++/clang++ on PATH (`python -m ziglang c++`, clang + libc++, no other
 # install needed). Pinned so every machine compiles the firmware with the same clang.
 ziglang==0.16.0

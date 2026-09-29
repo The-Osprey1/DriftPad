@@ -1,6 +1,8 @@
 # Tools
 
-Helper scripts for DriftPad. Run them from the repository root with Python 3.9 or newer.
+Helper scripts for DriftPad. Run them from the repository root with Python 3.9 or newer. On the
+Windows development machine, use `C:/Users/devyn/anaconda3/python.exe -X utf8` instead of bare
+`python` or `pip`; elsewhere use that machine's Python executable.
 
 ```bash
 pip install -r tools/requirements.txt      # pyserial, Pillow
@@ -19,7 +21,7 @@ pip install -r tools/requirements.txt      # pyserial, Pillow
 
 | Script | What it does |
 |---|---|
-| [`acceptance_record.py`](acceptance_record.py) | The record of an acceptance run: `new` from a build manifest, `set` an item's result with a note, `check` what is open, `sign` when every required item passed. Items come from the procedure document. |
+| [`acceptance_record.py`](acceptance_record.py) | The record of an acceptance run: `new` from a build manifest, `set` an item's result with a note, `check` what is open, `sign` when every required item passed. It fails closed for invalid or duplicate results and matches the build id, firmware version and source commit. Items come from the procedure document. |
 | [`timing_capture.py`](timing_capture.py) | Resets and samples the pad's `TIMING` counters during a scenario and judges them (no scan gap above 2 ms, or only the save's own pause with `--allow-save-gaps`). Writes a JSON record. |
 | [`save_stress.py`](save_stress.py) | Saves settings in a loop for the power-cut item, logging every confirmed save; `--verify` checks the pad afterwards holds the last confirmed or the interrupted value. `--command` sends one command. |
 | [`key_tester.html`](key_tester.html) | Offline page showing every keydown/keyup with timings, per-key counts and keys still held. |

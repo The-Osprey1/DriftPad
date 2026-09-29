@@ -195,6 +195,34 @@ class TestImageChecks(unittest.TestCase):
         c = self.check(manifest_extra={"build_id": ""})
         self.assertIn("no build_id", " ".join(c.problems))
 
+    def test_manifest_shapes_hashes_and_sizes_fail_closed(self):
+        uf2 = make_build(self.root / "bad-manifest")
+        manifest_path = uf2.parent / "build_manifest.json"
+        for raw, expected in (("[]", "manifest must be a JSON object"),
+                              (json.dumps(dict(NEW, artifacts=[])), "valid artifacts object"),
+                              (json.dumps(dict(NEW, artifacts={"firmware.uf2": []})), "does not list")):
+            with self.subTest(expected=expected):
+                manifest_path.write_text(raw, encoding="utf-8")
+                result = fimg.check_image(uf2, uf2.parent / "firmware.elf", manifest_path)
+                self.assertIn(expected, " ".join(result.problems))
+
+        manifest = json.loads(make_build(self.root / "wrong-size").parent.joinpath("build_manifest.json")
+                              .read_text(encoding="utf-8"))
+        manifest["artifacts"]["firmware.uf2"]["size"] -= 1
+        size_build = self.root / "wrong-size"
+        uf2 = size_build / "firmware.uf2"
+        manifest_path = size_build / "build_manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = fimg.check_image(uf2, size_build / "firmware.elf", manifest_path)
+        self.assertIn("size does not match", " ".join(result.problems))
+
+    def test_truncated_elf_is_reported_instead_of_raising(self):
+        uf2 = make_build(self.root / "truncated-elf")
+        elf = uf2.parent / "firmware.elf"
+        elf.write_bytes(b"\x7fELF\x01\x01")
+        result = fimg.check_image(uf2, elf, uf2.parent / "build_manifest.json", allow_dirty=True)
+        self.assertIn("not a little-endian ELF32", " ".join(result.problems))
+
     def test_dirty_builds_need_an_explicit_allowance(self):
         c = self.check(manifest_extra={"git_dirty": True})
         self.assertIn("uncommitted", " ".join(c.problems))
@@ -342,6 +370,8 @@ class TestFlash(unittest.TestCase):
         self.assertLess(k("2.1.0-beta.2"), k("2.1.0"))
         self.assertLess(k("2.1.0"), k("2.1.1"))
         self.assertLess(k("2.9.0"), k("2.10.0"))
+        self.assertLess(k("2.1.0-beta.1"), k("2.1.0-beta.rc"))
+        self.assertLess(k("2.1.0-beta"), k("2.1.0-beta.1"))
         self.assertIsNone(k("unknown"))
 
 

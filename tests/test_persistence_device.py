@@ -347,6 +347,48 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual((settings["source"], settings["seq"]), (saved["slot"], saved["seq"]),
                          "source and seq must describe the same record")
 
+    def test_quick_rest_update_cannot_make_the_saved_range_implausible(self):
+        self.one("SAVE")
+        payload = bytearray(self.sector(0)[32:32 + 396])
+        payload[296] = 1                               # valid calibration at the upper ADC limit
+        for k in range(16):
+            struct.pack_into("<HHbB", payload, 300 + 6 * k, 3000, 1095, 1, 0)
+            self.lib.set_travel(k, (3000 - REST) / 250)
+        self.write_sector(0, ab_record(2, 1, bytes(payload)))
+        self.reboot()
+        self.lib.set_travel(7, (3001 - REST) / 250)       # tiny rest drift, but bottom would be 4096
+        self.d.run(100)
+        r = self.one("CALIBRATE")
+        self.assertEqual((r.get("code"), r.get("keys")), ("keys_not_at_rest", [7]))
+        self.assertEqual(self.info()["calibration"]["state"], "valid")
+        self.assertFalse(self.info()["settings"]["dirty"])
+        self.lib.boot()                                # inspect boot before automatic drift tracking
+        self.d = dh.Device(self.lib, boot=False)
+        self.assertEqual(self.lib.vd_engine_rest(7), 3000, "boot adopted an implausible calibration")
+        info = self.info()
+        self.assertIn(7, info["calibration"]["drift"])
+
+    def test_older_low_range_calibration_loads_invalid_without_losing_user_settings(self):
+        self.one("SET_ACTUATION 2.50")
+        self.one("SET_BOOT_OUTPUT 1")
+        self.one("SAVE")
+        saved = bytearray(self.sector(0)[32:32 + 396])
+        for counts in (300, 599, 600):
+            with self.subTest(range_counts=counts):
+                payload = bytearray(saved)
+                payload[296] = 1
+                for k in range(16):
+                    struct.pack_into("<HHbB", payload, 300 + 6 * k, REST, counts, 1, 0)
+                self.write_sector(0, ab_record(2, 1, bytes(payload)))
+                info = self.reboot().replies("INFO")[0]
+                expected = "valid" if counts == 600 else "invalid"
+                self.assertEqual(info["calibration"]["state"], expected)
+                self.assertEqual(info["output"]["enabled"], counts == 600)
+                if counts < 600:
+                    self.assertEqual(info["output"]["reason"], "calibration_invalid")
+                self.assertEqual(self.d.config()["actuation"], 2.5)
+                self.assertEqual(info["settings"]["source"], "slot_a")
+
     def test_corrupt_legacy_image_falls_back_to_defaults_and_says_so(self):
         image = bytearray(v1_image(actuation=2.0))
         image[20] ^= 0xFF                               # CRC no longer matches
@@ -368,7 +410,8 @@ class TestCalibrationRules(unittest.TestCase):
         ok = self.lib.vd_cal_key_plausible
         self.assertEqual((ok(63, 1000, 1), ok(64, 1000, 1)), (0, 1))            # rest off the low rail
         self.assertEqual((ok(4031, 1000, -1), ok(4032, 1000, -1)), (1, 0))      # rest off the high rail
-        self.assertEqual((ok(2048, 299, 1), ok(2048, 300, 1)), (0, 1))          # minimum bottom-out range
+        self.assertEqual((ok(2048, 300, 1), ok(2048, 599, 1), ok(2048, 600, 1)),
+                         (0, 0, 1))                                           # matches the DSP floor
         self.assertEqual((ok(3000, 1095, 1), ok(3000, 1096, 1)), (1, 0))        # bottom-out inside the ADC
         self.assertEqual((ok(1000, 1000, -1), ok(1000, 1001, -1)), (1, 0))
         self.assertEqual(ok(2048, 1000, 0), 0)                                   # polarity must be known
@@ -512,6 +555,29 @@ class TestCalibrationLifecycle(unittest.TestCase):
         self.d.run(100)
         self.assertFalse(self.lib.is_pressed(2))
 
+    def test_guided_minimum_range_rejects_weak_signals_and_reaches_max_actuation(self):
+        self.one("CAL START")
+        self.d.run(700 * LOOPS_PER_SCAN)
+        for counts in (300, 599):
+            self.lib.set_travel(0, counts / 250)
+            self.d.run(80)
+            self.lib.set_travel(0, 0.0)
+            self.d.run(80)
+            self.assertNotIn(0, self.one("CAL STATUS")["travel_done"])
+            self.assertEqual(self.one("CAL FINISH")["code"], "calibration_incomplete")
+        for k in range(16):
+            self.lib.set_travel(k, 600 / 250)
+            self.d.run(80)
+            self.lib.set_travel(k, 0.0)
+            self.d.run(80)
+        self.assertEqual(self.one("CAL FINISH")["calibration"]["state"], "valid")
+        self.one("SET_ACTUATION 3.80")
+        self.one("SET_HID 1")
+        self.lib.set_travel(0, 600 / 250)
+        self.d.run(500)
+        self.assertTrue(self.lib.is_pressed(0), "the accepted range cannot reach maximum actuation")
+        self.assertTrue(self.host()[1])
+
     def test_reset_all_clears_calibration_but_reset_keeps_it(self):
         calibrate(self.d)
         self.one("SET_ACTUATION 2.00")
@@ -536,6 +602,78 @@ class TestCalibrationLifecycle(unittest.TestCase):
         self.d.run(100)
         r = self.one("CALIBRATE")
         self.assertEqual((r["status"], r["calibration"]), ("ok", "valid"))
+
+    def test_revert_restores_calibration_to_the_sensing_engine(self):
+        calibrate(self.d)                               # saved rising sensors
+        self.one("SAVE")
+        self.one("CAL START")
+        self.d.run(700 * LOOPS_PER_SCAN)
+        for k in range(16):
+            self.lib.set_travel(k, -3.6)                # unsaved falling sensors
+            self.d.run(80)
+            self.lib.set_travel(k, 0.0)
+            self.d.run(80)
+        self.assertEqual(self.one("CAL FINISH")["status"], "ok")
+        self.one("SET_HID 1")
+        self.lib.set_travel(3, 2.5)                      # held under the saved calibration
+        self.d.run(100)
+        self.assertEqual(self.one("REVERT")["status"], "ok")
+        self.d.run(500)
+        self.assertTrue(self.lib.is_pressed(3), "REVERT did not restore the saved polarity")
+        self.assertFalse(self.host()[1], "a held key typed when REVERT changed calibration")
+        self.lib.set_travel(3, 0.0)
+        self.d.run(500)
+        self.lib.set_travel(3, 2.5)
+        self.d.run(500)
+        self.assertTrue(self.host()[1], "the released key stayed suppressed")
+
+    def test_revert_to_missing_calibration_disables_output(self):
+        self.one("SAVE")                               # saved before calibration
+        calibrate(self.d)
+        self.one("SET_HID 1")
+        self.lib.set_travel(7, 2.5)
+        self.d.run(500)
+        self.assertTrue(self.host()[1])
+        self.assertEqual(self.one("REVERT")["status"], "ok")
+        info = self.one("INFO")
+        self.assertEqual((info["calibration"]["state"], info["output"]["enabled"],
+                          info["output"]["reason"]), ("missing", False, "calibration_missing"))
+        self.assertFalse(self.host()[1])
+
+    def test_revert_to_valid_calibration_does_not_enable_disabled_output(self):
+        calibrate(self.d)
+        self.one("SAVE")
+        self.one("RESET ALL")
+        self.assertEqual(self.one("REVERT")["status"], "ok")
+        info = self.one("INFO")
+        self.assertEqual((info["calibration"]["state"], info["output"]["enabled"],
+                          info["output"]["reason"]), ("valid", False, "disabled_default"))
+
+    def test_revert_is_busy_during_guided_calibration(self):
+        calibrate(self.d)
+        self.one("SAVE")
+        self.one("SET_ACTUATION 2.00")
+        self.one("CAL START")
+        self.assertEqual(self.one("REVERT")["code"], "busy")
+        self.assertEqual(self.d.config()["actuation"], 2.0)
+        self.assertEqual(self.one("INFO")["calibration"]["state"], "in_progress")
+        self.one("CAL CANCEL")
+
+    def test_calibration_failure_cannot_undo_output_gating_by_the_next_command(self):
+        self.one("SAVE")                               # saved calibration is missing
+        calibrate(self.d)
+        self.one("SET_HID 1")
+        self.assertEqual(self.d.replies("CAL START", iterations=1)[0]["status"], "ok")
+        for i in range(490):                           # noisy rest, just before the 500ms decision
+            self.lib.set_travel(9, 0.8 if i % 2 else 0.0)
+            self.d.run(LOOPS_PER_SCAN)
+        self.lib.host_clock_advance_us(15000)
+        self.d.send_raw(b"REVERT\n")                    # fail CAL and execute REVERT in one loop
+        self.d.run(1)
+        self.d.drain()
+        info = self.one("INFO")
+        self.assertEqual((info["calibration"]["state"], info["output"]["enabled"],
+                          info["output"]["reason"]), ("missing", False, "calibration_missing"))
 
     def test_quick_calibrate_without_valid_calibration_does_not_claim_it_applied(self):
         r = self.one("CALIBRATE")

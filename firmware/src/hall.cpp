@@ -213,8 +213,8 @@ bool HallKey::update(uint16_t rawAdc) {
 
     // 4. Dynamic Range Calibration
     float dynRange = fabsf(_bottomRaw - _restBaseline);
-    if (dynRange < 600.0f) {
-        dynRange = 600.0f;
+    if (dynRange < (float)calib::RANGE_MIN) {
+        dynRange = (float)calib::RANGE_MIN;
     }
     if (_polarityDetected && mag > dynRange) {
         dynRange = mag;

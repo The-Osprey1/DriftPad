@@ -51,6 +51,7 @@ held, and in `--release` any skip, import error, missing tool, dirty tree or sta
 | `test_configurator_contract` | headless browser + compiled firmware on host | `fake_device.js` answers exactly as the firmware does |
 | `test_configurator_js` | headless browser | The configurator's module tests (`configurator/tests/unit_tests.js`, `session_tests.js`), page-level tests (`app_tests.js`), and reproductions of the old page's defects |
 | `test_contract_consistency` | source inspection | Limits, error codes, factory keymaps, label rules, offline pages and these documents agree with the code |
+| `test_chrome_host` | host tooling with fakes | Browser path discovery, explicit sandbox opt-in and non-zero browser process handling |
 | `test_flash_tool` | host tooling with fakes | `tools/flash.py` and the UF2/ELF/manifest checks |
 | `test_release_tooling` | host tooling with fakes + source inspection | `check_toolchain.py`, `timing_capture.py`, `save_stress.py`, `acceptance_record.py`, `qualify_release.py`, the CI workflow |
 
@@ -68,8 +69,12 @@ Counts change; `--list` and the runner's summary are the source of truth, not th
 | Chrome or Edge (or `DRIFTPAD_CHROME`) | both browser suites | skipped in a diagnostic run, fails `--release` |
 | `pyserial`, Pillow (`tools/requirements.txt`) | the tool scripts only; tests use fakes | |
 
-CI (`.github/workflows/ci.yml`) installs the locked toolchain (`firmware/toolchain.lock.json`) and runs
-`--release --clean`; it uploads the reports and the build, and publishes nothing.
+CI (`.github/workflows/ci.yml`) installs the locked toolchain (`firmware/toolchain.lock.json`) and
+runs `--release --clean` on Ubuntu 24.04 and Windows Server 2022; it uploads the reports and the
+build, and publishes nothing. The Linux runner alone explicitly opts into Chrome's `--no-sandbox`
+flag for the local test pages. Browser execution fails on a non-zero exit even if Chrome returns a
+partial results page. The compiler, Chrome/Edge and PlatformIO checks all use the same discovery
+functions as the tools that actually run them.
 
 ## 4. Building and qualifying
 

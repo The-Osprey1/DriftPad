@@ -52,6 +52,11 @@ def doc_items(doc: Path = DOC) -> List[Dict[str, Any]]:
 
 
 def new_record(manifest: Dict[str, Any], tester: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(manifest, dict) or any(not isinstance(manifest.get(k), str) or not manifest[k].strip()
+                                             for k in ("build_id", "fw_version", "git_commit")):
+        raise ValueError("the manifest must identify a build_id, fw_version and git_commit")
+    if not isinstance(tester, str) or not tester.strip():
+        raise ValueError("tester must be a non-empty name")
     return {
         "schema": SCHEMA,
         "build_id": manifest.get("build_id"),
@@ -88,34 +93,61 @@ def evaluate(record: Dict[str, Any], manifest: Optional[Dict[str, Any]] = None,
     """(complete, problems). Complete means: for this build, every item of the current procedure is
     in the record, every required item passed, no item failed, and (optionally) it is signed."""
     problems: List[str] = []
+    if not isinstance(record, dict):
+        return False, ["the acceptance record must be a JSON object"]
     if record.get("schema") != SCHEMA:
         problems.append(f"not an acceptance record ({record.get('schema')!r})")
         return False, problems
-    if manifest is not None and record.get("build_id") != manifest.get("build_id"):
-        problems.append(f"the record is for build {record.get('build_id')}, not {manifest.get('build_id')}")
-    by_id = {i["id"]: i for i in record.get("items", [])}
+    for key in ("build_id", "fw_version", "git_commit"):
+        value = record.get(key)
+        if not isinstance(value, str) or not value.strip():
+            problems.append(f"the record has no {key}")
+        if manifest is not None and (not isinstance(manifest, dict) or value != manifest.get(key)):
+            problems.append(f"the record's {key} does not match the manifest")
+    rows = record.get("items")
+    if not isinstance(rows, list) or not rows:
+        return False, problems + ["the record must contain a non-empty items list"]
+    by_id = {}
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or not isinstance(row.get("id"), str):
+            problems.append(f"item {index + 1} must be an object with an id")
+            continue
+        item_id = row["id"]
+        if item_id in by_id:
+            problems.append(f"{item_id} appears twice in the record")
+        by_id[item_id] = row
+        if row.get("result") not in RESULTS:
+            problems.append(f"{item_id} has an invalid result {row.get('result')!r}")
     expected = items if items is not None else [{"id": k, "required": v.get("required", True)} for k, v in by_id.items()]
     for want in expected:
         got = by_id.get(want["id"])
         if got is None:
             problems.append(f"{want['id']} is missing from the record (the procedure changed; start a new record)")
             continue
-        if got["result"] == "fail":
+        if got.get("result") == "fail":
             problems.append(f"{want['id']} failed")
-        elif got["result"] == "n/a" and want["required"]:
+        elif got.get("result") == "n/a" and want["required"]:
             problems.append(f"{want['id']} is required but marked n/a")
-        elif got["result"] == "not_run":
+        elif got.get("result") == "not_run":
             problems.append(f"{want['id']} not run" + ("" if want["required"] else " (optional: pass or n/a)"))
     if items is not None:
         unknown = set(by_id) - {i["id"] for i in items}
         for u in sorted(unknown):
             problems.append(f"{u} is not in the current procedure")
-    if require_signature and not record.get("signed_off_by"):
-        problems.append("not signed off")
+    if require_signature:
+        signer = record.get("signed_off_by")
+        if not isinstance(signer, str) or not signer.strip():
+            problems.append("not signed off")
+        elif not isinstance(record.get("signed_utc"), str) or not record["signed_utc"].strip():
+            problems.append("sign-off timestamp missing")
     return not problems, problems
 
 
 def sign(record: Dict[str, Any], by: str, items: List[Dict[str, Any]]) -> None:
+    if not isinstance(by, str) or not by.strip():
+        raise ValueError("signer must be a non-empty name")
+    if isinstance(record, dict) and record.get("signed_off_by"):
+        raise ValueError("the record is signed off and frozen; start a new record for a new run")
     ok, problems = evaluate(record, items=items, require_signature=False)
     if not ok:
         raise ValueError("cannot sign: " + "; ".join(problems))
@@ -124,7 +156,10 @@ def sign(record: Dict[str, Any], by: str, items: List[Dict[str, Any]]) -> None:
 
 
 def _load(path: Path) -> Dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{path}: expected a JSON object")
+    return value
 
 
 def _save(path: Path, record: Dict[str, Any]) -> None:

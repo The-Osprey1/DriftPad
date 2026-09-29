@@ -52,6 +52,7 @@ float vd_engine_rt_sens() { return HallKey::getRtSensitivity(); }
 int   vd_engine_rt_enabled() { return HallKey::isRapidTrigger() ? 1 : 0; }
 int   vd_active_layer() { return configGet().activeLayer; }
 int   vd_engine_code(int key) { return HallManager::getKey((uint8_t)key).getHidKeyCode(); }
+int   vd_engine_rest(int key) { return HallManager::getKey((uint8_t)key).getRestBaseline(); }
 int   vd_dirty() { return configIsDirty() ? 1 : 0; }
 int   vd_output_enabled() { return KeyboardOutput::isEnabled() ? 1 : 0; }
 int   vd_is_pressed(int key) { return HallManager::getKey((uint8_t)key).isPressed() ? 1 : 0; }

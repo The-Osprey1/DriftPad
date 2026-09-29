@@ -62,8 +62,8 @@ public:
     uint8_t getReleaseCount() const { return _releaseCount; }
 
     // Calibration (calibration.cpp). applyCalibration() sets rest, polarity and range only;
-    // callers seed the filters and reset the state machine explicitly. A calibrated range below
-    // the DSP's 600-count floor in update() still maps travel over 600 counts.
+    // callers seed the filters and reset the state machine explicitly. The accepted range
+    // minimum and the DSP noise-protection floor both use calib::RANGE_MIN.
     void applyCalibration(const KeyCalibration& cal);
     KeyCalibration exportCalibration() const;
     // Legacy start: polarity unknown (auto-detected on the first 150-count excursion), 1000-count range

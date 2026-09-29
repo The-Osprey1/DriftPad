@@ -133,7 +133,7 @@ def _whole_image(key: str, main_source: Path, extra_flags=()) -> ctypes.CDLL:
     _bind(lib, {
         "vd_boot": ([], None), "vd_loop": ([i], None), "vd_set_travel": ([i, f], None),
         "vd_engine_actuation": ([], f), "vd_engine_rt_sens": ([], f), "vd_engine_rt_enabled": ([], i),
-        "vd_active_layer": ([], i), "vd_engine_code": ([i], i), "vd_dirty": ([], i),
+        "vd_active_layer": ([], i), "vd_engine_code": ([i], i), "vd_engine_rest": ([i], i), "vd_dirty": ([], i),
         "vd_output_enabled": ([], i), "vd_is_pressed": ([i], i), "vd_encoder_apply": ([i, i], i),
         "oled_stub_wakes": ([], ctypes.c_uint32), "oled_stub_page": ([], i), "oled_stub_stall": ([i], None),
         "vd_display_snapshot": ([ctypes.c_void_p], i), "vd_display_stats": ([ctypes.c_void_p], None),

@@ -61,6 +61,7 @@ void serviceHostConnection() {
     if (s_hostConnected && !connected) {
         // The host closed the port: nothing queued is for the next session
         commands::onHostDisconnected();
+        s_dispatcher.cancelDeferred();
         s_tx.clear();
         s_lineReader.reset();
     }
@@ -102,6 +103,7 @@ void setup() {
     s_tx.clear();
     s_tx.resetStats();
     s_lineReader.reset();
+    s_dispatcher.cancelDeferred();
     s_timing.reset();
 
     // Let the sensors settle, then restore calibration against a fresh rest measurement: keys

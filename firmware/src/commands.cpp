@@ -452,9 +452,38 @@ HandlerResult cmdSave(const Args&, Reply& r, void*) {
 
 HandlerResult cmdRevert(const Args&, Reply& r, void*) {
     wakeDisplay();
+    if (Calibration::isActive()) {
+        r.error(err::BUSY, "calibration is running (CAL FINISH or CAL CANCEL first)");
+        return HandlerResult::Done;
+    }
+    const CalibrationData previous = configGet().calibration;
     if (!configRevert()) {
         r.error(err::NOT_ALLOWED, "no saved settings to revert to");
         return HandlerResult::Done;
+    }
+    const CalibrationData& restored = configGet().calibration;
+    if (memcmp(&previous, &restored, sizeof(restored)) != 0) {
+        // Restoring settings must also restore the sensing calibration they describe. Release
+        // owned output before resetting the filters, and keep keys off rest silent until lifted.
+        KeyboardOutput::releaseAll(HallManager::pressedMask());
+        HallManager::simClearAll();
+        const CalState state = calibrationEvaluate(restored);
+        if (state == CalState::Valid) {
+            const uint16_t offRest = Calibration::applyRuntime(restored, HallManager::lastRaw());
+            for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+                if (offRest & (1u << i)) KeyboardOutput::suppressUntilRelease(i, true);
+            }
+            // A restored calibration permits output, but REVERT does not enable it by itself.
+            if (KeyboardOutput::isEnabled()) {
+                KeyboardOutput::setEnabled(true, KeyboardOutput::Reason::Enabled);
+            } else if (KeyboardOutput::reason() == KeyboardOutput::Reason::CalibrationMissing ||
+                       KeyboardOutput::reason() == KeyboardOutput::Reason::CalibrationInvalid) {
+                KeyboardOutput::setEnabled(false, KeyboardOutput::Reason::DisabledDefault);
+            }
+        } else {
+            // As for RESET ALL, keep the running baselines for diagnostics and gate output.
+            KeyboardOutput::setEnabled(false, disabledReasonFor(state));
+        }
     }
     s_hostEdits = false;
     JsonWriter& w = r.ok();
@@ -501,7 +530,8 @@ HandlerResult cmdCalibrate(const Args&, Reply& r, void*) {
     uint16_t offRest = 0;
     const uint16_t pressed = HallManager::pressedMask();
     if (!Calibration::quickRestRecalibrate(data, rest, offRest)) {
-        JsonWriter& w = r.error(err::KEYS_NOT_AT_REST, "release every key and try again");
+        JsonWriter& w = r.error(err::KEYS_NOT_AT_REST,
+                                "rest readings rejected; release every key or run CAL START to recalibrate travel");
         writeKeyList(w, "keys", offRest);
         return HandlerResult::Done;
     }
@@ -738,16 +768,18 @@ HandlerResult cmdWake(const Args&, Reply& r, void*) {
 
 HandlerResult cmdOledTest(const Args&, Reply& r, void*) {
     wakeDisplay();
-    s_displayTicket = oledPost(OledRequest::TestPattern);
-    return r.defer(pollOledTest, nullptr, DISPLAY_REPLY_TIMEOUT_MS, err::DISPLAY_TIMEOUT,
-                   "the display core did not draw the test pattern in time");
+    const HandlerResult result = r.defer(pollOledTest, nullptr, DISPLAY_REPLY_TIMEOUT_MS, err::DISPLAY_TIMEOUT,
+                                         "the display core did not draw the test pattern in time");
+    if (result == HandlerResult::Deferred) s_displayTicket = oledPost(OledRequest::TestPattern);
+    return result;
 }
 
 HandlerResult cmdOledScan(const Args&, Reply& r, void*) {
     wakeDisplay();
-    s_displayTicket = oledPost(OledRequest::BusScan);
-    return r.defer(pollOledScan, nullptr, DISPLAY_REPLY_TIMEOUT_MS, err::DISPLAY_TIMEOUT,
-                   "the display core did not finish the I2C scan in time");
+    const HandlerResult result = r.defer(pollOledScan, nullptr, DISPLAY_REPLY_TIMEOUT_MS, err::DISPLAY_TIMEOUT,
+                                         "the display core did not finish the I2C scan in time");
+    if (result == HandlerResult::Deferred) s_displayTicket = oledPost(OledRequest::BusScan);
+    return result;
 }
 
 HandlerResult cmdBootsel(const Args&, Reply& r, void*) {
@@ -860,6 +892,10 @@ void onScan() {
     if (Calibration::isActive()) {
         Timing::Scoped t(*s_timing, Timing::Op::Calibration);
         Calibration::onScan(HallManager::lastRaw(), millis());
+        // A failed/timed-out session must restore output before the scheduler handles the next
+        // command. Otherwise a same-loop REVERT, RESET ALL or SET_HID 0 could be undone later by
+        // service() restoring the session's old enabled state.
+        if (!Calibration::isActive()) endCalibrationSession();
     }
     if (s_rawCapturing && s_rawCount < RAW_CAPTURE_LEN) {
         s_raw[s_rawCount++] = HallManager::lastRaw()[(uint8_t)s_rawKey];

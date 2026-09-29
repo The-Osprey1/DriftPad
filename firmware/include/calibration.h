@@ -35,7 +35,9 @@ struct CalibrationData {
 namespace calib {
 constexpr uint16_t REST_MIN           = 64;
 constexpr uint16_t REST_MAX           = 4031;
-constexpr uint16_t RANGE_MIN          = 300;
+// Match the sensing engine's noise-protection floor: every accepted bottom-out range must map
+// onto the full nominal travel, including the highest configurable actuation point.
+constexpr uint16_t RANGE_MIN          = 600;
 constexpr uint16_t RAIL_LOW           = 16;
 constexpr uint16_t RAIL_HIGH          = 4079;
 constexpr uint16_t REST_NOISE_P2P_MAX = 120;
@@ -64,7 +66,7 @@ void calibrationClear(CalibrationData& d);   // -> Missing, keys zeroed
 struct BootReport {
     CalState state;
     uint16_t heldMask;     // keys held at boot: stored rest kept, output suppressed until released
-    uint16_t driftMask;    // rest moved away from the press direction beyond tolerance (adopted)
+    uint16_t driftMask;    // large rest drift, or measured rest could not preserve plausible endpoints
     uint16_t faultMask;    // railed sensor readings: no output from these keys
     uint16_t adoptedMask;  // rest re-measured within tolerance and adopted
 };
@@ -84,7 +86,8 @@ uint16_t applyRuntime(const CalibrationData& d, const uint16_t currentRaw[NUM_KE
 
 // Legacy CALIBRATE: re-zero rest baselines from `measuredRest` while keeping polarity and range.
 // Fails (returns false, sets offRestMask) if any key is off-rest by more than the boot tolerance
-// in the press direction relative to the current calibration.
+// in the press direction relative to the current calibration, or re-zeroing would make its
+// saved rest/range endpoints implausible. A refusal leaves every key and `data` unchanged.
 bool quickRestRecalibrate(CalibrationData& data, const uint16_t measuredRest[NUM_KEYS], uint16_t& offRestMask);
 
 enum class Phase : uint8_t { Idle = 0, Rest, Travel, Done, Failed, Cancelled };

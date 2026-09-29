@@ -111,7 +111,10 @@ def version_key(v: Optional[str]):
     if not m:
         return None
     pre = m.group(4)
-    pre_key = (1,) if pre is None else (0,) + tuple(int(p) if p.isdigit() else p for p in pre.split("."))
+    # SemVer orders numeric identifiers below text identifiers. Tagged pairs also prevent
+    # Python comparing int to str (e.g. beta.1 versus beta.rc), which would abort preflight.
+    pre_key = (1,) if pre is None else (0,) + tuple((0, int(p)) if p.isdigit() else (1, p)
+                                                 for p in pre.split("."))
     return (int(m.group(1)), int(m.group(2)), int(m.group(3)), pre_key)
 
 

@@ -109,11 +109,17 @@ Advertised by `INFO.features` as `guided_calibration`, `boot_output` and `settin
 - `RESET ALL` → like `RESET`, and calibration becomes `missing` (keyboard output disabled). Both report `all`.
 - `CAL START` → `{"phase":"rest","rest_ms":500}`; keyboard output is suspended.
   Events: `{"type":"cal","phase":"rest|travel|done|failed|cancelled","rest_ok":[keys],"rest_failed":[keys],"travel_done":[keys],"elapsed_ms":n}`.
-  Rest phase: keys untouched for 500 ms. Travel phase: press each key fully and release it.
+  Rest phase: keys untouched for at least 500 ms; more than 120 ADC counts peak-to-peak noise,
+  railed samples, or an implausible rest mean rejects that key. Travel phase: press each key fully
+  and release it. Every key needs at least 600 ADC counts of range; calibration does not finish with
+  a smaller excursion.
 - `CAL STATUS` → `type:"cal"` with the same fields.
 - `CAL FINISH` → `applied:true, persisted:false, dirty:true, calibration{state:"valid"}, output{...}`, or error
   `calibration_incomplete` with `missing:[keys]` and `phase` while a run is not complete, or error
   `not_allowed` with `phase` when no run is active. Save with `SAVE`.
 - `CAL CANCEL` → `phase:"cancelled", output{...}`; the previous calibration and output state are
   restored. Accepted (and harmless) when no run is active.
+- `REVERT` is `busy` during guided calibration. When it restores different calibration data, the
+  live sensing engine is reset to that saved data and keys already off rest are suppressed until
+  release; it does not enable output that the user had disabled.
 - `SAVE` additionally reports `slot` (`slot_a|slot_b`, the same names as `INFO.settings.source`) and `seq`; `INFO.settings.source` becomes `slot_a|slot_b|legacy_v1|defaults`.
