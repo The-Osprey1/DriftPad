@@ -46,6 +46,7 @@ bool s_bootselRequested = false;
 // Calibration: what power-up found, and the output state to restore after a guided session
 BootReport s_boot = { CalState::Missing, 0, 0, 0, 0 };
 bool       s_calSession = false;
+bool       s_hostEdits = false;   // a command changed settings that are not saved yet
 bool       s_outputBeforeCal = false;
 KeyboardOutput::Reason s_reasonBeforeCal = KeyboardOutput::Reason::DisabledDefault;
 
@@ -180,6 +181,7 @@ void endCalibrationSession() {
 
 // Mutating replies: the effective state after the change, not the request's text
 void writeApplied(JsonWriter& w) {
+    s_hostEdits = true;
     w.key("applied").boolean(true);
     w.key("persisted").boolean(!configIsDirty());
     w.key("dirty").boolean(configIsDirty());
@@ -442,6 +444,7 @@ HandlerResult cmdSave(const Args&, Reply& r, void*) {
         w.key("persisted").boolean(false).key("dirty").boolean(configIsDirty());
         return HandlerResult::Done;
     }
+    s_hostEdits = false;
     JsonWriter& w = r.ok();
     w.key("persisted").boolean(true).key("dirty").boolean(configIsDirty());
     // Same names as INFO.settings.source, so a client can compare the two directly.
@@ -456,6 +459,7 @@ HandlerResult cmdRevert(const Args&, Reply& r, void*) {
         r.error(err::NOT_ALLOWED, "no saved settings to revert to");
         return HandlerResult::Done;
     }
+    s_hostEdits = false;
     JsonWriter& w = r.ok();
     w.key("applied").boolean(true).key("persisted").boolean(!configIsDirty()).key("dirty").boolean(configIsDirty());
     return HandlerResult::Done;
@@ -472,6 +476,7 @@ HandlerResult cmdReset(const Args& a, Reply& r, void*) {
         r.error(err::BUSY, "calibration is running (CAL FINISH or CAL CANCEL first)");
         return HandlerResult::Done;
     }
+    s_hostEdits = true;
     if (all) {
         // Calibration is cleared too: output goes off, the sensing keeps its running baselines
         configResetAll();
@@ -507,9 +512,10 @@ HandlerResult cmdCalibrate(const Args&, Reply& r, void*) {
     // whatever is down stays silent until released.
     KeyboardOutput::releaseAll(pressed);
     const bool valid = calibrationEvaluate(data) == CalState::Valid;
-    if (valid) configSetCalibration(data);
+    if (valid) { configSetCalibration(data); s_hostEdits = true; }
     JsonWriter& w = r.ok();
-    w.key("applied").boolean(true);
+    // Without a valid calibration only the running baselines were re-zeroed: nothing was stored
+    w.key("applied").boolean(valid);
     w.key("persisted").boolean(!configIsDirty()).key("dirty").boolean(configIsDirty());
     w.key("calibration").str(calStateName(currentCalState()));
     return HandlerResult::Done;
@@ -564,6 +570,7 @@ HandlerResult cmdCal(const Args& a, Reply& r, void*) {
             w.key("phase").str(Calibration::phaseName(Calibration::progress().phase));
             return HandlerResult::Done;
         }
+        s_hostEdits = true;
         ConfigStatus st = configSetCalibration(data);
         if (st != ConfigStatus::Ok) {
             configError(r, st, "measured calibration failed validation");
@@ -823,6 +830,7 @@ bool sendRawChunk() {
 void init(proto::TxQueue& tx, Timing& timing) {
     s_tx = &tx;
     s_timing = &timing;
+    s_hostEdits = false;
     s_streaming = false;
     s_streamHz = limits::STREAM_HZ_DEFAULT;
     s_frameSeq = 0;
@@ -905,6 +913,10 @@ bool takeBootselRequest() {
     bool r = s_bootselRequested;
     s_bootselRequested = false;
     return r;
+}
+
+bool hostEditsUnsaved() {
+    return s_hostEdits;
 }
 
 } // namespace commands

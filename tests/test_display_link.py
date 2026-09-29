@@ -32,11 +32,12 @@ U32x2 = ctypes.c_uint32 * 2
 
 def load():
     path = hb.build("display_link", hb.firmware_sources("display_link.cpp") +
-                    hb.host_sources("display_link_harness.cpp"), hb.default_include_dirs())
+                    hb.host_sources("display_link_harness.cpp"), hb.default_include_dirs(),
+                    defines=["DISPLAY_LINK_TEST_HOOKS=1"])
     lib = ctypes.CDLL(str(path))
     u32, i32, i64 = ctypes.c_uint32, ctypes.c_int32, ctypes.c_int64
     sigs = {
-        "dl_reset": ([], None), "dl_snapshot_size": ([], ctypes.c_int), "dl_publish": ([u32], None),
+        "dl_reset": ([], None), "dl_set_sequence": ([u32], None), "dl_snapshot_size": ([], ctypes.c_int), "dl_publish": ([u32], None),
         "dl_read": ([], i64), "dl_post": ([ctypes.c_int, i32], u32),
         "dl_pending": ([ctypes.c_int, ctypes.POINTER(i32)], u32), "dl_mark_served": ([ctypes.c_int, u32], None),
         "dl_stamp": ([ctypes.c_int], u32),
@@ -77,6 +78,13 @@ class TestSnapshot(unittest.TestCase):
         self.assertEqual(self.lib.dl_read(), 77, "reading does not consume")
         s = self.stats()
         self.assertEqual((s["published"], s["reads"], s["retries"]), (3, 2, 0))
+
+    def test_the_sequence_wraps_without_looking_unpublished(self):
+        self.lib.dl_publish(1)
+        self.lib.dl_set_sequence(0xFFFFFFFC)        # the next publishes cross 2^32
+        for n in (5, 6, 7, 8):
+            self.lib.dl_publish(n)
+            self.assertEqual(self.lib.dl_read(), n, f"publish {n} must be readable across the wrap")
 
     def test_the_snapshot_stays_small(self):
         # Copied twice per display frame and once per scan on core 0

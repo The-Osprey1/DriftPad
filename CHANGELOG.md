@@ -41,6 +41,10 @@ work with this firmware and says so.
   unanswered writes are read back and reconciled; telemetry frames are parsed as the firmware sends
   them; dialogs, focus and screen-reader announcements; layout at 360 px.
 - A refused `CALIBRATE` (`keys_not_at_rest`) no longer releases keys that are being held.
+- `CALIBRATE` without a valid calibration answers `applied:false` (only the running baselines are re-zeroed).
+- The encoder's delayed save no longer commits settings that a command changed and left unsaved; those stay
+  unsaved (INFO `dirty`) until `SAVE`.
+- The display link's sequence counter no longer looks "unpublished" after wrapping (one frame lost every ~24 days).
 - A failed encoder save is retried after the next rest instead of being dropped.
 - `INFO.settings.source` names the slot just written after a `SAVE` (it kept saying `legacy_v1` with the new sequence number until the next power-up). Found when updating a real pad.
 - `tools/flash.py --drive` (a board in bootloader mode) no longer verifies against a different pad
@@ -72,10 +76,6 @@ work with this firmware and says so.
 ### Known limits
 
 - Everything above is verified against models and fakes only. No physical pad has run this build.
-- `CALIBRATE` on a pad without valid calibration re-zeroes the running baselines only; it answers
-  `applied:true` and the `calibration` field stays `missing`/`invalid` until `CAL START`.
-- A knob turn saves every dirty setting, including edits made from the configurator that were not saved.
 - `flash.py --drive` cannot identify the board first, so it cannot warn about a downgrade or unsaved
   settings; the confirmation prompt is the only guard.
-- The display link's request read can, in a rare race, show a test pattern twice; its sequence counter
-  costs one frame every ~24 days of uptime. Both are cosmetic.
+- The display link's request read can, in a rare race, show a test pattern twice (cosmetic).

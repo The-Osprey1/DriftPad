@@ -211,6 +211,14 @@ class TestEncoderSave(unittest.TestCase):
         self.assertEqual(self.lib.flash_writes(), writes + 1)
         self.lib.set_travel(3, 0.0)
 
+    def test_a_knob_turn_does_not_save_edits_that_were_not_its_own(self):
+        self.assertEqual(self.d.replies("SET_KEY 0 3 65 ZZ")[0]["status"], "ok")   # an unsaved edit
+        writes = self.lib.flash_writes()
+        turn_encoder(self.d, 1)
+        run_ms(self.d, 6000)
+        self.assertEqual(self.lib.flash_writes(), writes, "the knob committed someone else's unsaved edit")
+        self.assertTrue(self.d.config()["dirty"])
+
     def test_a_failed_save_is_tried_again(self):
         self.lib.ff_fail_erase(1, 0)                 # the first erase fails, power stays on
         self.edit()

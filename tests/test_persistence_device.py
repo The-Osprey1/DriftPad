@@ -537,6 +537,13 @@ class TestCalibrationLifecycle(unittest.TestCase):
         r = self.one("CALIBRATE")
         self.assertEqual((r["status"], r["calibration"]), ("ok", "valid"))
 
+    def test_quick_calibrate_without_valid_calibration_does_not_claim_it_applied(self):
+        r = self.one("CALIBRATE")
+        self.assertEqual((r["status"], r["calibration"]), ("ok", "missing"))
+        self.assertIs(r["applied"], False, "nothing was stored: the calibration is still missing")
+        calibrate(self.d)
+        self.assertIs(self.one("CALIBRATE")["applied"], True)
+
     def test_refused_quick_calibrate_leaves_a_held_key_typing(self):
         calibrate(self.d)
         self.assertEqual(self.one("SET_HID 1")["status"], "ok")

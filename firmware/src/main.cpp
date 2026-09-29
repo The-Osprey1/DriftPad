@@ -175,7 +175,8 @@ void loop() {
         (nowMs - s_lastKeyChange) >= KEYS_QUIET_MS) {
         s_encoderSavePending = false;
         SaveResult sr;
-        {
+        sr.ok = true;
+        if (!commands::hostEditsUnsaved()) {   // otherwise the user's own edits would be committed too
             Timing::Scoped t(s_timing, Timing::Op::Save);
             sr = configSave();
         }

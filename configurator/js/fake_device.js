@@ -583,7 +583,7 @@
                     const moving = [];
                     for (let i = 0; i < NUM_KEYS; i++) if (this.physicalCmm[i] > 20) moving.push(i);
                     if (moving.length) return { error: "keys_not_at_rest", msg: "release every key and try again", extra: { keys: moving } };
-                    return { fields: { applied: true, persisted: !this.dirty, dirty: this.dirty, calibration: this.calibration.state } };
+                    return { fields: { applied: this.calibration.state === "valid", persisted: !this.dirty, dirty: this.dirty, calibration: this.calibration.state } };
                 }
                 case "CAL":
                     return this._cal(a[0]);

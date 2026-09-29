@@ -89,6 +89,10 @@ void noteStaleFrame();
 
 Stats stats();
 
+#ifdef DISPLAY_LINK_TEST_HOOKS
+void testSetSequence(uint32_t v);   // host tests only: start the sequence lock near its wrap-around
+#endif
+
 } // namespace display_link
 
 #endif // DISPLAY_LINK_H

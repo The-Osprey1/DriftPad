@@ -43,6 +43,10 @@ bool streaming();
 // True once after BOOTSEL was accepted: main flushes the reply, then reboots to the bootloader
 bool takeBootselRequest();
 
+// True while a command has changed settings that neither SAVE nor REVERT has settled since. The
+// encoder's delayed save leaves those to the user instead of committing them with a knob turn.
+bool hostEditsUnsaved();
+
 } // namespace commands
 
 #endif // COMMANDS_H

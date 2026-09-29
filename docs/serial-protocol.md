@@ -62,7 +62,8 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 
 - Mutating commands reply with the effective value read back from the device and
   `"applied":true, "persisted":<in flash now>, "dirty":<RAM differs from flash>`. Nothing is written
-  to flash except by `SAVE` (and the encoder's delayed save).
+  to flash except by `SAVE` and the encoder's delayed save, which is skipped while a command's own
+  edits are unsaved.
 
 ## Commands
 
@@ -82,7 +83,7 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 | `SAVE` | `persisted:true, dirty:false, duration_ms`, or error `flash_error`/`flash_verify_failed` with `persisted:false` |
 | `REVERT` | `applied, persisted, dirty` — reloads the saved settings; `not_allowed` when nothing is saved |
 | `RESET` | `applied:true, persisted:false, dirty:true` — factory keymaps and settings, not saved |
-| `CALIBRATE` | quick re-zero of every key's rest reading; `applied, persisted, dirty, calibration` (state name), or `keys_not_at_rest` with `keys:[...]` |
+| `CALIBRATE` | quick re-zero of every key's rest reading; `applied, persisted, dirty, calibration` (state name), or `keys_not_at_rest` with `keys:[...]`. `applied` is true only when a valid calibration was updated; without one only the running baselines are re-zeroed (`applied:false`) and `CAL START` is needed |
 | `SIM <key> <mm>` / `SIM <key> OFF` / `SIM OFF` | `type:"sim_event", key, travel, pressed, sim_mask` — simulated keys never produce keyboard output |
 | `SCAN_RATE` | `type:"scan_rate", hz, max_gap_us` |
 | `TIMING [RESET]` | `type:"timing", ...` |

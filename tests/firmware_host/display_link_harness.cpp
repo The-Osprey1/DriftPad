@@ -46,6 +46,7 @@ Snapshot g_naive;   // control: no sequence lock
 extern "C" {
 
 void dl_reset() { reset(); }
+void dl_set_sequence(uint32_t v) { testSetSequence(v); }
 int  dl_snapshot_size() { return (int)sizeof(Snapshot); }
 void dl_publish(uint32_t n) { publish(make(n)); }
 

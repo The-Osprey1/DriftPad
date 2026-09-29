@@ -52,7 +52,7 @@ void publish(const Snapshot& s) {
     barrier();
     memcpy(&s_buffer, &s, sizeof(s_buffer));
     barrier();
-    s_seq = seq + 2;            // even again
+    s_seq = seq + 2 == 0 ? 2 : seq + 2;   // even again; 0 is reserved for "nothing published"
     s_published = s_published + 1;
 }
 
@@ -126,6 +126,10 @@ void setScanResult(const uint8_t* found, uint8_t count) {
     for (uint8_t i = 0; i < n; ++i) s_scanFound[i] = found[i];
     s_scanCount = count;        // the real count, even when more answered than fit
 }
+
+#ifdef DISPLAY_LINK_TEST_HOOKS
+void testSetSequence(uint32_t v) { s_seq = v; }
+#endif
 
 void noteStaleFrame() { s_stale = s_stale + 1; }
 
