@@ -154,6 +154,21 @@ class OledFrames(unittest.TestCase):
         self.assertEqual(trail[-1], cell(rest), "the cell does not settle back to its resting look, legend and all")
         self.assertEqual(card_top(step(0.0, 0, 1)), 0, "the card does not go away once the key has settled")
 
+    def test_lava_lamp_sits_between_caps_and_keeps_moving(self):
+        import ctypes
+        self.lib.oled_screensaver_frame.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+
+        def frame_at(n):
+            buf = ctypes.create_string_buffer(1024)
+            self.lib.oled_screensaver_frame(5, n, buf)
+            return bytes(buf.raw)
+
+        a, b = frame_at(150), frame_at(210)   # after the title card has slid away from the bottom edge
+        self.assertNotEqual(a, b, "the lava is not moving")
+        for fb in (a, b):
+            self.assertTrue(all(oh.pixel(fb, x, 2) for x in range(128)), "the top lamp cap is missing")
+            self.assertTrue(all(oh.pixel(fb, x, 61) for x in range(128)), "the bottom lamp cap is missing")
+
     def test_mag_pulse_rings_keep_moving_and_spark_where_they_cross(self):
         import ctypes
         self.lib.oled_screensaver_frame.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]

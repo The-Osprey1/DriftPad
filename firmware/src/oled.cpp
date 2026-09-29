@@ -1552,10 +1552,50 @@ void renderAnimLava() {
                 if (level > 8) level = 8;
                 on = kBayer4[y & 3][x & 3] < level;
             }
+            // Gloss: light from the upper left lands where the field climbs toward the lower right, a
+            // solid crescent just inside each blob's upper-left edge
+            if (!rim && prev && next && x > 0 && x < SCREEN_WIDTH - 1 && f < CORE + 260) {
+                const int32_t gx = (int32_t)row[x + 1] - (int32_t)row[x - 1];
+                const int32_t gy = (int32_t)next[x] - (int32_t)prev[x];
+                if (gx > 40 && gy > 40) on = true;
+            }
             if (on) {
                 buf[x + (y >> 3) * SCREEN_WIDTH] |= 1 << (y & 7);
             }
         }
+    }
+
+    // Small bubbles rise through the wax, wobbling; drawn inverted so they read over the blobs too
+    struct Bubble { float x, y, vy, phase; uint8_t r; };
+    static Bubble bubbles[6];
+    static bool bubblesInit = false;
+    if (!bubblesInit) {
+        for (uint8_t i = 0; i < 6; ++i) {
+            bubbles[i] = {(float)(12 + rand() % 104), (float)(rand() % 64), 0.35f + 0.1f * (rand() % 8),
+                          0.7f * (float)i, (uint8_t)(1 + rand() % 2)};
+        }
+        bubblesInit = true;
+    }
+    for (uint8_t i = 0; i < 6; ++i) {
+        Bubble& b = bubbles[i];
+        b.y -= b.vy;
+        b.x += 0.35f * sinf(b.y * 0.22f + b.phase);
+        if (b.y < -3.0f) {
+            b.y = 66.0f;
+            b.x = (float)(12 + rand() % 104);
+            b.vy = 0.35f + 0.1f * (rand() % 8);
+        }
+        s_display.drawCircle((int16_t)b.x, (int16_t)b.y, b.r, OLED_COLOR_INVERSE);
+    }
+
+    // Lamp caps: the column of wax sits between a top and a bottom cap
+    s_display.fillRect(0, 0, SCREEN_WIDTH, 3, OLED_COLOR_BLACK);
+    s_display.drawFastHLine(0, 2, SCREEN_WIDTH, OLED_COLOR_WHITE);
+    s_display.fillRect(0, SCREEN_HEIGHT - 3, SCREEN_WIDTH, 3, OLED_COLOR_BLACK);
+    s_display.drawFastHLine(0, SCREEN_HEIGHT - 3, SCREEN_WIDTH, OLED_COLOR_WHITE);
+    for (int16_t x = 0; x < SCREEN_WIDTH; x += 2) {
+        s_display.drawPixel(x, 0, OLED_COLOR_WHITE);
+        s_display.drawPixel(x + 1, SCREEN_HEIGHT - 1, OLED_COLOR_WHITE);
     }
 }
 
