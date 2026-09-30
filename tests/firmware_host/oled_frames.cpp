@@ -12,6 +12,15 @@ bool encoderMenuApply(MenuMode, int32_t) { return false; }
 // about them start from "nothing changed" so an earlier test's state cannot leak into their frames
 static void forget_state_history() {
     s_saveSeqKnown = false; s_savedUntil = 0; s_layerSeen = -1; s_layerFlashUntil = 0;
+    s_standbyActive = false; s_standbyPage = 0;
+}
+
+// No key has been pressed or focused before this frame (for scenes that are not a press sequence)
+static void forget_press_history() {
+    s_focusKey = -1;
+    memset(s_focusSeenPress, 0, sizeof s_focusSeenPress);
+    memset(s_lastPressCount, 0, sizeof s_lastPressCount);
+    memset(s_lastReleaseCount, 0, sizeof s_lastReleaseCount);
 }
 
 extern "C" {
@@ -189,6 +198,7 @@ int oled_glow_step(int held) {
 }
 // Menu opening wipe: the frame t_ms after the tuning card was requested (key screen underneath)
 int oled_wipe_frame(uint32_t t_ms, uint8_t* out) {
+    forget_press_history();
     forget_state_history();
     const uint64_t t0 = 200000000ULL;
     host_clock_set_us(t0);
@@ -236,6 +246,7 @@ int oled_screensaver_frame(int anim, int frames, uint8_t* out) {
 }
 // The power-up intro at `t_ms`, and whether loop1() has finished it
 int oled_intro_frame(uint32_t t_ms, uint8_t* out) {
+    forget_press_history();
     forget_state_history();
     static bool started = false;
     if (!started) { started = true; initDisplayHardware(); }
@@ -288,6 +299,9 @@ static void keyscreen_step(int dirty, int save_seq, int layer, uint32_t dt_ms, u
     host_clock_advance_us((uint64_t)dt_ms * 1000);
     s_menuVisible = false; s_modeTransition = false; s_menuLastActive = 0; s_screensaverActive = false;
     s_focusKey = -1; s_prevHadFocus = false; s_revealFrames = 0;
+    memset(s_focusSeenPress, 0, sizeof s_focusSeenPress);
+    memset(s_lastPressCount, 0, sizeof s_lastPressCount);
+    memset(s_lastReleaseCount, 0, sizeof s_lastReleaseCount);
     display_link::Snapshot s;
     memset(&s, 0, sizeof s);
     static const char* labels[16] = {"7", "8", "9", "/", "4", "5", "6", "*", "1", "2", "3", "-", "0", ".", "ENT", "+"};

@@ -36,10 +36,14 @@ class OledFrames(unittest.TestCase):
             spill = [y for y in range(8, 56) if oh.pixel(fb, 0, y)]
             self.assertEqual(spill, [], f"{scene}: pixels in column 0 below the header")
 
-    def test_header_reaches_the_right_edge(self):
+    def test_standby_has_a_plain_caption_page_pips_and_a_big_value(self):
         fb = oh.frame(self.lib, "standby")
-        self.assertTrue(any(oh.pixel(fb, 127, y) for y in range(0, 8)),
-                        "the last header glyph is missing (clipped or wrapped)")
+        caption = sum(oh.pixel(fb, x, y) for x in range(2, 80) for y in range(20, 28))
+        value = sum(oh.pixel(fb, x, y) for x in range(2, 77) for y in range(31, 49))
+        pips = sum(oh.pixel(fb, x, y) for x in range(1, 20) for y in range(3, 7))
+        self.assertGreater(caption, 60, "no caption above the value")
+        self.assertGreater(value, 200, "no big value on the standby page")
+        self.assertGreater(pips, 20, "no page pips")
 
     def test_every_screen_draws_something(self):
         for name in oh.SCENES:
@@ -87,7 +91,7 @@ class OledFrames(unittest.TestCase):
             fb = oh.frame(self.lib, scene)
             return [sum(oh.pixel(fb, x, y) for x in range(x0, x1)) for y in range(y0, y1)]
 
-        for scene, box in (("menu_rt", (10, 118, 18, 38)), ("travelling", (6, 74, 24, 42)), ("standby", (1, 77, 21, 34))):
+        for scene, box in (("menu_rt", (10, 118, 18, 38)), ("travelling", (6, 74, 24, 42)), ("standby", (2, 77, 32, 46))):
             ink = rows(scene, *box)
             body = sorted(ink)[len(ink) // 2]
             self.assertLess(min(ink[2:-2]), max(1, body // 3), f"{scene}: no slit through the lettering")
@@ -154,6 +158,32 @@ class OledFrames(unittest.TestCase):
         self.assertEqual(trail[-1], cell(rest), "the cell does not settle back to its resting look, legend and all")
         self.assertEqual(card_top(step(0.0, 0, 1)), 0, "the card does not go away once the key has settled")
 
+    def test_standby_steps_through_pages_that_fit_the_panel(self):
+        import ctypes
+        self.lib.oled_settings_step.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
+        self.lib.oled_state_reset()
+
+        def step(dt):
+            buf = ctypes.create_string_buffer(1024)
+            self.lib.oled_settings_step(0, 5, dt, buf)
+            return bytes(buf.raw)
+
+        def settled_page(dt):       # the wipe between pages takes three frames
+            step(dt)
+            for _ in range(3):
+                fb = step(33)
+            return fb
+
+        pages = [settled_page(33), settled_page(3000), settled_page(3000)]
+        self.assertEqual(len(set(pages)), 3, "standby does not step through different pages")
+        for i, fb in enumerate(pages):
+            body = sum(oh.pixel(fb, x, y) for x in range(2, 77) for y in range(20, 49))
+            self.assertGreater(body, 150, f"page {i + 1} is nearly empty")
+            spill = sum(oh.pixel(fb, x, y) for x in range(80, 83) for y in range(19, 49))   # the map starts at x = 83
+            self.assertEqual(spill, 0, f"page {i + 1}: text runs into the keypad map")
+        back_to_first = settled_page(3000)
+        self.assertEqual(back_to_first, pages[0], "the pages do not cycle back to the layer")
+
     def test_unsaved_and_saved_chips(self):
         import ctypes
         self.lib.oled_settings_step.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
@@ -163,7 +193,7 @@ class OledFrames(unittest.TestCase):
             buf = ctypes.create_string_buffer(1024)
             self.lib.oled_settings_step(dirty, seq, dt, buf)
             fb = bytes(buf.raw)
-            return sum(oh.pixel(fb, x, y) for x in range(0, 48) for y in range(56, 64))
+            return sum(oh.pixel(fb, x, y) for x in range(78, 128) for y in range(0, 9))
 
         self.assertEqual(chip(0, 5, 33), 0, "a chip shows although the settings are saved")
         self.assertGreater(chip(1, 5, 33), 100, "no UNSAVED chip while changes are only in RAM")
@@ -181,12 +211,14 @@ class OledFrames(unittest.TestCase):
             self.lib.oled_layer_step(layer, dt, buf)
             return bytes(buf.raw)
 
-        band = lambda fb: sum(oh.pixel(fb, x, 17) for x in range(128)) + sum(oh.pixel(fb, x, 47) for x in range(128))
-        base = band(frame(0, 33))       # the map's own edges already cross those two rows a little
+        row = lambda fb, y: sum(oh.pixel(fb, x, y) for x in range(128))
+        frame(0, 33)
         frame(1, 33)
         opened = frame(1, 250)
-        self.assertGreater(band(opened), base + 150, "no band opens across the screen on a layer change")
-        self.assertLess(band(frame(1, 1500)), base + 20, "the layer flash never closes")
+        # the band's two hairlines (rows 17 and 47) run the whole width; the page's own content never does
+        self.assertGreaterEqual(min(row(opened, 17), row(opened, 47)), 126, "no band opens across the screen on a layer change")
+        closed = frame(1, 1500)
+        self.assertLess(max(row(closed, 17), row(closed, 47)), 110, "the layer flash never closes")
 
     def test_lava_lamp_sits_between_caps_and_keeps_moving(self):
         import ctypes

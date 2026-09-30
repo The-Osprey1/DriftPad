@@ -95,7 +95,13 @@ work with this firmware and says so.
 - OLED key screen streamlined: the status slot (top-left) is empty unless it has something to say
   (`ACTUATED`, `CAL NEEDED`, `OUTPUT OFF`); `READY`, `TRAVEL`, the scale end labels and the layer name
   in the header are gone.
-- OLED key screen: a bottom-left chip says `UNSAVED` while settings changes are only in RAM and `SAVED`
+- OLED readability overhaul: no abbreviations and no cryptic codes on screen. The header (`L0 //`, `RT
+  0.20MM`) is gone; standby steps through large plain pages every 3 s (`Layer 1 of 3`, `Actuation`,
+  `Rapid Trigger`) in the slit lettering sized to fit; the status chip reads `Needs setup` or `Keys off`;
+  a pressed key shows `Rapid Trigger 0.20 mm` and `Travel 1.9 mm` in words; tuning cards use plain titles
+  (`Sensitivity`, `Actuation point`, `Rapid Trigger`, `Active layer`), a readable `mm`, and numbered layer
+  chips (1 2 3); the intro says `Needs setup`, `Keys off` or `Ready to type`.
+- OLED key screen: a top-right chip says `Unsaved` while settings changes are only in RAM and `Saved`
   for about two seconds after the pad writes them to flash, so the pad's own screen tells the truth about
   persistence. A layer change made anywhere but the tuning card (the configurator, a script) flashes a
   band across the screen naming the layer in the slit lettering.

@@ -512,14 +512,14 @@ void printTracked(const char* text, int16_t x, int16_t y, int16_t pitch) {
     }
 }
 
-const char* const MENU_TITLES[] = {"RT SENSITIVITY", "ACTUATION POINT", "RAPID TRIGGER", "ACTIVE LAYER"};
+const char* const MENU_TITLES[] = {"Sensitivity", "Actuation point", "Rapid Trigger", "Active layer"};
 
 // A big value in italic slit lettering, with its unit in small capitals sharing the baseline; the
 // pair is centred. Values are size 3 (18 x 24 px cells), which needs a 28 row region.
 void drawBigValue(const char* value, const char* unit, int16_t top) {
     const int16_t valueW = textWidth(value, 3);
-    const int16_t unitW = unit ? textWidth(unit) : 0;
-    const int16_t total = valueW + (unit ? 5 + unitW : 0);
+    const int16_t unitW = unit ? textWidth(unit, 2) : 0;
+    const int16_t total = valueW + (unit ? 6 + unitW : 0);
     const int16_t x = 64 - total / 2;
     drawStyledText(x - 2, top - 2, (uint16_t)valueW + 12, 28, OLED_COLOR_WHITE, 0.22f, [&] {
         s_display.setTextColor(OLED_COLOR_WHITE);
@@ -529,10 +529,11 @@ void drawBigValue(const char* value, const char* unit, int16_t top) {
         s_display.setTextSize(1);
     });
     if (unit) {
-        s_display.setTextSize(1);
+        s_display.setTextSize(2);
         s_display.setTextColor(OLED_COLOR_WHITE);
-        s_display.setCursor(x + valueW + 6, top + 17);
+        s_display.setCursor(x + valueW + 6, top + 8);
         s_display.print(unit);
+        s_display.setTextSize(1);
     }
 }
 
@@ -595,7 +596,7 @@ void renderMenuOverlay() {
         printTracked(MENU_TITLES[page], 10, 4, 6);
     }
     for (uint8_t i = 0; i < static_cast<uint8_t>(MenuMode::COUNT); ++i) {
-        const int16_t px = 105 + i * 4;
+        const int16_t px = 108 + i * 4;
         if (i == page) s_display.fillRect(px, 4, 3, 5, OLED_COLOR_WHITE);
         else s_display.drawRect(px, 4, 3, 5, OLED_COLOR_WHITE);
     }
@@ -603,13 +604,13 @@ void renderMenuOverlay() {
 
     switch (s_currentMenu) {
         case MenuMode::ADJUST_RT: {
-            drawBigValue(String(s_view.rtSensMm, 2).c_str(), "MM", 16);
+            drawBigValue(String(s_view.rtSensMm, 2).c_str(), "mm", 16);
             drawMenuRuler((s_view.rtSensMm - limits::cmmToMm(limits::RT_SENS_MIN_CMM)) /
                           (limits::cmmToMm(limits::RT_SENS_MAX_CMM) - limits::cmmToMm(limits::RT_SENS_MIN_CMM)), 4);
             break;
         }
         case MenuMode::ADJUST_ACTUATION: {
-            drawBigValue(String(s_view.actuationMm, 2).c_str(), "MM", 16);
+            drawBigValue(String(s_view.actuationMm, 2).c_str(), "mm", 16);
             drawMenuRuler((s_view.actuationMm - limits::cmmToMm(limits::ACTUATION_MIN_CMM)) /
                           (limits::cmmToMm(limits::ACTUATION_MAX_CMM) - limits::cmmToMm(limits::ACTUATION_MIN_CMM)), 4);
             break;
@@ -627,7 +628,8 @@ void renderMenuOverlay() {
                 s_display.setTextSize(1);
             });
             drawToggle(on, x + w + 10, 26);
-            printTracked(on ? "RE-ARMS ON LIFT" : "FIXED ACTUATION", 64 - (int16_t)strlen(on ? "RE-ARMS ON LIFT" : "FIXED ACTUATION") * 7 / 2, 48, 7);
+            const char* hint = on ? "Re-arms as you lift" : "Fixed actuation";
+            printTracked(hint, 64 - (int16_t)strlen(hint) * 6 / 2, 48, 6);
             break;
         }
         case MenuMode::CYCLE_LAYER: {
@@ -653,7 +655,7 @@ void renderMenuOverlay() {
                     s_display.drawRect(bx, 46, 18, 10, OLED_COLOR_WHITE);
                     s_display.setTextColor(OLED_COLOR_WHITE);
                 }
-                snprintf(chip, sizeof(chip), "L%u", i);
+                snprintf(chip, sizeof(chip), "%u", (unsigned)i + 1);
                 printCentered(chip, bx + 9, 47);
             }
             s_display.setTextColor(OLED_COLOR_WHITE);
@@ -700,6 +702,12 @@ static bool s_prevFocusActuated = false;
 static bool s_prevHadFocus = false;        // whether the left panel showed the focus card last frame
 static uint8_t s_revealFrames = 0;         // frames of left-panel wipe left
 
+// Standby steps through a few large plain-language pages (layer, actuation point, Rapid Trigger)
+constexpr uint32_t STANDBY_PAGE_MS = 3000;
+static bool s_standbyActive = false;
+static uint32_t s_standbySince = 0;
+static uint8_t s_standbyPage = 0;
+
 // Whether the settings shown are on flash: an UNSAVED chip while they are not, and a SAVED chip for
 // a couple of seconds after a save (the saved-settings sequence changes)
 constexpr uint32_t SAVED_CHIP_MS = 2200;
@@ -720,29 +728,65 @@ void printRight(const char* text, int16_t rightX, int16_t y) {
     s_display.print(text);
 }
 
-// Header: inverted layer chip, // motif, RT setting. The layer's name is not repeated here; standby
-// shows it large and the tuning card names it.
-void drawKeyScreenHeader(uint8_t layer) {
-    char chip[4];
-    snprintf(chip, sizeof(chip), "L%u", layer);
-    int16_t chipW = textWidth(chip) + 4;
-    s_display.fillRect(0, 0, chipW, 8, OLED_COLOR_WHITE);
+// Plain-language caption on the top row of the left panel
+void drawCaption(const char* text) {
     s_display.setTextSize(1);
-    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    s_display.setCursor(2, 0);
-    s_display.print(chip);
     s_display.setTextColor(OLED_COLOR_WHITE);
-    for (int16_t i = 0; i < 2; ++i) {
-        s_display.drawLine(chipW + 3 + i * 3, 7, chipW + 5 + i * 3, 1, OLED_COLOR_WHITE);
-    }
-    // The Rapid Trigger setting in tracked capitals, its last glyph ending on the right edge
-    char rt[16];
-    if (s_view.rapidTrigger) {
-        snprintf(rt, sizeof(rt), "RT %.2fMM", (double)s_view.rtSensMm);
+    s_display.setCursor(1, 1);
+    s_display.print(text);
+}
+
+// The left panel's usable width for big text: x = 2 .. 76, clear of the keypad map
+constexpr int16_t PANEL_TEXT_X = 2;
+constexpr int16_t PANEL_TEXT_W = 74;
+
+int16_t fontWidth(const char* text, const GFXfont* font, int16_t* x1out = nullptr) {
+    int16_t x1, y1;
+    uint16_t w, h;
+    s_display.setFont(font);
+    s_display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+    s_display.setFont(nullptr);
+    if (x1out) *x1out = x1;
+    return (int16_t)w;
+}
+
+// The largest of the three bold sizes in which `text` fits `maxW`
+const GFXfont* fitFont(const char* text, int16_t maxW) {
+    if (fontWidth(text, &FreeSansBold18pt7b) <= maxW) return &FreeSansBold18pt7b;
+    if (fontWidth(text, &FreeSansBold12pt7b) <= maxW) return &FreeSansBold12pt7b;
+    return &FreeSansBold9pt7b;
+}
+
+// A big value (and an optional smaller unit beside it) in the title screen's lettering, left-aligned
+// in the left panel with its top at `top`. Everything is sized to fit the panel, never clipped.
+void drawPanelValue(const char* value, const char* unit, int16_t top) {
+    const GFXfont* valueFont;
+    const GFXfont* unitFont = &FreeSansBold9pt7b;
+    if (unit) {
+        valueFont = &FreeSansBold12pt7b;
+        if (fontWidth(value, valueFont) + 4 + fontWidth(unit, unitFont) > PANEL_TEXT_W) valueFont = &FreeSansBold9pt7b;
     } else {
-        snprintf(rt, sizeof(rt), "RT OFF");
+        valueFont = fitFont(value, PANEL_TEXT_W);
     }
-    printTracked(rt, 123 - ((int16_t)strlen(rt) - 1) * 7, 0, 7);
+    int16_t x1, y1;
+    uint16_t w, h;
+    s_display.setFont(valueFont);
+    s_display.getTextBounds(value, 0, 0, &x1, &y1, &w, &h);
+    s_display.setFont(nullptr);
+    const int16_t left = PANEL_TEXT_X - x1;
+    const int16_t baseline = top - y1;
+    drawStyledText(KEY_BOX_X, top - 2, KEY_BOX_W, (uint16_t)h + 6, OLED_COLOR_WHITE, 0.22f, [&] {
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setFont(valueFont);
+        s_display.setCursor(left, baseline);
+        s_display.print(value);
+        if (unit) {
+            s_display.setFont(unitFont);
+            s_display.setCursor(PANEL_TEXT_X + (int16_t)w + 5, baseline);
+            s_display.print(unit);
+        }
+        s_display.setFont(nullptr);
+    });
 }
 
 // Rectangle outline drawn as dots, every `step`-th pixel of its perimeter
@@ -917,8 +961,8 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus, bool legends) {
 // mistaken for a working one. Otherwise the slot stays empty.
 void drawStatusLabel(const char* normal, bool chip) {
     const char* text = normal;
-    if (s_view.outputStatus == display_link::OUTPUT_NEEDS_CAL) text = "CAL NEEDED";
-    else if (s_view.outputStatus == display_link::OUTPUT_OFF) text = "OUTPUT OFF";
+    if (s_view.outputStatus == display_link::OUTPUT_NEEDS_CAL) text = "Needs setup";
+    else if (s_view.outputStatus == display_link::OUTPUT_OFF) text = "Keys off";
     if (!text) return;
     bool blocked = text != normal;
     if (blocked || chip) {
@@ -943,16 +987,21 @@ void noteSettingsState(uint32_t now) {
     }
 }
 
-// Bottom-left chip: SAVED right after a save, UNSAVED while changes are only in RAM, otherwise nothing
+// Top-right chip: Saved right after a save, Unsaved while changes are only in RAM, otherwise nothing
+const char* settingsChipText(uint32_t now) {
+    if ((int32_t)(s_savedUntil - now) > 0) return "Saved";
+    if (s_view.settingsDirty) return "Unsaved";
+    return nullptr;
+}
+
 void drawSettingsState(uint32_t now) {
-    const char* text = nullptr;
-    if ((int32_t)(s_savedUntil - now) > 0) text = "SAVED";
-    else if (s_view.settingsDirty) text = "UNSAVED";
+    const char* text = settingsChipText(now);
     if (!text) return;
-    s_display.fillRect(0, 56, textWidth(text) + 4, 8, OLED_COLOR_WHITE);
+    const int16_t w = textWidth(text) + 4;
+    s_display.fillRect(SCREEN_WIDTH - w, 0, w, 9, OLED_COLOR_WHITE);
     s_display.setTextSize(1);
     s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    s_display.setCursor(2, 57);
+    s_display.setCursor(SCREEN_WIDTH - w + 2, 1);
     s_display.print(text);
     s_display.setTextColor(OLED_COLOR_WHITE);
 }
@@ -1047,10 +1096,26 @@ void renderKeysFrame(uint32_t now) {
         s_lastReleaseCount[i] = curRelease;
     }
 
+    // Standby pages: each begins with the layer, then steps on every STANDBY_PAGE_MS with a wipe
+    uint8_t page = 0;
+    if (focus >= 0) {
+        s_standbyActive = false;
+    } else {
+        if (!s_standbyActive) {
+            s_standbyActive = true;
+            s_standbySince = now;
+            s_standbyPage = 0;
+        }
+        page = (uint8_t)(((now - s_standbySince) / STANDBY_PAGE_MS) % 3);
+        if (page != s_standbyPage) {
+            s_standbyPage = page;
+            s_revealFrames = REVEAL_FRAMES;
+        }
+    }
+
     s_display.clearDisplay();
     s_display.setTextColor(OLED_COLOR_WHITE);
     uint8_t layer = s_view.activeLayer;
-    drawKeyScreenHeader(layer);
 
     if (focus >= 0) {
         const display_link::KeyView& k = s_view.keys[(uint8_t)focus];
@@ -1062,27 +1127,56 @@ void renderKeysFrame(uint32_t now) {
             if (releaseAt < 0.0f) releaseAt = -1.0f;
         }
         drawTravelScale(k.travelMm, releaseAt);
-        printRight((String(displayTravelMm((uint8_t)focus, k.travelMm), 1) + "mm").c_str(),
+        printRight((String(displayTravelMm((uint8_t)focus, k.travelMm), 1) + " mm").c_str(),
                    KEY_BOX_X + KEY_BOX_W - 1, 57);
+        s_display.setTextSize(1);
+        s_display.setCursor(1, 57);
+        s_display.print("Travel");
+        // The Rapid Trigger setting in words, unless the saved-state chip needs the top row
+        if (!settingsChipText(now)) {
+            char rt[28];
+            if (s_view.rapidTrigger) snprintf(rt, sizeof(rt), "Rapid Trigger %.2f mm", (double)s_view.rtSensMm);
+            else snprintf(rt, sizeof(rt), "Rapid Trigger off");
+            drawCaption(rt);
+        }
     } else {
         drawStatusLabel(nullptr, false);
 
-        const char* title = layer < 3 ? LAYER_TITLES[layer] : "?";
-        int16_t x1, y1;
-        uint16_t w, h;
-        s_display.setFont(&FreeSansBold9pt7b);
-        s_display.getTextBounds(title, 0, 0, &x1, &y1, &w, &h);
-        s_display.setFont(nullptr);
-        drawStyledText(KEY_BOX_X, 19, KEY_BOX_W, 18, OLED_COLOR_WHITE, 0.22f, [&] {
-            s_display.setFont(&FreeSansBold9pt7b);
-            s_display.setTextColor(OLED_COLOR_WHITE);
-            s_display.setCursor(KEY_BOX_X + 2 - x1, 33);
-            s_display.print(title);
-            s_display.setFont(nullptr);
-        });
-
-        printTracked("ACT", 1, 38, 7);
-        printRight((String(s_view.actuationMm, 1) + "mm").c_str(), KEY_BOX_X + KEY_BOX_W - 1, 38);
+        // One page at a time: a plain caption over a big value
+        char cap[24];
+        char valueBuf[16];
+        const char* value = valueBuf;
+        const char* unit = nullptr;
+        switch (page) {
+            case 0:
+                snprintf(cap, sizeof(cap), "Layer %u of %u", (unsigned)layer + 1, (unsigned)limits::NUM_LAYERS);
+                value = layer < 3 ? LAYER_TITLES[layer] : "?";
+                break;
+            case 1:
+                snprintf(cap, sizeof(cap), "Actuation");
+                snprintf(valueBuf, sizeof(valueBuf), "%.2f", (double)s_view.actuationMm);
+                unit = "mm";
+                break;
+            default:
+                snprintf(cap, sizeof(cap), "Rapid Trigger");
+                if (s_view.rapidTrigger) {
+                    snprintf(valueBuf, sizeof(valueBuf), "%.2f", (double)s_view.rtSensMm);
+                    unit = "mm";
+                } else {
+                    snprintf(valueBuf, sizeof(valueBuf), "Off");
+                }
+                break;
+        }
+        s_display.setTextSize(1);
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setCursor(PANEL_TEXT_X, 21);
+        s_display.print(cap);
+        drawPanelValue(value, unit, 31);
+        // Three small pips show which page this is
+        for (uint8_t i = 0; i < 3; ++i) {
+            if (i == page) s_display.fillRect(1 + i * 6, 3, 4, 4, OLED_COLOR_WHITE);
+            else s_display.drawRect(1 + i * 6, 3, 4, 4, OLED_COLOR_WHITE);
+        }
         drawTravelScale(0.0f);
     }
 
@@ -2032,9 +2126,9 @@ void renderIntroFrame(uint32_t t) {
         if (t >= 3700) {
             const char* status;
             switch (s_view.outputStatus) {
-                case display_link::OUTPUT_ON:        status = "OUTPUT READY"; break;
-                case display_link::OUTPUT_NEEDS_CAL: status = "CALIBRATION NEEDED"; break;
-                default:                             status = "OUTPUT OFF"; break;
+                case display_link::OUTPUT_ON:        status = "Ready to type"; break;
+                case display_link::OUTPUT_NEEDS_CAL: status = "Needs setup"; break;
+                default:                             status = "Keys off"; break;
             }
             const int16_t len = (int16_t)strlen(status);
             int16_t typed = (int16_t)((t - 3700) / 45);
