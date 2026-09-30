@@ -21,6 +21,8 @@ void displayBuildSnapshot(display_link::Snapshot& out) {
     out.rapidTrigger = HallKey::isRapidTrigger();
     out.actuationMm = HallKey::getActuationPoint();
     out.rtSensMm = HallKey::getRtSensitivity();
+    out.settingsDirty = configIsDirty();
+    out.saveSeq = (uint8_t)configSettingsSeq();
     if (KeyboardOutput::isEnabled()) {
         out.outputStatus = display_link::OUTPUT_ON;
     } else {

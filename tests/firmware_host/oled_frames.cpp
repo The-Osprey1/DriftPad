@@ -8,6 +8,12 @@
 TwoWire Wire;
 bool encoderMenuApply(MenuMode, int32_t) { return false; }
 
+// The saved-state chip and the layer-change flash remember what they last saw; scenes that are not
+// about them start from "nothing changed" so an earlier test's state cannot leak into their frames
+static void forget_state_history() {
+    s_saveSeqKnown = false; s_savedUntil = 0; s_layerSeen = -1; s_layerFlashUntil = 0;
+}
+
 extern "C" {
 void host_clock_set_us(uint64_t);
 void host_clock_advance_us(uint64_t);
@@ -17,6 +23,7 @@ void host_clock_advance_us(uint64_t);
 // on/off,
 // 10..13 tuning menu pages, 20 splash, 30..35 screensaver animation N (its frame 40)
 int oled_scene(int id, uint8_t* out) {
+    forget_state_history();
     static bool started = false;
     if (!started) {
         started = true;
@@ -114,6 +121,7 @@ int oled_text_wrap_enabled() { return s_display.textWrapEnabled() ? 1 : 0; }
 // runs one pass, then returns the contrast the panel was last given (touch != 0 presses a key).
 // Puts the display's idle state back to "awake, just now, intro over" at the current fake time
 void oled_idle_reset() {
+    forget_state_history();
     s_initialized = true;
     s_lastActivityTime = millis();
     s_isDimmed = false;
@@ -146,6 +154,7 @@ int oled_idle_step(uint32_t dt_ms, int touch) {    display_link::Snapshot s;
 // Key-map afterglow: renders one key-screen frame with key 5 held (held != 0) or released, without
 // resetting the display state between calls, and returns the ink in that key's cell.
 int oled_glow_step(int held) {
+    forget_state_history();
     static bool ready = false;
     if (!ready) {
         ready = true;
@@ -180,6 +189,7 @@ int oled_glow_step(int held) {
 }
 // Menu opening wipe: the frame t_ms after the tuning card was requested (key screen underneath)
 int oled_wipe_frame(uint32_t t_ms, uint8_t* out) {
+    forget_state_history();
     const uint64_t t0 = 200000000ULL;
     host_clock_set_us(t0);
     display_link::Snapshot s;
@@ -226,6 +236,7 @@ int oled_screensaver_frame(int anim, int frames, uint8_t* out) {
 }
 // The power-up intro at `t_ms`, and whether loop1() has finished it
 int oled_intro_frame(uint32_t t_ms, uint8_t* out) {
+    forget_state_history();
     static bool started = false;
     if (!started) { started = true; initDisplayHardware(); }
     // A fixed pad state so the frame is reproducible: labels, calibration missing
@@ -250,6 +261,7 @@ int oled_intro_done() { return s_introDone ? 1 : 0; }
 // One key-screen frame of a press on key 5 at the given travel, without resetting the display state:
 // lets a test or a preview play a whole press (travel up, actuate, hold, release, fade) frame by frame
 int oled_press_step(float travel_mm, int pressed, int press_count, uint8_t* out) {
+    forget_state_history();
     static bool ready = false;
     if (!ready) { ready = true; initDisplayHardware(); s_gridCountersSynced = false; s_haveView = true; }
     s_menuVisible = false; s_modeTransition = false; s_menuLastActive = 0; s_screensaverActive = false;
@@ -265,6 +277,35 @@ int oled_press_step(float travel_mm, int pressed, int press_count, uint8_t* out)
     display_link::read(s_view);
     renderFullScreen();
     memcpy(out, s_display.getBuffer(), 128 * 64 / 8);
+    return 0;
+}
+// Saved-state and layer-change steps on the key screen (nothing focused): the clock advances by
+// dt_ms, then one frame is drawn from a snapshot with the given flags
+static void keyscreen_step(int dirty, int save_seq, int layer, uint32_t dt_ms, uint8_t* out) {
+    static bool ready = false;
+    if (!ready) { ready = true; initDisplayHardware(); s_haveView = true; }
+    if (millis() < 50000) host_clock_set_us(100000000ULL);
+    host_clock_advance_us((uint64_t)dt_ms * 1000);
+    s_menuVisible = false; s_modeTransition = false; s_menuLastActive = 0; s_screensaverActive = false;
+    s_focusKey = -1; s_prevHadFocus = false; s_revealFrames = 0;
+    display_link::Snapshot s;
+    memset(&s, 0, sizeof s);
+    static const char* labels[16] = {"7", "8", "9", "/", "4", "5", "6", "*", "1", "2", "3", "-", "0", ".", "ENT", "+"};
+    for (int i = 0; i < 16; i++) strcpy(s.keys[i].label, labels[i]);
+    s.lastActiveKey = -1; s.rapidTrigger = true; s.actuationMm = 1.2f; s.rtSensMm = 0.2f;
+    s.settingsDirty = dirty != 0; s.saveSeq = (uint8_t)save_seq; s.activeLayer = (uint8_t)layer;
+    display_link::publish(s);
+    display_link::read(s_view);
+    renderFullScreen();
+    memcpy(out, s_display.getBuffer(), 128 * 64 / 8);
+}
+void oled_state_reset() { forget_state_history(); }
+int oled_settings_step(int dirty, int save_seq, uint32_t dt_ms, uint8_t* out) {
+    keyscreen_step(dirty, save_seq, 0, dt_ms, out);
+    return 0;
+}
+int oled_layer_step(int layer, uint32_t dt_ms, uint8_t* out) {
+    keyscreen_step(0, 0, layer, dt_ms, out);
     return 0;
 }
 void oled_last_frame(uint8_t* out) { memcpy(out, s_display.getBuffer(), 128 * 64 / 8); }

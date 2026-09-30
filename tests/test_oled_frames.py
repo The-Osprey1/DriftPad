@@ -154,6 +154,40 @@ class OledFrames(unittest.TestCase):
         self.assertEqual(trail[-1], cell(rest), "the cell does not settle back to its resting look, legend and all")
         self.assertEqual(card_top(step(0.0, 0, 1)), 0, "the card does not go away once the key has settled")
 
+    def test_unsaved_and_saved_chips(self):
+        import ctypes
+        self.lib.oled_settings_step.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
+        self.lib.oled_state_reset()
+
+        def chip(dirty, seq, dt):
+            buf = ctypes.create_string_buffer(1024)
+            self.lib.oled_settings_step(dirty, seq, dt, buf)
+            fb = bytes(buf.raw)
+            return sum(oh.pixel(fb, x, y) for x in range(0, 48) for y in range(56, 64))
+
+        self.assertEqual(chip(0, 5, 33), 0, "a chip shows although the settings are saved")
+        self.assertGreater(chip(1, 5, 33), 100, "no UNSAVED chip while changes are only in RAM")
+        self.assertGreater(chip(0, 6, 33), 60, "no SAVED chip right after a save")
+        self.assertGreater(chip(0, 6, 1000), 60, "the SAVED chip disappears too soon")
+        self.assertEqual(chip(0, 6, 3000), 0, "the SAVED chip never goes away")
+
+    def test_a_layer_change_flashes_its_name(self):
+        import ctypes
+        self.lib.oled_layer_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
+        self.lib.oled_state_reset()
+
+        def frame(layer, dt):
+            buf = ctypes.create_string_buffer(1024)
+            self.lib.oled_layer_step(layer, dt, buf)
+            return bytes(buf.raw)
+
+        band = lambda fb: sum(oh.pixel(fb, x, 17) for x in range(128)) + sum(oh.pixel(fb, x, 47) for x in range(128))
+        base = band(frame(0, 33))       # the map's own edges already cross those two rows a little
+        frame(1, 33)
+        opened = frame(1, 250)
+        self.assertGreater(band(opened), base + 150, "no band opens across the screen on a layer change")
+        self.assertLess(band(frame(1, 1500)), base + 20, "the layer flash never closes")
+
     def test_lava_lamp_sits_between_caps_and_keeps_moving(self):
         import ctypes
         self.lib.oled_screensaver_frame.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]

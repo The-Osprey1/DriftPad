@@ -42,7 +42,7 @@ class KeyView(ctypes.Structure):
 class Snapshot(ctypes.Structure):
     _fields_ = [("keys", KeyView * 16), ("lastActiveKey", ctypes.c_int8), ("activeLayer", ctypes.c_uint8),
                 ("rapidTrigger", ctypes.c_bool), ("actuationMm", ctypes.c_float), ("rtSensMm", ctypes.c_float),
-                ("outputStatus", ctypes.c_uint8)]
+                ("outputStatus", ctypes.c_uint8), ("settingsDirty", ctypes.c_bool), ("saveSeq", ctypes.c_uint8)]
 
 
 def fresh(lib) -> dh.Device:

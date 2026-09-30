@@ -52,6 +52,8 @@ struct Snapshot {
     float   actuationMm;
     float   rtSensMm;
     uint8_t outputStatus;   // OUTPUT_*
+    bool    settingsDirty;  // changes not yet saved to flash
+    uint8_t saveSeq;        // low byte of the saved-settings sequence: it changes whenever a save succeeds
 };
 
 enum class Request : uint8_t {

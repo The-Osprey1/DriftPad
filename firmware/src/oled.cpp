@@ -700,6 +700,18 @@ static bool s_prevFocusActuated = false;
 static bool s_prevHadFocus = false;        // whether the left panel showed the focus card last frame
 static uint8_t s_revealFrames = 0;         // frames of left-panel wipe left
 
+// Whether the settings shown are on flash: an UNSAVED chip while they are not, and a SAVED chip for
+// a couple of seconds after a save (the saved-settings sequence changes)
+constexpr uint32_t SAVED_CHIP_MS = 2200;
+static bool s_saveSeqKnown = false;
+static uint8_t s_lastSaveSeq = 0;
+static uint32_t s_savedUntil = 0;
+
+// A change of layer that did not come from the tuning card flashes the layer's name across the screen
+constexpr uint32_t LAYER_FLASH_MS = 1300;
+static int16_t s_layerSeen = -1;
+static uint32_t s_layerFlashUntil = 0;
+
 const char* const LAYER_TITLES[] = {"Numpad", "Nav", "Gaming"};
 
 void printRight(const char* text, int16_t rightX, int16_t y) {
@@ -918,8 +930,66 @@ void drawStatusLabel(const char* normal, bool chip) {
     s_display.setTextColor(OLED_COLOR_WHITE);
 }
 
+// Notices a save (the sequence changed) and starts the SAVED chip; the first call only records it
+void noteSettingsState(uint32_t now) {
+    if (!s_saveSeqKnown) {
+        s_saveSeqKnown = true;
+        s_lastSaveSeq = s_view.saveSeq;
+        return;
+    }
+    if (s_view.saveSeq != s_lastSaveSeq) {
+        s_lastSaveSeq = s_view.saveSeq;
+        s_savedUntil = now + SAVED_CHIP_MS;
+    }
+}
+
+// Bottom-left chip: SAVED right after a save, UNSAVED while changes are only in RAM, otherwise nothing
+void drawSettingsState(uint32_t now) {
+    const char* text = nullptr;
+    if ((int32_t)(s_savedUntil - now) > 0) text = "SAVED";
+    else if (s_view.settingsDirty) text = "UNSAVED";
+    if (!text) return;
+    s_display.fillRect(0, 56, textWidth(text) + 4, 8, OLED_COLOR_WHITE);
+    s_display.setTextSize(1);
+    s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
+    s_display.setCursor(2, 57);
+    s_display.print(text);
+    s_display.setTextColor(OLED_COLOR_WHITE);
+}
+
+// The layer-change flash: a band opens across the middle of the screen, names the layer in the
+// title screen's lettering, and closes again
+void drawLayerFlash(uint32_t now, uint8_t layer) {
+    const int32_t remaining = (int32_t)(s_layerFlashUntil - now);
+    if (remaining <= 0) return;
+    const int32_t age = (int32_t)LAYER_FLASH_MS - remaining;
+    const int32_t edge = age < remaining ? age : remaining;              // ms from the nearer end
+    const float open = edge >= 160 ? 1.0f : (float)edge / 160.0f;
+    const int16_t h = (int16_t)(31.0f * open);
+    if (h < 3) return;
+    const int16_t top = 32 - h / 2;
+    s_display.fillRect(0, top, SCREEN_WIDTH, h, OLED_COLOR_BLACK);
+    s_display.drawFastHLine(0, top, SCREEN_WIDTH, OLED_COLOR_WHITE);
+    s_display.drawFastHLine(0, top + h - 1, SCREEN_WIDTH, OLED_COLOR_WHITE);
+    if (h < 31) return;
+
+    char tag[12];
+    snprintf(tag, sizeof(tag), "LAYER %u", (unsigned)layer + 1);
+    printTracked(tag, 64 - ((int16_t)strlen(tag) * 7 - 2) / 2, top + 4, 7);
+    const char* name = layerName(layer);
+    const int16_t w = textWidth(name, 2);
+    drawStyledText(64 - w / 2 - 2, top + 13, (uint16_t)w + 12, 17, OLED_COLOR_WHITE, 0.22f, [&] {
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setTextSize(2);
+        s_display.setCursor(64 - w / 2, top + 14);
+        s_display.print(name);
+        s_display.setTextSize(1);
+    });
+}
+
 // Draws the key screen into the frame buffer (no display() call); consumes the edge latches.
 void renderKeysFrame(uint32_t now) {
+    noteSettingsState(now);
     if (!s_gridCountersSynced) {
         discardGridLatches();
         s_gridCountersSynced = true;
@@ -1025,6 +1095,17 @@ void renderKeysFrame(uint32_t now) {
     }
 
     drawKeypadMap(actuated, focus, focus < 0);
+
+    drawSettingsState(now);
+
+    // A layer change not made on the tuning card flashes the layer's name (not while a key is in use)
+    if (s_layerSeen < 0) {
+        s_layerSeen = layer;
+    } else if (layer != s_layerSeen) {
+        s_layerSeen = layer;
+        if (now - s_menuLastActive > 3500) s_layerFlashUntil = now + LAYER_FLASH_MS;
+    }
+    if (focus < 0) drawLayerFlash(now, layer);
 }
 
 void blendWipe(uint8_t* outgoing, const uint8_t* incoming, int16_t front);
@@ -1051,6 +1132,8 @@ void renderFullScreen() {
 
     if (!s_modeTransition) {
         if (s_menuVisible) {
+            noteSettingsState(now);
+            s_layerSeen = s_view.activeLayer;
             renderMenuOverlay();
             discardGridLatches();
         } else {

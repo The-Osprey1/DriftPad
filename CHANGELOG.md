@@ -95,6 +95,10 @@ work with this firmware and says so.
 - OLED key screen streamlined: the status slot (top-left) is empty unless it has something to say
   (`ACTUATED`, `CAL NEEDED`, `OUTPUT OFF`); `READY`, `TRAVEL`, the scale end labels and the layer name
   in the header are gone.
+- OLED key screen: a bottom-left chip says `UNSAVED` while settings changes are only in RAM and `SAVED`
+  for about two seconds after the pad writes them to flash, so the pad's own screen tells the truth about
+  persistence. A layer change made anywhere but the tuning card (the configurator, a script) flashes a
+  band across the screen naming the layer in the slit lettering.
 - OLED: with Rapid Trigger on, a pointer above the travel scale marks where the held key will release
   (deepest travel so far minus the RT sensitivity).
 - OLED: while key presses are not being sent to the computer (calibration missing, output off), the
