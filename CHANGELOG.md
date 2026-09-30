@@ -101,6 +101,10 @@ work with this firmware and says so.
   a pressed key shows `Rapid Trigger 0.20 mm` and `Travel 1.9 mm` in words; tuning cards use plain titles
   (`Sensitivity`, `Actuation point`, `Rapid Trigger`, `Active layer`), a readable `mm`, and numbered layer
   chips (1 2 3); the intro says `Needs setup`, `Keys off` or `Ready to type`.
+  The left panel is laid out on a grid: card, scale, captions and values are centred on the same axis, the
+  keypad map is pulled in to leave a wide gutter, every element has a clear row or column around it (the
+  value no longer touches the scale, the chips no longer touch the map), and the press flourish stays
+  inside the card. The intro wordmark and horizon are centred.
 - OLED key screen: a top-right chip says `Unsaved` while settings changes are only in RAM and `Saved`
   for about two seconds after the pad writes them to flash, so the pad's own screen tells the truth about
   persistence. A layer change made anywhere but the tuning card (the configurator, a script) flashes a

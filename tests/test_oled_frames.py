@@ -38,9 +38,9 @@ class OledFrames(unittest.TestCase):
 
     def test_standby_has_a_plain_caption_page_pips_and_a_big_value(self):
         fb = oh.frame(self.lib, "standby")
-        caption = sum(oh.pixel(fb, x, y) for x in range(2, 80) for y in range(20, 28))
-        value = sum(oh.pixel(fb, x, y) for x in range(2, 77) for y in range(31, 49))
-        pips = sum(oh.pixel(fb, x, y) for x in range(1, 20) for y in range(3, 7))
+        caption = sum(oh.pixel(fb, x, y) for x in range(2, 80) for y in range(19, 27))
+        value = sum(oh.pixel(fb, x, y) for x in range(2, 78) for y in range(30, 48))
+        pips = sum(oh.pixel(fb, x, y) for x in range(30, 51) for y in range(1, 7))
         self.assertGreater(caption, 60, "no caption above the value")
         self.assertGreater(value, 200, "no big value on the standby page")
         self.assertGreater(pips, 20, "no page pips")
@@ -53,7 +53,7 @@ class OledFrames(unittest.TestCase):
         fb = oh.frame(self.lib, "actuated_ent")
         # the focus card is filled ("ACTUATED"), and ENT (key 14: row 3, column 2) is solid in the map
         self.assertTrue(all(oh.pixel(fb, x, 20) for x in range(4, 74)), "key box is not filled")
-        x0, y0 = 83 + 2 * 12, 9 + 3 * 12
+        x0, y0 = 85 + 2 * 11, 10 + 3 * 11     # the map: x 85, y 10, a cell every 11 px
         self.assertTrue(all(oh.pixel(fb, x, y0 + 4) for x in range(x0, x0 + 9)), "map cell is not solid")
 
     def test_released_key_fades_out_of_the_map(self):
@@ -78,10 +78,10 @@ class OledFrames(unittest.TestCase):
 
     def test_rapid_trigger_marks_where_the_key_will_release(self):
         # held at 3.0 mm then back at 2.4 mm with RT 0.20: the key releases at 2.8 mm. The marker
-        # is a pointer just above the scale (x = 1 + 2.8/4*75 = 54, rows 47..48)
+        # is a pointer just above the scale (x = 2 + 2.8/4*75 = 55, rows 47..48)
         with_rt = oh.frame(self.lib, "rt_backing_off")
         without = oh.frame(self.lib, "no_rt_backing_off")
-        marker = lambda fb: [oh.pixel(fb, 54, y) for y in (47, 48)]
+        marker = lambda fb: [oh.pixel(fb, 55, y) for y in (47, 48)]
         self.assertEqual(marker(with_rt), [1, 1], "no release marker with Rapid Trigger on")
         self.assertEqual(marker(without), [0, 0], "release marker shown with Rapid Trigger off")
 
@@ -91,15 +91,15 @@ class OledFrames(unittest.TestCase):
             fb = oh.frame(self.lib, scene)
             return [sum(oh.pixel(fb, x, y) for x in range(x0, x1)) for y in range(y0, y1)]
 
-        for scene, box in (("menu_rt", (10, 118, 18, 38)), ("travelling", (6, 74, 24, 42)), ("standby", (2, 77, 32, 46))):
+        for scene, box in (("menu_rt", (10, 118, 18, 38)), ("travelling", (6, 74, 24, 42)), ("standby", (2, 78, 34, 44))):
             ink = rows(scene, *box)
             body = sorted(ink)[len(ink) // 2]
             self.assertLess(min(ink[2:-2]), max(1, body // 3), f"{scene}: no slit through the lettering")
 
     def test_the_widest_key_legend_stays_inside_its_box(self):
-        # "WWWW" is as wide as four printable characters get. The box frame is at x = 1 and 76; the
-        # slanted lettering must leave at least two clear columns before it on each side
-        margin = [(x, y) for y in range(22, 44) for x in (2, 3, 74, 75)]
+        # "WWWW" is as wide as four printable characters get. The box frame is at x = 2 and 77; the
+        # slanted lettering must leave at least two clear columns inside it on each side
+        margin = [(x, y) for y in range(22, 43) for x in (3, 4, 75, 76)]
         plain = oh.frame(self.lib, "wide_label")
         self.assertEqual(sum(oh.pixel(plain, x, y) for x, y in margin), 0, "the legend runs into the box frame")
         solid = oh.frame(self.lib, "wide_label_actuated")   # a filled box: the legend is dark on white
@@ -128,9 +128,9 @@ class OledFrames(unittest.TestCase):
             self.lib.oled_press_step(travel, pressed, count, buf)
             return bytes(buf.raw)
 
-        card_top = lambda fb: sum(oh.pixel(fb, x, 19) for x in range(4, 74))     # the focus card's frame
-        card_mid = lambda fb: sum(oh.pixel(fb, x, 20) for x in range(4, 74))     # solid only when actuated
-        cell = lambda fb: sum(oh.pixel(fb, x, y) for x in range(95, 104) for y in range(21, 30))   # key 5 in the map
+        card_top = lambda fb: sum(oh.pixel(fb, x, 19) for x in range(6, 74))     # the focus card's frame
+        card_mid = lambda fb: sum(oh.pixel(fb, x, 21) for x in range(6, 74))     # solid only when actuated (the first punch frame's bevel is on row 20)
+        cell = lambda fb: sum(oh.pixel(fb, x, y) for x in range(96, 105) for y in range(21, 30))   # key 5 in the map
 
         for _ in range(8):   # long enough for any focus left by an earlier test to settle (100 ms)
             rest = step(0.0, 0, 0)
@@ -147,7 +147,7 @@ class OledFrames(unittest.TestCase):
         deeper = step(1.15, 0, 0)
         self.assertGreater(cell(deeper), cell(moving), "the map cell does not fill further with travel")
         fired = step(1.6, 1, 1)
-        self.assertGreater(card_mid(fired), 65, "the card does not flip solid on actuation")
+        self.assertGreater(card_mid(fired), 60, "the card does not flip solid on actuation")
         self.assertGreaterEqual(cell(fired), 81, "the map cell is not solid on actuation")
         released = step(1.0, 0, 1)
         self.assertLess(card_mid(released), 5, "the card stays solid after release")
@@ -179,8 +179,20 @@ class OledFrames(unittest.TestCase):
         for i, fb in enumerate(pages):
             body = sum(oh.pixel(fb, x, y) for x in range(2, 77) for y in range(20, 49))
             self.assertGreater(body, 150, f"page {i + 1} is nearly empty")
-            spill = sum(oh.pixel(fb, x, y) for x in range(80, 83) for y in range(19, 49))   # the map starts at x = 83
+            spill = sum(oh.pixel(fb, x, y) for x in range(81, 85) for y in range(19, 49))   # the map starts at x = 85
             self.assertEqual(spill, 0, f"page {i + 1}: text runs into the keypad map")
+        # layout: centred in the panel, a clear gutter to the map, and a clear row above the scale
+        def centre(fb, y0, y1):
+            xs = [x for y in range(y0, y1) for x in range(0, 82) if oh.pixel(fb, x, y)]
+            return (min(xs) + max(xs)) / 2
+
+        for i, fb in enumerate(pages):
+            self.assertLessEqual(abs(centre(fb, 19, 27) - 40), 4, f"page {i + 1}: the caption is not centred in the panel")
+            self.assertLessEqual(abs(centre(fb, 29, 47) - 40), 3, f"page {i + 1}: the value is not centred in the panel")
+            gutter = sum(oh.pixel(fb, x, y) for x in range(80, 85) for y in range(9, 58))
+            self.assertEqual(gutter, 0, f"page {i + 1}: something crosses the gutter to the keypad map")
+            above_scale = sum(oh.pixel(fb, x, 48) for x in range(2, 78))
+            self.assertEqual(above_scale, 0, f"page {i + 1}: the value touches the scale")
         back_to_first = settled_page(3000)
         self.assertEqual(back_to_first, pages[0], "the pages do not cycle back to the layer")
 

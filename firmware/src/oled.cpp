@@ -679,18 +679,18 @@ void renderMenuOverlay() {
 // Main key screen. Left: the focused key (state label, key box, 0..4 mm travel scale and
 // readout) or standby. Right: the 4x4 keypad map. Positions are fixed across states.
 // ---------------------------------------------------------------------------------------
-constexpr int16_t KEY_BOX_X = 1;
+constexpr int16_t KEY_BOX_X = 2;
 constexpr int16_t KEY_BOX_Y = 19;
 constexpr int16_t KEY_BOX_W = 76;
-constexpr int16_t KEY_BOX_H = 28;
-constexpr int16_t SCALE_X = 1;
+constexpr int16_t KEY_BOX_H = 27;   // rows 19..45: a clear row above the release marker
+constexpr int16_t SCALE_X = 2;
 constexpr int16_t SCALE_W = 76;
 constexpr int16_t SCALE_Y = 49;     // fill rows 49..51, leaving two clear rows under the key box
 constexpr float SCALE_MAX_MM = 4.0f;  // full switch travel
-constexpr int16_t MAP_X = 83;
-constexpr int16_t MAP_Y = 9;
+constexpr int16_t MAP_X = 85;      // x 85..126: 45 px is too wide once the panel is centred, so the gaps are 2
+constexpr int16_t MAP_Y = 10;      // a clear row under the top strip (chips and captions are rows 0..8)
 constexpr int16_t MAP_CELL = 9;
-constexpr int16_t MAP_GAP = 3;
+constexpr int16_t MAP_GAP = 2;
 constexpr uint8_t FLASH_FRAMES = 3;        // a new actuation sends a ring out from its map cell
 constexpr uint8_t PUNCH_FRAMES = 3;        // ... and a flourish around the focus card
 constexpr uint8_t REVEAL_FRAMES = 3;       // the left panel wipes in when it changes between card and standby
@@ -732,12 +732,12 @@ void printRight(const char* text, int16_t rightX, int16_t y) {
 void drawCaption(const char* text) {
     s_display.setTextSize(1);
     s_display.setTextColor(OLED_COLOR_WHITE);
-    s_display.setCursor(1, 1);
+    s_display.setCursor(KEY_BOX_X, 1);
     s_display.print(text);
 }
 
 // The left panel's usable width for big text: x = 2 .. 76, clear of the keypad map
-constexpr int16_t PANEL_TEXT_X = 2;
+constexpr int16_t PANEL_CENTER_X = 40;   // the left panel is x 2..77; its centre is 39.5
 constexpr int16_t PANEL_TEXT_W = 74;
 
 int16_t fontWidth(const char* text, const GFXfont* font, int16_t* x1out = nullptr) {
@@ -757,23 +757,25 @@ const GFXfont* fitFont(const char* text, int16_t maxW) {
     return &FreeSansBold9pt7b;
 }
 
-// A big value (and an optional smaller unit beside it) in the title screen's lettering, left-aligned
-// in the left panel with its top at `top`. Everything is sized to fit the panel, never clipped.
+// A big value (and an optional smaller unit beside it) in the title screen's lettering, centred in
+// the left panel with its top at `top`. Everything is sized to fit the panel, never clipped, and the
+// value and the unit share one baseline. Only the 12 and 9 pt sizes are used, so a line stays 17 rows
+// tall including descenders and clears the scale beneath it.
 void drawPanelValue(const char* value, const char* unit, int16_t top) {
-    const GFXfont* valueFont;
+    const GFXfont* valueFont = &FreeSansBold12pt7b;
     const GFXfont* unitFont = &FreeSansBold9pt7b;
     if (unit) {
-        valueFont = &FreeSansBold12pt7b;
-        if (fontWidth(value, valueFont) + 4 + fontWidth(unit, unitFont) > PANEL_TEXT_W) valueFont = &FreeSansBold9pt7b;
-    } else {
-        valueFont = fitFont(value, PANEL_TEXT_W);
+        if (fontWidth(value, valueFont) + 5 + fontWidth(unit, unitFont) > PANEL_TEXT_W) valueFont = &FreeSansBold9pt7b;
+    } else if (fontWidth(value, valueFont) > PANEL_TEXT_W) {
+        valueFont = &FreeSansBold9pt7b;
     }
     int16_t x1, y1;
     uint16_t w, h;
     s_display.setFont(valueFont);
     s_display.getTextBounds(value, 0, 0, &x1, &y1, &w, &h);
     s_display.setFont(nullptr);
-    const int16_t left = PANEL_TEXT_X - x1;
+    const int16_t unitW = unit ? 5 + fontWidth(unit, unitFont) : 0;
+    const int16_t left = PANEL_CENTER_X - ((int16_t)w + unitW) / 2 - x1;
     const int16_t baseline = top - y1;
     drawStyledText(KEY_BOX_X, top - 2, KEY_BOX_W, (uint16_t)h + 6, OLED_COLOR_WHITE, 0.22f, [&] {
         s_display.setTextColor(OLED_COLOR_WHITE);
@@ -782,7 +784,7 @@ void drawPanelValue(const char* value, const char* unit, int16_t top) {
         s_display.print(value);
         if (unit) {
             s_display.setFont(unitFont);
-            s_display.setCursor(PANEL_TEXT_X + (int16_t)w + 5, baseline);
+            s_display.setCursor(left + x1 + (int16_t)w + 5, baseline);
             s_display.print(unit);
         }
         s_display.setFont(nullptr);
@@ -828,14 +830,12 @@ void drawKeyBox(const char* label, bool actuated, uint8_t punch) {
     if (actuated) {
         s_display.fillRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
         if (punch > 0) {
-            // The press flourish: a dark bevel inside the card, and a frame just outside it that
-            // flashes solid, then breaks up into dots as it fades
-            s_display.drawRoundRect(KEY_BOX_X + 2, KEY_BOX_Y + 2, KEY_BOX_W - 4, KEY_BOX_H - 4, 2, OLED_COLOR_BLACK);
-            if (punch >= PUNCH_FRAMES) {
-                s_display.drawRoundRect(KEY_BOX_X - 1, KEY_BOX_Y - 1, KEY_BOX_W + 2, KEY_BOX_H + 2, 4, OLED_COLOR_WHITE);
-            } else {
-                drawDottedRect(KEY_BOX_X - 1, KEY_BOX_Y - 1, KEY_BOX_W + 2, KEY_BOX_H + 2, punch == 2 ? 2 : 3);
-            }
+            // The press flourish: a dark bevel just inside the card edge that steps inward over the
+            // punch frames. It stays within 3 px of the edge, clear of the legend, and nothing is
+            // drawn outside the card, so it can never touch the chip above or the scale below.
+            const int16_t inset = 1 + (PUNCH_FRAMES - punch);
+            s_display.drawRoundRect(KEY_BOX_X + inset, KEY_BOX_Y + inset, KEY_BOX_W - 2 * inset, KEY_BOX_H - 2 * inset,
+                                    2, OLED_COLOR_BLACK);
         }
     } else {
         s_display.drawRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
@@ -906,7 +906,7 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus, bool legends) {
                 if (s_keyFlash[i] == FLASH_FRAMES) {
                     s_display.drawRect(x - 1, y - 1, MAP_CELL + 2, MAP_CELL + 2, OLED_COLOR_WHITE);
                 } else {
-                    drawDottedRect(x - 2, y - 2, MAP_CELL + 4, MAP_CELL + 4, s_keyFlash[i] == 2 ? 2 : 3);
+                    drawDottedRect(x - 1, y - 1, MAP_CELL + 2, MAP_CELL + 2, s_keyFlash[i] == 2 ? 2 : 3);
                 }
                 s_keyFlash[i]--;
             }
@@ -966,10 +966,10 @@ void drawStatusLabel(const char* normal, bool chip) {
     if (!text) return;
     bool blocked = text != normal;
     if (blocked || chip) {
-        s_display.fillRect(1, 9, textWidth(text) + 4, 9, OLED_COLOR_WHITE);
+        s_display.fillRect(KEY_BOX_X, 9, textWidth(text) + 4, 9, OLED_COLOR_WHITE);
         s_display.setTextColor(OLED_COLOR_BLACK, OLED_COLOR_WHITE);
     }
-    s_display.setCursor(3, 10);
+    s_display.setCursor(KEY_BOX_X + 2, 10);
     s_display.print(text);
     s_display.setTextColor(OLED_COLOR_WHITE);
 }
@@ -1130,7 +1130,7 @@ void renderKeysFrame(uint32_t now) {
         printRight((String(displayTravelMm((uint8_t)focus, k.travelMm), 1) + " mm").c_str(),
                    KEY_BOX_X + KEY_BOX_W - 1, 57);
         s_display.setTextSize(1);
-        s_display.setCursor(1, 57);
+        s_display.setCursor(KEY_BOX_X, 57);
         s_display.print("Travel");
         // The Rapid Trigger setting in words, unless the saved-state chip needs the top row
         if (!settingsChipText(now)) {
@@ -1167,15 +1167,13 @@ void renderKeysFrame(uint32_t now) {
                 }
                 break;
         }
-        s_display.setTextSize(1);
-        s_display.setTextColor(OLED_COLOR_WHITE);
-        s_display.setCursor(PANEL_TEXT_X, 21);
-        s_display.print(cap);
+        printCentered(cap, PANEL_CENTER_X, 20);
         drawPanelValue(value, unit, 31);
-        // Three small pips show which page this is
+        // Three small pips, centred at the top, show which page this is
         for (uint8_t i = 0; i < 3; ++i) {
-            if (i == page) s_display.fillRect(1 + i * 6, 3, 4, 4, OLED_COLOR_WHITE);
-            else s_display.drawRect(1 + i * 6, 3, 4, 4, OLED_COLOR_WHITE);
+            const int16_t px = PANEL_CENTER_X - 8 + i * 6;
+            if (i == page) s_display.fillRect(px, 2, 4, 4, OLED_COLOR_WHITE);
+            else s_display.drawRect(px, 2, 4, 4, OLED_COLOR_WHITE);
         }
         drawTravelScale(0.0f);
     }
@@ -2003,8 +2001,8 @@ float introGlyphHalf(char c, int16_t ox, int16_t oy, int16_t rowMin, int16_t row
 #undef IP
 
 constexpr int16_t WORD_TOP = 13;          // top row of the capitals (18 rows)
-constexpr int16_t WORD_LEFT = 8;
-constexpr int16_t WORD_WIDTH = 111;       // the drawn extent, used for the horizon beneath
+constexpr int16_t WORD_LEFT = 10;         // the wordmark is 108 px wide with its slant, so 10 centres it
+constexpr int16_t WORD_WIDTH = 108;       // the drawn extent, used for the horizon beneath
 constexpr int16_t WORD_GAP = 4;           // px between letters
 constexpr int16_t SLIT_ROW = 9;           // the empty row that cuts every letter, from WORD_TOP
 
