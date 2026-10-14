@@ -64,6 +64,10 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# Node modules & build output
+node_modules/
+dist/
+
 # OS / editor files
 .DS_Store
 Thumbs.db

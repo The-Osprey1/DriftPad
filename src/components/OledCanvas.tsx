@@ -61,7 +61,8 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
     oscPhase: number;
     gridOffset: number;
     ripples: { x: number; y: number; r: number; maxR: number }[];
-    lifeGrid: boolean[][];
+    lifeGrid: Uint8Array;
+    nextLifeGrid: Uint8Array;
     badge: { x: number; y: number; dx: number; dy: number };
     time: number;
   }>({
@@ -78,9 +79,14 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
     oscPhase: 0,
     gridOffset: 0,
     ripples: [{ x: 64, y: 32, r: 2, maxR: 40 }],
-    lifeGrid: Array.from({ length: 16 }, () =>
-      Array.from({ length: 32 }, () => Math.random() > 0.7)
-    ),
+    lifeGrid: (() => {
+      const grid = new Uint8Array(512);
+      for (let i = 0; i < 512; i++) {
+        if (Math.random() > 0.7) grid[i] = 1;
+      }
+      return grid;
+    })(),
+    nextLifeGrid: new Uint8Array(512),
     badge: { x: 20, y: 20, dx: 0.8, dy: 0.6 },
     time: 0,
   });
@@ -508,35 +514,46 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
 
       if (anim === 5) {
         if (st.time % 10 === 0) {
-          const next = st.lifeGrid.map((row) => [...row]);
+          const curr = st.lifeGrid;
+          const next = st.nextLifeGrid;
           for (let r = 0; r < 16; r++) {
+            const rowOffset = r << 5;
+            const rAbove = ((r - 1 + 16) & 15) << 5;
+            const rBelow = ((r + 1) & 15) << 5;
+
             for (let col = 0; col < 32; col++) {
-              let neighbors = 0;
-              for (let dr = -1; dr <= 1; dr++) {
-                for (let dc = -1; dc <= 1; dc++) {
-                  if (dr === 0 && dc === 0) continue;
-                  const nr = (r + dr + 16) % 16;
-                  const nc = (col + dc + 32) % 32;
-                  if (st.lifeGrid[nr][nc]) neighbors++;
-                }
-              }
-              if (st.lifeGrid[r][col] && (neighbors === 2 || neighbors === 3)) {
-                next[r][col] = true;
-              } else if (!st.lifeGrid[r][col] && neighbors === 3) {
-                next[r][col] = true;
-              } else {
-                next[r][col] = false;
-              }
+              const cLeft = (col - 1 + 32) & 31;
+              const cRight = (col + 1) & 31;
+
+              const neighbors =
+                curr[rAbove + cLeft] +
+                curr[rAbove + col] +
+                curr[rAbove + cRight] +
+                curr[rowOffset + cLeft] +
+                curr[rowOffset + cRight] +
+                curr[rBelow + cLeft] +
+                curr[rBelow + col] +
+                curr[rBelow + cRight];
+
+              const idx = rowOffset + col;
+              const cell = curr[idx];
+              next[idx] =
+                (cell === 1 && (neighbors === 2 || neighbors === 3)) || (cell === 0 && neighbors === 3) ? 1 : 0;
             }
           }
+          // Swap buffers without allocations
           st.lifeGrid = next;
+          st.nextLifeGrid = curr;
         }
 
         c.fillStyle = glow;
+        const grid = st.lifeGrid;
         for (let r = 0; r < 16; r++) {
+          const rowOffset = r << 5;
+          const py = r * 4;
           for (let col = 0; col < 32; col++) {
-            if (st.lifeGrid[r][col]) {
-              c.fillRect(col * 4, r * 4, 3, 3);
+            if (grid[rowOffset + col] === 1) {
+              c.fillRect(col * 4, py, 3, 3);
             }
           }
         }
