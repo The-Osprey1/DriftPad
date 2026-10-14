@@ -13,6 +13,7 @@ import {
   OledThemeConfig,
   DEFAULT_OLED_THEME,
 } from './types/driftpad';
+import { getValidatedBackupProfiles } from './services/profileValidation';
 import { SerialService, ConnectionMode } from './services/serialService';
 import { DriftPadDspEngine } from './engine/dspEngine';
 import { Header } from './components/Header';
@@ -53,6 +54,12 @@ export const App: React.FC = () => {
   const [currentSimTravel, setCurrentSimTravel] = useState<number>(0.0);
   const [hidEnabled, setHidEnabled] = useState<boolean>(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [commissioning, setCommissioning] = useState({
+    connected: false,
+    calibrated: false,
+    oledChecked: false,
+    saved: false,
+  });
 
   // Right Deck Tab: 'tuning' | 'encoder' | 'console' | 'tools'
   const [deckTab, setDeckTab] = useState<'tuning' | 'encoder' | 'console' | 'tools'>('tuning');
@@ -307,12 +314,16 @@ export const App: React.FC = () => {
     serial.setCallbacks({
       onLineReceived: (line) => handleIncomingLine(line),
       onLineSent: () => {},
-      onStatusChange: (mode) => setConnectionMode(mode),
+      onStatusChange: (mode) => {
+        setConnectionMode(mode);
+        setCommissioning((prev) => ({ ...prev, connected: mode === 'hardware' }));
+      },
       onLog: (dir, text) => addLog(dir, text),
     });
 
     return () => {
       serial.disconnect();
+      engine.dispose();
     };
   }, [addLog, handleIncomingLine]);
 
@@ -320,20 +331,24 @@ export const App: React.FC = () => {
     setProfiles(updatedProfiles);
     try {
       localStorage.setItem('driftpad_profiles', JSON.stringify(updatedProfiles));
-    } catch {
-      // ignore
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      addLog('ERR', `Could not persist profiles: ${message}`);
+      showToast('Profiles changed, but browser storage is unavailable');
     }
   };
 
-  const handleSelectProfile = (profileId: string) => {
-    const target = profiles.find((p) => p.id === profileId);
+  const applyProfile = (target: ProductivityProfile) => {
+    const profileId = target.id;
     if (!target) return;
 
     setActiveProfileId(profileId);
     try {
       localStorage.setItem('driftpad_active_profile_id', profileId);
-    } catch {
-      // ignore
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      addLog('ERR', `Could not persist active profile: ${message}`);
+      showToast('Active profile changed, but browser storage is unavailable');
     }
 
     const nextConfig: DeviceConfig = {
@@ -361,6 +376,11 @@ export const App: React.FC = () => {
     showToast(`Loaded profile: ${target.name}`);
   };
 
+  const handleSelectProfile = (profileId: string, sourceProfiles = profiles) => {
+    const target = sourceProfiles.find((p) => p.id === profileId);
+    if (target) applyProfile(target);
+  };
+
   const handleExportProfiles = () => {
     const backupData = {
       driftpad_version: '2.0',
@@ -386,20 +406,24 @@ export const App: React.FC = () => {
       try {
         const text = e.target?.result as string;
         const parsed = JSON.parse(text);
-        if (parsed && Array.isArray(parsed.profiles) && parsed.profiles.length > 0) {
-          saveProfilesToStorage(parsed.profiles);
-          if (parsed.active_profile_id) {
-            handleSelectProfile(parsed.active_profile_id);
-          } else {
-            handleSelectProfile(parsed.profiles[0].id);
-          }
-          addLog('INFO', `Imported ${parsed.profiles.length} profiles.`);
-          showToast(`Imported ${parsed.profiles.length} profiles`);
+        const importedProfiles = getValidatedBackupProfiles(parsed);
+        if (importedProfiles) {
+          saveProfilesToStorage(importedProfiles);
+          const requestedId =
+            typeof parsed.active_profile_id === 'string' ? parsed.active_profile_id : '';
+          const selectedId = importedProfiles.some((p) => p.id === requestedId)
+            ? requestedId
+            : importedProfiles[0].id;
+          applyProfile(importedProfiles.find((p) => p.id === selectedId)!);
+          addLog('INFO', `Imported ${importedProfiles.length} validated profiles.`);
+          showToast(`Imported ${importedProfiles.length} profiles`);
         } else {
-          alert('Invalid profile backup file.');
+          addLog('ERR', 'Rejected invalid profile backup file.');
+          showToast('Invalid profile backup: no changes were applied');
         }
       } catch (err) {
-        alert(`Failed to parse JSON: ${String(err)}`);
+        addLog('ERR', `Failed to parse profile backup: ${String(err)}`);
+        showToast('Could not parse profile backup JSON');
       }
     };
     reader.readAsText(file);
@@ -490,9 +514,10 @@ export const App: React.FC = () => {
   };
 
   const handleSaveRemapKey = (keyIdx: number, updatedKey: LayerKey) => {
+    const activeLayer = deviceConfig.active_layer;
     setDeviceConfig((prev) => {
       const nextLayers = prev.layers.map((lArr, lIdx) => {
-        if (lIdx !== 0) return lArr;
+        if (lIdx !== activeLayer) return lArr;
         const newKeys = [...lArr];
         newKeys[keyIdx] = updatedKey;
         return newKeys;
@@ -501,14 +526,14 @@ export const App: React.FC = () => {
     });
 
     if (dspEngineRef.current) {
-      dspEngineRef.current.updateKey(0, keyIdx, updatedKey);
+      dspEngineRef.current.updateKey(activeLayer, keyIdx, updatedKey);
       setKeysStatus(dspEngineRef.current.getKeysStatus());
     }
 
     const updatedProfiles = profiles.map((p) => {
       if (p.id === activeProfileId) {
         const newLayers = p.layers.map((lArr, lIdx) => {
-          if (lIdx !== 0) return lArr;
+          if (lIdx !== activeLayer) return lArr;
           const newKeys = [...lArr];
           newKeys[keyIdx] = updatedKey;
           return newKeys;
@@ -519,9 +544,16 @@ export const App: React.FC = () => {
     });
     saveProfilesToStorage(updatedProfiles);
 
-    sendSerialCommand(`SET_KEY 0 ${keyIdx} ${updatedKey.code} ${updatedKey.label}`);
-    addLog('INFO', `Remapped Key #${keyIdx} -> [${updatedKey.label}]`);
-    showToast(`Remapped Key #${keyIdx}: ${updatedKey.label}`);
+    sendSerialCommand(`SET_KEY ${activeLayer} ${keyIdx} ${updatedKey.code} ${updatedKey.label}`);
+    addLog('INFO', `Remapped L${activeLayer} Key #${keyIdx} -> [${updatedKey.label}]`);
+    showToast(`Remapped L${activeLayer} Key #${keyIdx}: ${updatedKey.label}`);
+  };
+
+  const handleLayerChange = (layer: number) => {
+    if (layer < 0 || layer > 2) return;
+    setDeviceConfig((prev) => ({ ...prev, active_layer: layer }));
+    sendSerialCommand(`SET_LAYER ${layer}`);
+    showToast(`Editing layer ${layer}`);
   };
 
   const handleConnectToggle = async () => {
@@ -534,6 +566,9 @@ export const App: React.FC = () => {
       const ok = await serialServiceRef.current.connectHardware();
       if (ok) {
         setConnectionMode('hardware');
+        setCommissioning((prev) => ({ ...prev, connected: true }));
+        setHidEnabled(false);
+        sendSerialCommand('SET_HID 0');
         showToast('Connected to DriftPad USB');
       }
     }
@@ -617,6 +652,7 @@ export const App: React.FC = () => {
 
   const handleSaveFlash = () => {
     sendSerialCommand('SAVE');
+    setCommissioning((prev) => ({ ...prev, saved: true }));
     showToast('Committed settings to RP2040 Flash');
   };
 
@@ -632,7 +668,14 @@ export const App: React.FC = () => {
 
   const handleCalibrate = () => {
     sendSerialCommand('CALIBRATE');
+    setCommissioning((prev) => ({ ...prev, calibrated: true }));
     showToast('Rest baselines calibrated');
+  };
+
+  const handleOledScan = () => {
+    sendSerialCommand('OLED_SCAN');
+    setCommissioning((prev) => ({ ...prev, oledChecked: true }));
+    showToast('OLED scan requested');
   };
 
   const handleScreensaver = () => {
@@ -711,7 +754,7 @@ export const App: React.FC = () => {
     label: '',
   };
 
-  const currentWorkspaceKeys = deviceConfig.layers[0] || [];
+  const currentWorkspaceKeys = deviceConfig.layers[deviceConfig.active_layer] || [];
   const currentLayerKeyDef = currentWorkspaceKeys[selectedSimKey] || {
     idx: selectedSimKey,
     code: 0,
@@ -796,6 +839,28 @@ export const App: React.FC = () => {
 
             {/* Bottom Deck: 4x4 Tactile Key Matrix */}
             <div className="bg-[#ffffff] border border-[#d5ccc0] rounded-2xl p-3.5 sm:p-4 shadow-xs">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#57676e]">Active key layer</p>
+                  <p className="text-[11px] text-[#84949b]">Remaps and simulations target the selected layer.</p>
+                </div>
+                <div className="flex gap-1 rounded-xl bg-[#f6f3ec] p-1 border border-[#ded7ca]">
+                  {[0, 1, 2].map((layer) => (
+                    <button
+                      key={layer}
+                      type="button"
+                      onClick={() => handleLayerChange(layer)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                        deviceConfig.active_layer === layer
+                          ? 'bg-[#153641] text-white shadow-xs'
+                          : 'text-[#57676e] hover:text-[#1b2930]'
+                      }`}
+                    >
+                      L{layer}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <KeyMatrix
                 keys={currentWorkspaceKeys}
                 keysStatus={keysStatus}
@@ -918,6 +983,45 @@ export const App: React.FC = () => {
 
             {deckTab === 'tools' && (
               <div className="flex flex-col gap-3 text-xs">
+                <div className="p-3 bg-[#eef6f3] rounded-xl border border-[#b8d8cf]">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div>
+                      <span className="font-bold text-[#153641]">First-run commissioning</span>
+                      <p className="text-[10px] text-[#5a6a72] mt-0.5">
+                        Complete these checks before enabling HID output.
+                      </p>
+                    </div>
+                    <span className="font-mono text-[10px] text-[#5b8e85]">
+                      {Object.values(commissioning).filter(Boolean).length}/4
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                    {[
+                      ['connected', 'Connect hardware'],
+                      ['calibrated', 'Calibrate sensors'],
+                      ['oledChecked', 'Scan OLED'],
+                      ['saved', 'Save to flash'],
+                    ].map(([key, label]) => (
+                      <div
+                        key={key}
+                        className={`rounded-lg px-2 py-1.5 border ${
+                          commissioning[key as keyof typeof commissioning]
+                            ? 'bg-white border-[#8fc2b5] text-[#15803d]'
+                            : 'bg-[#ffffff]/60 border-[#cfe4de] text-[#5a6a72]'
+                        }`}
+                      >
+                        {commissioning[key as keyof typeof commissioning] ? '✓' : '○'} {label}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOledScan}
+                    className="mt-2 w-full rounded-lg border border-[#b8d8cf] bg-white px-2 py-1.5 text-[10px] font-semibold text-[#153641] hover:bg-[#f5fbf9]"
+                  >
+                    Run OLED scan
+                  </button>
+                </div>
                 <div className="p-3 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] flex items-center justify-between">
                   <div className="flex flex-col">
                     <span className="font-bold text-[#1b2930] flex items-center gap-1.5">
