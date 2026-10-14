@@ -381,14 +381,40 @@ export const App: React.FC = () => {
   };
 
   const handleImportProfiles = (file: File) => {
+    // Limit import size to 500KB to prevent DoS via large JSON payloads
+    if (file.size > 500 * 1024) {
+      alert('File size exceeds maximum allowed limit of 500KB.');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
         const parsed = JSON.parse(text);
-        if (parsed && Array.isArray(parsed.profiles) && parsed.profiles.length > 0) {
+
+        // Validate imported profiles schema
+        const isValid =
+          parsed &&
+          Array.isArray(parsed.profiles) &&
+          parsed.profiles.length > 0 &&
+          parsed.profiles.every(
+            (p: Partial<ProductivityProfile>) =>
+              p &&
+              typeof p.id === 'string' &&
+              typeof p.name === 'string' &&
+              typeof p.category === 'string' &&
+              typeof p.tuning === 'object' &&
+              p.tuning !== null &&
+              Array.isArray(p.layers)
+          );
+
+        if (isValid) {
           saveProfilesToStorage(parsed.profiles);
-          if (parsed.active_profile_id) {
+          const hasTarget = parsed.profiles.some(
+            (p: ProductivityProfile) => p.id === parsed.active_profile_id
+          );
+          if (parsed.active_profile_id && hasTarget) {
             handleSelectProfile(parsed.active_profile_id);
           } else {
             handleSelectProfile(parsed.profiles[0].id);
@@ -396,7 +422,7 @@ export const App: React.FC = () => {
           addLog('INFO', `Imported ${parsed.profiles.length} profiles.`);
           showToast(`Imported ${parsed.profiles.length} profiles`);
         } else {
-          alert('Invalid profile backup file.');
+          alert('Invalid profile backup file format or schema.');
         }
       } catch (err) {
         alert(`Failed to parse JSON: ${String(err)}`);
