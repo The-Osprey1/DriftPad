@@ -29,7 +29,7 @@ const COMMON_COMMANDS = [
   'BOOTSEL',
 ];
 
-export const SerialConsole: React.FC<SerialConsoleProps> = ({
+export const SerialConsoleComponent: React.FC<SerialConsoleProps> = ({
   logs,
   onSendCommand,
   onClearLogs,
@@ -150,3 +150,5 @@ export const SerialConsole: React.FC<SerialConsoleProps> = ({
     </div>
   );
 };
+
+export const SerialConsole = React.memo(SerialConsoleComponent);

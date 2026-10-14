@@ -24,7 +24,7 @@ const PRODUCTIVITY_TUNING_PRESETS = [
   { name: 'Deep Safety', act: 2.50, sens: 0.40, rt: true, desc: 'Deep engagement for destructive actions' },
 ];
 
-export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
+export const RapidTriggerTuningComponent: React.FC<RapidTriggerTuningProps> = ({
   actuation,
   rtSens,
   rtEnabled,
@@ -364,3 +364,5 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
     </div>
   );
 };
+
+export const RapidTriggerTuning = React.memo(RapidTriggerTuningComponent);
