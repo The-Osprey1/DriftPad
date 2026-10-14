@@ -1,6 +1,6 @@
 # Serial command reference
 
-DriftPad exposes a line-based text protocol over its USB serial port at **115200 baud**. The [web configurator](../configurator/index.html) uses it, and you can use it from any serial terminal or script.
+DriftPad exposes a line-based text protocol over its USB serial port at **115200 baud**. The React/Vite web configurator in `src/` uses it, and you can use it from any serial terminal or script.
 
 - Send one command per line, terminated by `\n` or `\r`. Lines longer than 128 characters are truncated.
 - Replies are single-line JSON. Most commands answer with `{"status":"ok", ...}` or `{"status":"error","msg":"..."}`.
@@ -50,4 +50,5 @@ The handler lives in `processCommand()` in [`firmware/src/main.cpp`](../firmware
 | `SIM <key> <mm>` | Injects a simulated travel for one key, bypassing the sensor. Replies with a `sim_event` showing the resulting travel and pressed state |
 | `BOOTSEL` | Reboots into the RP2040 USB bootloader for flashing |
 
-[`tools/demo_oled.py`](../tools/demo_oled.py) is a working example that drives the display using `SIM`.
+The Digital Twin implements the same command shapes for browser-only testing. Use
+`npm test` to verify command parsing, Rapid Trigger behavior, and `STREAM` telemetry.

@@ -23,6 +23,9 @@ export class SerialService {
   private writer: WritableStreamDefaultWriter<string> | null = null;
   private isConnecting: boolean = false;
   private keepReading: boolean = false;
+  private readLoopTask: Promise<void> | null = null;
+  private decoderPipeTask: Promise<void> | null = null;
+  private encoderPipeTask: Promise<void> | null = null;
 
   private onLineReceivedCb?: (line: string) => void;
   private onLineSentCb?: (line: string) => void;
@@ -65,15 +68,27 @@ export class SerialService {
 
       if (this.port.readable && this.port.writable) {
         const textDecoder = new TextDecoderStream();
-        (this.port.readable as unknown as ReadableStream<BufferSource>).pipeTo(textDecoder.writable);
+        this.decoderPipeTask = (this.port.readable as unknown as ReadableStream<BufferSource>)
+          .pipeTo(textDecoder.writable)
+          .catch((err) => {
+            if (this.keepReading) {
+              this.onLogCb?.('ERR', `Serial decoder stopped: ${String(err)}`);
+            }
+          });
         this.reader = textDecoder.readable.getReader();
 
         const textEncoder = new TextEncoderStream();
-        textEncoder.readable.pipeTo(this.port.writable as unknown as WritableStream<Uint8Array>);
+        this.encoderPipeTask = textEncoder.readable
+          .pipeTo(this.port.writable as unknown as WritableStream<Uint8Array>)
+          .catch((err) => {
+            if (this.keepReading) {
+              this.onLogCb?.('ERR', `Serial encoder stopped: ${String(err)}`);
+            }
+          });
         this.writer = textEncoder.writable.getWriter();
 
         this.keepReading = true;
-        this.startReadLoop();
+        this.readLoopTask = this.startReadLoop();
 
         this.onStatusChangeCb?.('hardware');
         this.onLogCb?.('INFO', 'Connected to DriftPad USB Serial at 115200 baud.');
@@ -82,6 +97,7 @@ export class SerialService {
         await this.sendCommand('GET_CONFIG');
         return true;
       }
+      await this.disconnect();
       return false;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -111,8 +127,16 @@ export class SerialService {
         this.port = null;
       }
     } catch (err) {
-      console.warn('Disconnect error', err);
+      this.onLogCb?.('ERR', `Disconnect error: ${String(err)}`);
     }
+    await Promise.allSettled(
+      [this.readLoopTask, this.decoderPipeTask, this.encoderPipeTask].filter(
+        (task): task is Promise<void> => task !== null
+      )
+    );
+    this.readLoopTask = null;
+    this.decoderPipeTask = null;
+    this.encoderPipeTask = null;
     this.port = null;
     this.onStatusChangeCb?.('disconnected');
     this.onLogCb?.('INFO', 'Disconnected from serial device.');
@@ -133,7 +157,7 @@ export class SerialService {
     }
   }
 
-  private async startReadLoop() {
+  private async startReadLoop(): Promise<void> {
     let buffer = '';
     try {
       while (this.keepReading && this.reader) {
@@ -157,6 +181,12 @@ export class SerialService {
         const msg = err instanceof Error ? err.message : String(err);
         this.onLogCb?.('ERR', `Serial read error: ${msg}`);
       }
+    }
+    if (this.keepReading) {
+      this.keepReading = false;
+      this.port = null;
+      this.onStatusChangeCb?.('disconnected');
+      this.onLogCb?.('ERR', 'Serial device stopped sending data.');
     }
   }
 }
