@@ -153,3 +153,45 @@ Run the last two directly, for example `python -m unittest tests.test_adversaria
 ## 8. Known Open Issues
 
 - **Resolved: ADV-02.** At 0.05 mm the DSP produced 285 false releases in 5 s under 10-count 60 Hz EMI plus 3-sigma Gaussian noise. The RT sensitivity floor is now 0.10 mm (`HallKey::RT_SENS_MIN_MM`, mirrored by `HallKeyDSP.RT_SENS_MIN_MM`), where ADV-02 produces none.
+# DriftPad testing
+
+## Web configurator
+
+From the repository root:
+
+```bash
+npm install
+npm test
+npm run lint
+npm run build
+```
+
+`npm test` covers profile backup validation and the Digital Twin's serial protocol,
+actuation thresholds, per-key safety depth, and streaming telemetry. These tests do
+not require a browser or physical hardware.
+
+## Hardware smoke test
+
+After flashing the firmware and connecting the Pico through WebSerial:
+
+```text
+PING
+GET_CONFIG
+CALIBRATE
+OLED_SCAN
+STATUS
+SET_HID 0
+SIM 0 1.50
+SIM 0 0.00
+SAVE
+```
+
+Keep HID disabled until the key matrix, sensor baselines, layer mappings, and OLED
+have been verified. Use `docs/serial-protocol.md` for the complete command reference.
+
+## Firmware
+
+Firmware unit-test scaffolding is configured for PlatformIO under `firmware/test/`.
+When adding firmware tests, keep sensor and display dependencies behind small seams
+so command parsing and Rapid Trigger state transitions can be tested without a
+connected Pico.
