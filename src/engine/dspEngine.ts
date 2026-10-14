@@ -1,4 +1,4 @@
-import { DeviceConfig, KeyStatus, INITIAL_DEVICE_CONFIG, DEFAULT_KEYMAPS } from '../types/driftpad';
+import { DeviceConfig, KeyStatus, INITIAL_DEVICE_CONFIG, LayerKey } from '../types/driftpad';
 
 export interface KeyDSPState {
   index: number;
@@ -25,7 +25,6 @@ export class DriftPadDspEngine {
 
   constructor(onSerialOutput?: (line: string) => void) {
     this.onSerialOutput = onSerialOutput;
-    // Load config or use defaults
     const saved = localStorage.getItem('driftpad_config');
     if (saved) {
       try {
@@ -65,18 +64,28 @@ export class DriftPadDspEngine {
     return this.config;
   }
 
+  public setConfig(cfg: DeviceConfig) {
+    this.config = cfg;
+    this.saveConfigToStorage();
+  }
+
   public getKeysStatus(): KeyStatus[] {
     const activeLayer = this.config.active_layer;
     const currentLayerKeys = this.config.layers[activeLayer] || [];
 
-    return this.keyStates.map((k) => ({
-      idx: k.index,
-      pressed: k.isPressed,
-      travel: Number(k.travelMm.toFixed(2)),
-      label: currentLayerKeys[k.index]?.label || `K${k.index}`,
-      peakDepth: k.peakDepthMm,
-      valleyDepth: k.valleyDepthMm,
-    }));
+    return this.keyStates.map((k) => {
+      const keyDef = currentLayerKeys[k.index];
+      return {
+        idx: k.index,
+        pressed: k.isPressed,
+        travel: Number(k.travelMm.toFixed(2)),
+        label: keyDef?.label || `K${k.index}`,
+        peakDepth: k.peakDepthMm,
+        valleyDepth: k.valleyDepthMm,
+        customActuation: keyDef?.customActuation,
+        pressCount: k.pressCount,
+      };
+    });
   }
 
   public getLastActiveKey(): number {
@@ -104,14 +113,13 @@ export class DriftPadDspEngine {
   }
 
   /**
-   * Rapid Trigger Hall-Effect DSP core update
+   * Rapid Trigger Hall-Effect DSP core update with per-key custom actuation support
    */
   public injectTravel(keyIdx: number, travelMm: number): { pressed: boolean; travel: number } {
     if (keyIdx < 0 || keyIdx >= 16) return { pressed: false, travel: 0 };
     const k = this.keyStates[keyIdx];
     this.lastActiveKey = keyIdx;
 
-    // Wake display on interaction
     if (this.isSleeping) {
       this.isSleeping = false;
     }
@@ -119,14 +127,17 @@ export class DriftPadDspEngine {
       this.screensaverActive = false;
     }
 
-    // Clamp travel to 0.00 - 4.00mm
     const clamped = Math.max(0.0, Math.min(4.0, travelMm));
     k.travelMm = clamped;
 
-    const actuation = this.config.actuation;
+    const activeLayer = this.config.active_layer;
+    const keyDef = this.config.layers[activeLayer]?.[keyIdx];
+    // Check if this key has a custom safety actuation point override
+    const actuation =
+      keyDef?.customActuation !== undefined ? keyDef.customActuation : this.config.actuation;
+
     const rtSens = this.config.rt_sens;
     const rtEnabled = this.config.rt_enabled;
-
     const wasPressed = k.isPressed;
 
     if (!rtEnabled) {
@@ -146,7 +157,6 @@ export class DriftPadDspEngine {
     } else {
       // Rapid Trigger mode
       if (!k.isPressed) {
-        // Condition 1: Initial crossing of actuation point
         if (clamped >= actuation && !k.everActuated) {
           k.isPressed = true;
           k.everActuated = true;
@@ -154,17 +164,14 @@ export class DriftPadDspEngine {
           k.valleyDepthMm = clamped;
           k.pressCount++;
         } else if (k.everActuated) {
-          // Track minimum depth on the upstroke
           if (clamped < k.valleyDepthMm) {
             k.valleyDepthMm = clamped;
           }
-          // Re-actuate when travelling downward by RT sensitivity
           if (clamped >= k.valleyDepthMm + rtSens && clamped >= actuation) {
             k.isPressed = true;
             k.peakDepthMm = clamped;
             k.pressCount++;
           }
-          // Full return to top clears everActuated
           if (clamped <= 0.05) {
             k.everActuated = false;
             k.valleyDepthMm = 0.0;
@@ -172,12 +179,10 @@ export class DriftPadDspEngine {
           }
         }
       } else {
-        // While pressed, track maximum depth (peak)
         if (clamped > k.peakDepthMm) {
           k.peakDepthMm = clamped;
         }
 
-        // Release when reversing upward by RT sensitivity or fully lifting to top
         if (clamped <= k.peakDepthMm - rtSens || clamped <= 0.05) {
           k.isPressed = false;
           k.valleyDepthMm = clamped;
@@ -201,7 +206,7 @@ export class DriftPadDspEngine {
   }
 
   /**
-   * Process a serial line command (matches firmware/src/main.cpp)
+   * Process a serial line command
    */
   public processCommand(rawLine: string): string {
     const line = rawLine.trim();
@@ -328,7 +333,9 @@ export class DriftPadDspEngine {
           if (!this.config.layers[layer]) {
             this.config.layers[layer] = [];
           }
+          const existing = this.config.layers[layer][keyIdx];
           this.config.layers[layer][keyIdx] = {
+            ...existing,
             idx: keyIdx,
             code: hidCode,
             label,
@@ -487,15 +494,10 @@ export class DriftPadDspEngine {
     }
   }
 
-  public resetToFactory() {
-    this.config = {
-      actuation: 1.20,
-      rt_sens: 0.20,
-      rt_enabled: true,
-      active_layer: 0,
-      layers: JSON.parse(JSON.stringify(DEFAULT_KEYMAPS))
-    };
-    this.saveConfigToStorage();
-    this.initKeys();
+  public updateKey(layer: number, keyIdx: number, updated: LayerKey) {
+    if (this.config.layers[layer]) {
+      this.config.layers[layer][keyIdx] = updated;
+      this.saveConfigToStorage();
+    }
   }
 }

@@ -1,134 +1,296 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { LayerKey, KeyStatus } from '../types/driftpad';
-import { Layers, Keyboard as KeyboardIcon, Edit3 } from 'lucide-react';
+import {
+  Flame,
+  RotateCcw,
+  ShieldAlert,
+  Grid,
+} from 'lucide-react';
+import { HoverExplain } from './HoverExplain';
 
 interface KeyMatrixProps {
-  activeLayer: number;
-  layers: LayerKey[][];
+  keys: LayerKey[];
   keysStatus: KeyStatus[];
   selectedSimKey: number;
-  onSelectLayer: (layer: number) => void;
+  workspaceName?: string;
+  pressCounts: Record<number, number>;
   onOpenRemap: (keyIdx: number) => void;
   onSelectSimKey: (keyIdx: number) => void;
+  onResetHeatmap: () => void;
 }
 
-const LAYER_NAMES = [
-  { id: 0, title: 'L0: Numpad', desc: 'Standard 10-key calculator & macro pad' },
-  { id: 1, title: 'L1: Navigation', desc: 'Cursor arrows, Home/End, PgUp/PgDn, editing' },
-  { id: 2, title: 'L2: WASD Gaming', desc: 'High-speed FPS / competitive gaming cluster' },
-];
+function formatModifiers(mods?: LayerKey['modifiers']): string {
+  if (!mods) return '';
+  const parts: string[] = [];
+  if (mods.ctrl) parts.push('^');
+  if (mods.alt) parts.push('⌥');
+  if (mods.shift) parts.push('⇧');
+  if (mods.meta) parts.push('⌘');
+  return parts.join('');
+}
+
+function getHeatmapTier(ratio: number) {
+  if (ratio >= 0.75) {
+    return {
+      bg: 'bg-[#c86443] border-[#a84e31] text-white shadow-inner',
+      tag: 'bg-[#9b4226] text-white',
+      badge: 'Peak',
+    };
+  }
+  if (ratio >= 0.45) {
+    return {
+      bg: 'bg-[#d97d5a] border-[#b8613f] text-white shadow-inner',
+      tag: 'bg-[#c86443] text-white',
+      badge: 'High',
+    };
+  }
+  if (ratio >= 0.15) {
+    return {
+      bg: 'bg-[#5b8e85] border-[#46726a] text-white shadow-inner',
+      tag: 'bg-[#46726a] text-white',
+      badge: 'Mid',
+    };
+  }
+  return {
+    bg: 'bg-[#ffffff] border-[#ded7ca] text-[#1b2930]',
+    tag: 'bg-[#f6f3ec] text-[#5a6a72]',
+    badge: 'Low',
+  };
+}
 
 export const KeyMatrix: React.FC<KeyMatrixProps> = ({
-  activeLayer,
-  layers,
+  keys,
   keysStatus,
   selectedSimKey,
-  onSelectLayer,
+  workspaceName = 'Standard Number Pad & Calc',
+  pressCounts,
   onOpenRemap,
   onSelectSimKey,
+  onResetHeatmap,
 }) => {
-  const currentLayerKeys = layers[activeLayer] || [];
+  const [heatmapEnabled, setHeatmapEnabled] = useState<boolean>(false);
+
+  const { maxCount, totalPresses, topKeyIdx } = useMemo(() => {
+    let max = 1;
+    let sum = 0;
+    let top = 0;
+
+    for (let i = 0; i < 16; i++) {
+      const c = pressCounts[i] || 0;
+      sum += c;
+      if (c > max) {
+        max = c;
+        top = i;
+      }
+    }
+    return { maxCount: max, totalPresses: sum, topKeyIdx: top };
+  }, [pressCounts]);
+
+  const topKeyLabel = keys[topKeyIdx]?.label || `K${topKeyIdx}`;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Layer Tabs */}
-      <div className="flex bg-[#222738] p-1 rounded-lg gap-1 border border-[#2d3748]">
-        {LAYER_NAMES.map((l) => (
+    <div className="flex flex-col gap-3">
+      {/* Workspace Header & Heatmap Navigation Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#f0ebdF] pb-2.5">
+        {/* Left: Active Workspace Badge & Title */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] text-xs">
+            <Grid className="w-3.5 h-3.5 text-[#c86443]" />
+            <span className="text-[#71828a] font-medium">Layout:</span>
+            <span className="font-bold text-[#1b2930] truncate max-w-[200px] sm:max-w-none">
+              {workspaceName}
+            </span>
+          </div>
+
+          <HoverExplain
+            title="4x4 Physical Key Matrix"
+            badge="Hardware"
+            explanation="16 linear Hall-effect key switches arranged in a standard 4x4 macropad grid. Double-click any key to remap its command or adjust per-key safety actuation."
+            tip="Click any key to simulate its physical travel down to 4.0mm."
+          />
+        </div>
+
+        {/* Right: Heatmap Toggle & Helper */}
+        <div className="flex items-center gap-2">
           <button
-            key={l.id}
-            onClick={() => onSelectLayer(l.id)}
-            className={`flex-1 py-2 px-3 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-              activeLayer === l.id
-                ? 'bg-[#00f2fe] text-black shadow-[0_2px_8px_rgba(0,242,254,0.35)]'
-                : 'text-[#9ca3af] hover:text-white hover:bg-[#181c27]'
+            onClick={() => setHeatmapEnabled((prev) => !prev)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-colors ${
+              heatmapEnabled
+                ? 'bg-[#c86443]/15 text-[#c86443] border-[#c86443]/40'
+                : 'bg-[#f6f3ec] text-[#5a6a72] border-[#ded7ca] hover:text-[#1b2930]'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
-            <span>{l.title}</span>
+            <Flame className={`w-3.5 h-3.5 ${heatmapEnabled ? 'text-[#c86443]' : 'text-[#71828a]'}`} />
+            <span>Heatmap</span>
           </button>
-        ))}
+
+          <HoverExplain
+            title="Activity Heatmap"
+            badge="Telemetry"
+            explanation="Visualizes keystroke frequency across your 16 keys. Terracotta represents peak hotkeys, and sea-glass represents moderate use."
+          />
+        </div>
       </div>
 
-      {/* Matrix 4x4 Grid */}
-      <div className="flex justify-center p-4 bg-[#11141d] rounded-2xl border border-[#2d3748] shadow-inner">
-        <div className="grid grid-cols-4 gap-3 sm:gap-3.5">
-          {Array.from({ length: 16 }).map((_, i) => {
-            const keyInfo = currentLayerKeys[i] || { idx: i, code: 0, label: 'KEY' };
-            const status = keysStatus[i] || { idx: i, pressed: false, travel: 0.0, label: keyInfo.label };
-            const isActuated = status.pressed;
-            const isSimTarget = selectedSimKey === i;
+      {/* Heatmap Summary Strip */}
+      {heatmapEnabled && (
+        <div className="flex items-center justify-between px-3.5 py-2 bg-[#faf7f2] rounded-xl border border-[#c86443]/30 text-xs text-[#1b2930] animate-in fade-in">
+          <div className="flex items-center gap-2 truncate">
+            <span className="font-bold text-[#c86443]">Usage Heatmap</span>
+            <span aria-hidden="true" className="text-[#ded7ca]">·</span>
+            <span className="text-[#5a6a72]">
+              Total Presses: <strong className="text-[#1b2930] font-mono">{totalPresses}</strong>
+            </span>
+            <span aria-hidden="true" className="text-[#ded7ca]">·</span>
+            <span className="text-[#5a6a72]">
+              Top Key: <strong className="text-[#c86443] font-mono">{topKeyLabel}</strong> ({maxCount})
+            </span>
+          </div>
+          <button
+            onClick={onResetHeatmap}
+            className="flex items-center gap-1 text-[11px] text-[#71828a] hover:text-[#c86443] transition-colors p-1"
+            title="Reset Heatmap counters for this workspace"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset</span>
+          </button>
+        </div>
+      )}
 
-            // Percentage of travel (0 to 4mm)
-            const travelPct = Math.min(100, (status.travel / 4.0) * 100);
+      {/* Recessed Switch Plate: 4x4 Tactile Key Matrix */}
+      <div className="bg-[#ece6db] p-3 sm:p-3.5 rounded-2xl border border-[#d8d0c2] shadow-inner">
+        <div className="grid grid-cols-4 gap-2.5 sm:gap-3">
+          {keys.map((k, i) => {
+            const status = keysStatus[i] || {
+              idx: i,
+              pressed: false,
+              travel: 0.0,
+              label: k.label,
+            };
+            const isActuated = status.pressed;
+            const isSelected = selectedSimKey === i;
+            const travelRatio = Math.min(1, Math.max(0, status.travel / 4.0));
+            const mods = formatModifiers(k.modifiers);
+
+            const pressCount = pressCounts[i] || 0;
+            const heatRatio = maxCount > 0 ? pressCount / maxCount : 0;
+            const heat = getHeatmapTier(heatRatio);
 
             return (
               <div
                 key={i}
-                className="relative group flex flex-col items-center"
+                onClick={() => onSelectSimKey(i)}
+                onDoubleClick={() => onOpenRemap(i)}
+                className={`relative rounded-xl flex flex-col justify-between p-2.5 sm:p-3 select-none transition-all cursor-pointer h-24 sm:h-28 overflow-hidden shadow-xs ${
+                  isSelected ? 'ring-2 ring-[#c86443] ring-offset-2' : ''
+                } ${
+                  heatmapEnabled
+                    ? heat.bg
+                    : isActuated
+                    ? 'translate-y-1 bg-[#c86443] text-white border-b-2 border-r border-[#a84e31] shadow-inner'
+                    : 'bg-[#ffffff] hover:bg-[#faf7f2] text-[#1b2930] border border-[#ded7ca] border-b-4 border-r-2 border-b-[#cfc5b3] border-r-[#ded7ca] hover:border-b-[#b8ad99]'
+                }`}
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelectSimKey(i);
-                    onOpenRemap(i);
-                  }}
-                  className={`relative w-[68px] h-[68px] sm:w-[76px] sm:h-[76px] rounded-xl flex flex-col items-center justify-between p-2 cursor-pointer transition-all duration-150 select-none overflow-hidden ${
-                    isActuated
-                      ? 'bg-gradient-to-br from-[#10b981] to-[#059669] text-white shadow-[0_0_16px_rgba(16,185,129,0.6)] translate-y-0.5 border-emerald-400'
-                      : 'bg-[#222738] text-[#f3f4f6] hover:border-[#00f2fe] hover:-translate-y-0.5 border-[#2d3748] shadow-md'
-                  } border ${
-                    isSimTarget && !isActuated ? 'ring-2 ring-[#00f2fe]/80 ring-offset-2 ring-offset-[#11141d]' : ''
+                {/* Dynamic Key Travel Fill Bar */}
+                <div
+                  className={`absolute bottom-0 left-0 right-0 pointer-events-none transition-all duration-75 ${
+                    isActuated ? 'bg-white/20' : 'bg-[#5b8e85]/20'
                   }`}
-                >
-                  {/* Background travel gauge fill */}
-                  {!isActuated && travelPct > 0 && (
-                    <div
-                      className="absolute bottom-0 left-0 right-0 bg-[#00f2fe]/20 transition-all duration-75 pointer-events-none"
-                      style={{ height: `${travelPct}%` }}
-                    />
-                  )}
+                  style={{ height: `${travelRatio * 100}%` }}
+                />
 
-                  {/* Top Key Info Row */}
-                  <div className="w-full flex items-center justify-between text-[10px] text-[#9ca3af] pointer-events-none">
-                    <span className={`font-mono ${isActuated ? 'text-emerald-100 font-bold' : ''}`}>
-                      #{i}
-                    </span>
-                    {isSimTarget && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#00f2fe] animate-pulse" title="Target for Switch Simulator" />
-                    )}
-                  </div>
-
-                  {/* Main Key Label */}
+                {/* Top Row: Index, Modifiers, Heatmap Count */}
+                <div className="flex items-center justify-between text-[10px] z-10">
                   <span
-                    className={`font-black tracking-wide text-base sm:text-lg pointer-events-none truncate max-w-full ${
-                      isActuated ? 'text-white scale-105' : 'text-[#f3f4f6]'
+                    className={`font-mono font-bold ${
+                      isActuated || (heatmapEnabled && heatRatio >= 0.15)
+                        ? 'text-white/80'
+                        : 'text-[#71828a]'
                     }`}
                   >
-                    {keyInfo.label}
+                    #{i}
                   </span>
 
-                  {/* Bottom Travel / Code Readout */}
-                  <div className="w-full flex items-center justify-between text-[9px] pointer-events-none">
-                    <span className={`font-mono ${isActuated ? 'text-emerald-100' : 'text-[#9ca3af]'}`}>
-                      {status.travel > 0 ? `${status.travel.toFixed(1)}mm` : `c:${keyInfo.code}`}
-                    </span>
-                    <Edit3 className={`w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity ${isActuated ? 'text-white' : 'text-[#00f2fe]'}`} />
+                  <div className="flex items-center gap-1">
+                    {mods && (
+                      <span
+                        className={`font-mono font-bold px-1 rounded ${
+                          isActuated || (heatmapEnabled && heatRatio >= 0.15)
+                            ? 'bg-black/20 text-white'
+                            : 'bg-[#5b8e85]/20 text-[#153641]'
+                        }`}
+                      >
+                        {mods}
+                      </span>
+                    )}
+                    {k.customActuation && (
+                      <span title={`Safety actuation: ${k.customActuation.toFixed(1)}mm`}>
+                        <ShieldAlert
+                          className={`w-3 h-3 ${
+                            isActuated ? 'text-amber-200' : 'text-[#b45309]'
+                          }`}
+                        />
+                      </span>
+                    )}
+                    {heatmapEnabled && pressCount > 0 && (
+                      <span
+                        className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold ${heat.tag}`}
+                      >
+                        {pressCount}
+                      </span>
+                    )}
                   </div>
-                </button>
+                </div>
+
+                {/* Center: Key Primary Label */}
+                <div className="my-auto text-center z-10 flex flex-col items-center justify-center">
+                  <span
+                    className={`font-black tracking-tight leading-none text-base sm:text-xl font-mono ${
+                      isActuated || (heatmapEnabled && heatRatio >= 0.15)
+                        ? 'text-white'
+                        : 'text-[#1b2930]'
+                    }`}
+                  >
+                    {k.label}
+                  </span>
+                  {k.description && (
+                    <span
+                      className={`text-[9px] truncate max-w-full mt-1 font-medium ${
+                        isActuated || (heatmapEnabled && heatRatio >= 0.15)
+                          ? 'text-white/80'
+                          : 'text-[#5a6a72]'
+                      }`}
+                    >
+                      {k.description}
+                    </span>
+                  )}
+                </div>
+
+                {/* Bottom Row: Live Analog Sensor Travel */}
+                <div className="flex items-center justify-between text-[10px] font-mono z-10 pt-1 border-t border-black/5">
+                  <span
+                    className={`tabular-nums font-semibold ${
+                      isActuated || (heatmapEnabled && heatRatio >= 0.15)
+                        ? 'text-white/90'
+                        : 'text-[#5a6a72]'
+                    }`}
+                  >
+                    {status.travel.toFixed(2)}mm
+                  </span>
+                  <span
+                    className={`text-[9px] uppercase font-bold tracking-wider ${
+                      isActuated
+                        ? 'text-white font-extrabold'
+                        : 'text-[#71828a]'
+                    }`}
+                  >
+                    {isActuated ? 'ACTUATED' : 'REST'}
+                  </span>
+                </div>
               </div>
             );
           })}
         </div>
-      </div>
-
-      {/* Guide Note */}
-      <div className="flex items-center justify-between text-xs text-[#9ca3af] px-1">
-        <span className="flex items-center gap-1.5">
-          <KeyboardIcon className="w-4 h-4 text-[#00f2fe]" /> Click any key to remap label &amp; HID keycode.
-        </span>
-        <span className="text-[11px] text-[#00f2fe]">
-          Selected for test: <strong className="font-mono font-bold text-white">Key #{selectedSimKey} ({currentLayerKeys[selectedSimKey]?.label || ''})</strong>
-        </span>
       </div>
     </div>
   );

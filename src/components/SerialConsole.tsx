@@ -62,11 +62,11 @@ export const SerialConsole: React.FC<SerialConsoleProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-2.5 bg-[#090b10] p-3.5 rounded-xl border border-[#2d3748]">
-      <div className="flex justify-between items-center border-b border-[#2d3748] pb-2">
+    <div className="flex flex-col gap-2.5 bg-[#faf8f5] p-3.5 rounded-xl border border-[#e5dfd5]">
+      <div className="flex justify-between items-center border-b border-[#e5dfd5] pb-2">
         <div className="flex items-center gap-2">
-          <Terminal className="w-4 h-4 text-[#10b981]" />
-          <span className="text-xs font-bold text-gray-300 uppercase tracking-wider font-mono">
+          <Terminal className="w-3.5 h-3.5 text-[#1e3f48]" />
+          <span className="text-xs font-bold text-[#1c282e] font-mono">
             USB Serial Console (115200 8N1)
           </span>
         </div>
@@ -74,15 +74,15 @@ export const SerialConsole: React.FC<SerialConsoleProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={handleCopyLogs}
-            className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1 transition-colors"
+            className="text-[11px] text-[#57676e] hover:text-[#1c282e] flex items-center gap-1 transition-colors"
             title="Copy logs to clipboard"
           >
-            {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+            {copied ? <Check className="w-3 h-3 text-[#15803d]" /> : <Copy className="w-3 h-3" />}
             <span>{copied ? 'Copied' : 'Copy'}</span>
           </button>
           <button
             onClick={onClearLogs}
-            className="text-[11px] text-gray-400 hover:text-red-400 flex items-center gap-1 transition-colors"
+            className="text-[11px] text-[#57676e] hover:text-red-600 flex items-center gap-1 transition-colors"
             title="Clear console"
           >
             <Trash2 className="w-3 h-3" />
@@ -94,21 +94,21 @@ export const SerialConsole: React.FC<SerialConsoleProps> = ({
       {/* Terminal log window */}
       <div
         ref={logContainerRef}
-        className="h-32 overflow-y-auto font-mono text-[11px] space-y-1 pr-1 select-text scrollbar-thin"
+        className="h-32 overflow-y-auto font-mono text-[11px] space-y-1 pr-1 select-text scrollbar-thin bg-[#12242b] p-2.5 rounded-xl border border-[#28464f] text-[#e8f1ee]"
       >
         {logs.length === 0 ? (
-          <div className="text-gray-600 italic">No serial communications yet...</div>
+          <div className="text-[#71938c] italic">No serial communications yet...</div>
         ) : (
           logs.map((log) => {
-            let color = 'text-gray-300';
-            if (log.direction === 'TX') color = 'text-[#00f2fe]';
-            else if (log.direction === 'RX') color = 'text-emerald-400';
-            else if (log.direction === 'ERR') color = 'text-red-400';
-            else if (log.direction === 'INFO') color = 'text-amber-400';
+            let color = 'text-[#e8f1ee]';
+            if (log.direction === 'TX') color = 'text-[#71938c]';
+            else if (log.direction === 'RX') color = 'text-[#9ed3c7]';
+            else if (log.direction === 'ERR') color = 'text-[#e07a5f]';
+            else if (log.direction === 'INFO') color = 'text-[#facc15]';
 
             return (
               <div key={log.id} className="flex gap-2 leading-relaxed">
-                <span className="text-gray-500 shrink-0">[{log.timestamp}]</span>
+                <span className="text-[#84949b] shrink-0">[{log.timestamp}]</span>
                 <span className="font-bold shrink-0 w-8">{log.direction}</span>
                 <span className={`${color} break-all`}>{log.text}</span>
               </div>
@@ -118,12 +118,12 @@ export const SerialConsole: React.FC<SerialConsoleProps> = ({
       </div>
 
       {/* Quick command buttons */}
-      <div className="flex gap-1.5 overflow-x-auto py-1 scrollbar-none text-[10px]">
+      <div className="flex gap-1.5 overflow-x-auto py-0.5 scrollbar-none text-[10px]">
         {COMMON_COMMANDS.slice(0, 7).map((cmd) => (
           <button
             key={cmd}
             onClick={() => onSendCommand(cmd)}
-            className="bg-[#181c27] hover:bg-[#222738] text-gray-300 hover:text-[#00f2fe] px-2 py-0.5 rounded border border-[#2d3748] font-mono shrink-0 transition-colors"
+            className="bg-[#ffffff] hover:bg-[#faf8f5] text-[#1c282e] hover:text-[#9e5b3d] px-2.5 py-1 rounded-lg border border-[#e5dfd5] font-mono shrink-0 transition-colors shadow-xs font-semibold"
           >
             {cmd}
           </button>
@@ -137,11 +137,11 @@ export const SerialConsole: React.FC<SerialConsoleProps> = ({
           value={inputVal}
           onChange={(e) => setInputVal(e.target.value)}
           placeholder="Send custom serial command (e.g. GET_CONFIG, STATUS)..."
-          className="flex-1 bg-[#181c27] text-white placeholder-gray-500 px-3 py-1.5 text-xs rounded-lg border border-[#2d3748] font-mono focus:outline-none focus:border-[#00f2fe]"
+          className="flex-1 bg-[#ffffff] text-[#1c282e] placeholder-[#84949b] px-3 py-1.5 text-xs rounded-xl border border-[#d5ccc0] font-mono focus:outline-none focus:border-[#9e5b3d]"
         />
         <button
           type="submit"
-          className="bg-[#222738] hover:bg-[#2d3748] text-[#00f2fe] px-3 py-1.5 rounded-lg border border-[#2d3748] text-xs font-mono font-bold flex items-center gap-1 transition-colors"
+          className="bg-[#9e5b3d] hover:bg-[#8b4e34] text-white px-3.5 py-1.5 rounded-xl border border-[#9e5b3d] text-xs font-mono font-bold flex items-center gap-1.5 transition-colors shadow-xs"
         >
           <Send className="w-3.5 h-3.5" />
           <span>Send</span>
