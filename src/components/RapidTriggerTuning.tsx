@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sliders, Zap, Activity, Play, RotateCcw, ShieldAlert } from 'lucide-react';
+import { Sliders, Zap, Activity, Play, RotateCcw, ShieldAlert, LineChart } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
 
 interface RapidTriggerTuningProps {
@@ -39,11 +39,74 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
   onSelectSimKey,
 }) => {
   const [animating, setAnimating] = useState<boolean>(false);
+  const [travelHistory, setTravelHistory] = useState<number[]>(() => Array(60).fill(0));
   const animIntervalRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const effectiveActuation = customKeyActuation !== undefined ? customKeyActuation : actuation;
   const actPct = (effectiveActuation / 4.0) * 100;
   const travelPct = Math.min(100, Math.max(0, (currentSimTravel / 4.0) * 100));
+
+  // Record travel history for real-time waveform graph
+  useEffect(() => {
+    setTravelHistory((prev) => [...prev.slice(1), currentSimTravel]);
+  }, [currentSimTravel]);
+
+  // Draw real-time travel waveform on Canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Background grid
+    ctx.strokeStyle = '#e5dfd5';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+
+    // Actuation Threshold Line (Terracotta)
+    const actY = height - (effectiveActuation / 4.0) * height;
+    ctx.strokeStyle = '#c86443';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, actY);
+    ctx.lineTo(width, actY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Waveform line
+    ctx.strokeStyle = isSimPressed ? '#c86443' : '#5b8e85';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    const step = width / (travelHistory.length - 1);
+    travelHistory.forEach((val, idx) => {
+      const x = idx * step;
+      const y = height - (Math.min(4.0, Math.max(0, val)) / 4.0) * height;
+      if (idx === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+
+    // Waveform glow / fill under line
+    ctx.lineTo(width, height);
+    ctx.lineTo(0, height);
+    ctx.closePath();
+    ctx.fillStyle = isSimPressed ? 'rgba(200, 100, 67, 0.15)' : 'rgba(91, 142, 133, 0.1)';
+    ctx.fill();
+  }, [travelHistory, effectiveActuation, isSimPressed]);
 
   useEffect(() => {
     return () => {
@@ -244,6 +307,24 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
           />
           <div className="w-10 h-5 bg-[#d5ccc0] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#71938c]"></div>
         </label>
+      </div>
+
+      {/* Real-time Waveform Graph Canvas */}
+      <div className="flex flex-col gap-2 p-3.5 bg-[#faf8f5] rounded-xl border border-[#e5dfd5]">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-[#1c282e] flex items-center gap-1.5">
+            <LineChart className="w-3.5 h-3.5 text-[#5b8e85]" /> Real-time DSP Actuation Waveform
+          </span>
+          <span className="text-[10px] text-[#84949b] font-mono">8,000 Hz Sampling</span>
+        </div>
+        <div className="relative bg-[#ffffff] rounded-xl border border-[#d5ccc0] overflow-hidden p-1 shadow-inner">
+          <canvas
+            ref={canvasRef}
+            width={320}
+            height={60}
+            className="w-full h-15 block"
+          />
+        </div>
       </div>
 
       {/* Key Stem Travel Simulator Sandbox */}

@@ -15,6 +15,7 @@ import {
 } from './types/driftpad';
 import { SerialService, ConnectionMode } from './services/serialService';
 import { DriftPadDspEngine } from './engine/dspEngine';
+import { audioService } from './services/audioService';
 import { Header } from './components/Header';
 import { KeyMatrix } from './components/KeyMatrix';
 import { SelectedKeyInspector } from './components/SelectedKeyInspector';
@@ -38,6 +39,8 @@ import {
   Info,
   Sparkles,
   Save,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -48,10 +51,12 @@ export const App: React.FC = () => {
   // Connection & Config State
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('virtual');
   const [deviceConfig, setDeviceConfig] = useState<DeviceConfig>(INITIAL_DEVICE_CONFIG);
+  const [activeLayerIdx, setActiveLayerIdx] = useState<number>(0);
   const [keysStatus, setKeysStatus] = useState<KeyStatus[]>([]);
   const [selectedSimKey, setSelectedSimKey] = useState<number>(0);
   const [currentSimTravel, setCurrentSimTravel] = useState<number>(0.0);
   const [hidEnabled, setHidEnabled] = useState<boolean>(false);
+  const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState<boolean>(true);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   // Right Deck Tab: 'tuning' | 'encoder' | 'console' | 'tools'
@@ -89,6 +94,7 @@ export const App: React.FC = () => {
   // Modals
   const [remapModalOpen, setRemapModalOpen] = useState<boolean>(false);
   const [remapKeyIdx, setRemapKeyIdx] = useState<number>(0);
+  const [remapLayerIdx, setRemapLayerIdx] = useState<number>(0);
   const [hardwareInfoOpen, setHardwareInfoOpen] = useState<boolean>(false);
   const [oledThemeModalOpen, setOledThemeModalOpen] = useState<boolean>(false);
   const [flashModalOpen, setFlashModalOpen] = useState<boolean>(false);
@@ -150,6 +156,9 @@ export const App: React.FC = () => {
 
   const recordKeyPress = useCallback(
     (keyIdx: number) => {
+      if (audioFeedbackEnabled) {
+        audioService.playKeyClick('down');
+      }
       setHeatmapCounts((prev) => {
         const currentProfileCounts = prev[activeProfileId] || {};
         const newCount = (currentProfileCounts[keyIdx] || 0) + 1;
@@ -168,7 +177,7 @@ export const App: React.FC = () => {
         return next;
       });
     },
-    [activeProfileId]
+    [activeProfileId, audioFeedbackEnabled]
   );
 
   const handleResetHeatmap = useCallback(() => {
@@ -215,12 +224,16 @@ export const App: React.FC = () => {
             active_layer: data.active_layer ?? prev.active_layer,
             layers: data.layers ?? prev.layers,
           }));
+          if (data.active_layer !== undefined) {
+            setActiveLayerIdx(data.active_layer);
+          }
         } else if (data.type === 'status') {
           if (data.keys) {
             setKeysStatus(data.keys);
           }
           if (data.active_layer !== undefined) {
             setDeviceConfig((prev) => ({ ...prev, active_layer: data.active_layer! }));
+            setActiveLayerIdx(data.active_layer!);
           }
         } else if (data.type === 'sim_event') {
           if (data.key !== undefined) {
@@ -299,6 +312,7 @@ export const App: React.FC = () => {
 
     engine.setConfig(initialConfig);
     setDeviceConfig(initialConfig);
+    setActiveLayerIdx(0);
     setKeysStatus(engine.getKeysStatus());
 
     addLog('INFO', `DriftPad Studio loaded: [${initialProfile.name}]`);
@@ -347,6 +361,7 @@ export const App: React.FC = () => {
     };
 
     setDeviceConfig(nextConfig);
+    setActiveLayerIdx(0);
     if (dspEngineRef.current) {
       dspEngineRef.current.setConfig(nextConfig);
       setKeysStatus(dspEngineRef.current.getKeysStatus());
@@ -359,6 +374,13 @@ export const App: React.FC = () => {
 
     addLog('INFO', `Switched to profile: ${target.name}`);
     showToast(`Loaded profile: ${target.name}`);
+  };
+
+  const handleSelectLayer = (lIdx: number) => {
+    setActiveLayerIdx(lIdx);
+    setDeviceConfig((prev) => ({ ...prev, active_layer: lIdx }));
+    sendSerialCommand(`SET_LAYER ${lIdx}`);
+    showToast(`Active Layer: L${lIdx}`);
   };
 
   const handleExportProfiles = () => {
@@ -480,6 +502,9 @@ export const App: React.FC = () => {
   };
 
   const handleTriggerEncoderAction = (action: EncoderAction, direction: 'cw' | 'ccw' | 'click') => {
+    if (audioFeedbackEnabled) {
+      audioService.playKeyClick('down');
+    }
     addLog('TX', `ENCODER [${direction.toUpperCase()}]: ${action.label}`);
     showToast(`Encoder: ${action.label}`);
 
@@ -489,10 +514,12 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleSaveRemapKey = (keyIdx: number, updatedKey: LayerKey) => {
+  const handleSaveRemapKey = (keyIdx: number, updatedKey: LayerKey, targetLayerIdx?: number) => {
+    const layerToSave = targetLayerIdx !== undefined ? targetLayerIdx : activeLayerIdx;
+
     setDeviceConfig((prev) => {
       const nextLayers = prev.layers.map((lArr, lIdx) => {
-        if (lIdx !== 0) return lArr;
+        if (lIdx !== layerToSave) return lArr;
         const newKeys = [...lArr];
         newKeys[keyIdx] = updatedKey;
         return newKeys;
@@ -501,14 +528,14 @@ export const App: React.FC = () => {
     });
 
     if (dspEngineRef.current) {
-      dspEngineRef.current.updateKey(0, keyIdx, updatedKey);
+      dspEngineRef.current.updateKey(layerToSave, keyIdx, updatedKey);
       setKeysStatus(dspEngineRef.current.getKeysStatus());
     }
 
     const updatedProfiles = profiles.map((p) => {
       if (p.id === activeProfileId) {
         const newLayers = p.layers.map((lArr, lIdx) => {
-          if (lIdx !== 0) return lArr;
+          if (lIdx !== layerToSave) return lArr;
           const newKeys = [...lArr];
           newKeys[keyIdx] = updatedKey;
           return newKeys;
@@ -519,9 +546,9 @@ export const App: React.FC = () => {
     });
     saveProfilesToStorage(updatedProfiles);
 
-    sendSerialCommand(`SET_KEY 0 ${keyIdx} ${updatedKey.code} ${updatedKey.label}`);
-    addLog('INFO', `Remapped Key #${keyIdx} -> [${updatedKey.label}]`);
-    showToast(`Remapped Key #${keyIdx}: ${updatedKey.label}`);
+    sendSerialCommand(`SET_KEY ${layerToSave} ${keyIdx} ${updatedKey.code} ${updatedKey.label}`);
+    addLog('INFO', `Remapped Key #${keyIdx} on L${layerToSave} -> [${updatedKey.label}]`);
+    showToast(`Remapped Key #${keyIdx} (L${layerToSave}): ${updatedKey.label}`);
   };
 
   const handleConnectToggle = async () => {
@@ -613,6 +640,13 @@ export const App: React.FC = () => {
     setHidEnabled(next);
     sendSerialCommand(`SET_HID ${next ? 1 : 0}`);
     showToast(next ? 'Keyboard HID output enabled' : 'Keyboard HID output disabled');
+  };
+
+  const handleToggleAudioFeedback = () => {
+    const next = !audioFeedbackEnabled;
+    setAudioFeedbackEnabled(next);
+    audioService.setEnabled(next);
+    showToast(next ? 'Audio click feedback enabled' : 'Audio click feedback muted');
   };
 
   const handleSaveFlash = () => {
@@ -711,7 +745,7 @@ export const App: React.FC = () => {
     label: '',
   };
 
-  const currentWorkspaceKeys = deviceConfig.layers[0] || [];
+  const currentWorkspaceKeys = deviceConfig.layers[activeLayerIdx] || deviceConfig.layers[0] || [];
   const currentLayerKeyDef = currentWorkspaceKeys[selectedSimKey] || {
     idx: selectedSimKey,
     code: 0,
@@ -794,16 +828,20 @@ export const App: React.FC = () => {
             {/* Subtle Hardware Hairline Divider */}
             <div className="border-t border-[#d5ccc0]" />
 
-            {/* Bottom Deck: 4x4 Tactile Key Matrix */}
+            {/* Bottom Deck: 4x4 Tactile Key Matrix with Multi-Layer Navigation */}
             <div className="bg-[#ffffff] border border-[#d5ccc0] rounded-2xl p-3.5 sm:p-4 shadow-xs">
               <KeyMatrix
                 keys={currentWorkspaceKeys}
+                allLayers={deviceConfig.layers}
+                activeLayerIdx={activeLayerIdx}
+                onSelectLayerIdx={handleSelectLayer}
                 keysStatus={keysStatus}
                 selectedSimKey={selectedSimKey}
                 workspaceName={activeProfile.name}
                 pressCounts={heatmapCounts[activeProfileId] || {}}
-                onOpenRemap={(idx) => {
+                onOpenRemap={(idx, lIdx) => {
                   setRemapKeyIdx(idx);
+                  setRemapLayerIdx(lIdx !== undefined ? lIdx : activeLayerIdx);
                   setRemapModalOpen(true);
                 }}
                 onSelectSimKey={(idx) => {
@@ -826,6 +864,7 @@ export const App: React.FC = () => {
             workspaceName={activeProfile.name}
             onOpenRemap={(idx: number) => {
               setRemapKeyIdx(idx);
+              setRemapLayerIdx(activeLayerIdx);
               setRemapModalOpen(true);
             }}
             onSimulatePress={(idx: number) => {
@@ -939,6 +978,27 @@ export const App: React.FC = () => {
                   </button>
                 </div>
 
+                <div className="p-3 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#1b2930] flex items-center gap-1.5">
+                      {audioFeedbackEnabled ? <Volume2 className="w-3.5 h-3.5 text-[#c86443]" /> : <VolumeX className="w-3.5 h-3.5 text-[#5a6a72]" />} Key Click Audio Feedback
+                    </span>
+                    <span className="text-[11px] text-[#5a6a72]">
+                      Synthesize mechanical switch clicks in simulator
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleToggleAudioFeedback}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold font-mono transition-colors border ${
+                      audioFeedbackEnabled
+                        ? 'bg-[#c86443]/15 text-[#c86443] border-[#c86443]/30'
+                        : 'bg-[#ffffff] text-[#5a6a72] border-[#ded7ca]'
+                    }`}
+                  >
+                    {audioFeedbackEnabled ? 'ACTIVE' : 'MUTED'}
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={handleCalibrate}
@@ -1033,7 +1093,7 @@ export const App: React.FC = () => {
           currentKey={currentLayerKeyDef}
           workspaceName={activeProfile.name}
           onClose={() => setRemapModalOpen(false)}
-          onSave={handleSaveRemapKey}
+          onSave={(idx, updated) => handleSaveRemapKey(idx, updated, remapLayerIdx)}
         />
       )}
 
