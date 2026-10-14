@@ -52,7 +52,7 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   custom: <Sparkles className="w-4 h-4 text-[#5b8e85]" />,
 };
 
-export const Header: React.FC<HeaderProps> = ({
+export const HeaderComponent: React.FC<HeaderProps> = ({
   connectionMode,
   profiles,
   activeProfileId,
@@ -296,3 +296,5 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
+export const Header = React.memo(HeaderComponent);

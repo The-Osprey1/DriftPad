@@ -62,7 +62,7 @@ function getHeatmapTier(ratio: number) {
   };
 }
 
-export const KeyMatrix: React.FC<KeyMatrixProps> = ({
+export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
   keys,
   allLayers,
   activeLayerIdx,
@@ -185,6 +185,7 @@ export const KeyMatrix: React.FC<KeyMatrixProps> = ({
             onClick={onResetHeatmap}
             className="flex items-center gap-1 text-[11px] text-[#71828a] hover:text-[#c86443] transition-colors p-1"
             title="Reset Heatmap counters for this workspace"
+            aria-label="Reset heatmap counters"
           >
             <RotateCcw className="w-3 h-3" />
             <span>Reset</span>
@@ -216,11 +217,13 @@ export const KeyMatrix: React.FC<KeyMatrixProps> = ({
             const l2Key = allLayers?.[2]?.[i];
 
             return (
-              <div
+              <button
                 key={i}
+                type="button"
                 onClick={() => onSelectSimKey(i)}
                 onDoubleClick={() => onOpenRemap(i, activeLayerIdx)}
-                className={`relative rounded-xl flex flex-col justify-between p-2.5 sm:p-3 select-none transition-all cursor-pointer h-24 sm:h-28 overflow-hidden shadow-xs ${
+                aria-label={`Key ${i}: ${k.label}${k.description ? `, ${k.description}` : ''}. ${status.travel.toFixed(2)}mm travel. ${isActuated ? 'Actuated' : 'Rest'}. Double click to remap.`}
+                className={`relative rounded-xl flex flex-col justify-between p-2.5 sm:p-3 select-none transition-all cursor-pointer h-24 sm:h-28 overflow-hidden shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c86443] focus-visible:ring-offset-2 ${
                   isSelected ? 'ring-2 ring-[#c86443] ring-offset-2' : ''
                 } ${
                   heatmapEnabled
@@ -351,7 +354,7 @@ export const KeyMatrix: React.FC<KeyMatrixProps> = ({
                     {isActuated ? 'ACTUATED' : 'REST'}
                   </span>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -359,3 +362,5 @@ export const KeyMatrix: React.FC<KeyMatrixProps> = ({
     </div>
   );
 };
+
+export const KeyMatrix = React.memo(KeyMatrixComponent);

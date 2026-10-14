@@ -423,6 +423,12 @@ export const App: React.FC = () => {
   };
 
   const handleImportProfiles = (file: File) => {
+    // Limit import size to 500KB to prevent DoS via large JSON payloads
+    if (file.size > 500 * 1024) {
+      alert('File size exceeds maximum allowed limit of 500KB.');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
