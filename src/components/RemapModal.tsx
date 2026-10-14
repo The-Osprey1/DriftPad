@@ -55,6 +55,16 @@ export const RemapModal: React.FC<RemapModalProps> = ({
     }
   }, [isOpen, currentKey]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -90,19 +100,25 @@ export const RemapModal: React.FC<RemapModalProps> = ({
       : COMMON_KEYCODES.filter((k) => k.category === activeCategory);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="remap-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto"
+    >
       <div className="bg-[#ffffff] border border-[#e5dfd5] rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[95vh]">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-[#e5dfd5] bg-[#faf8f5]">
           <div className="flex items-center gap-2">
             <KeyboardIcon className="w-5 h-5 text-[#9e5b3d]" />
-            <h3 className="text-base font-bold text-[#1c282e]">
+            <h3 id="remap-modal-title" className="text-base font-bold text-[#1c282e]">
               Remap Key #{keyIdx} <span className="text-[#84949b] font-normal text-xs sm:text-sm">· {workspaceName}</span>
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="text-[#84949b] hover:text-[#1c282e] p-1 rounded-lg transition-colors"
+            aria-label="Close modal"
+            className="text-[#84949b] hover:text-[#1c282e] p-1 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9e5b3d]"
           >
             <X className="w-5 h-5" />
           </button>
