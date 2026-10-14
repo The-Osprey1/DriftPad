@@ -72,3 +72,9 @@ dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Generated desktop bundles
+release/
+desktop/renderer/
+desktop/assets/
+firmware-bin/

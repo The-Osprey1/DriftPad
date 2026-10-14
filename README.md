@@ -39,9 +39,21 @@ A high-performance React application and WebSerial configurator for **DriftPad**
 
 ## Getting Started
 
-### Software-only virtual setup
+### Windows desktop app
 
-Requirements: Node.js 18 or newer and a Chromium-based browser (Chrome, Edge, or Opera).
+DriftPad can be packaged as a standalone Windows app. Download the **Setup.exe**
+from [Releases](https://github.com/The-Osprey1/DriftPad/releases), install it, and open
+DriftPad from your desktop. No terminal, Node.js, or separate browser is needed.
+A portable executable is also built. Both include Digital Twin, USB configuration,
+and real Pico firmware with guided setup.
+
+Until the first desktop release is published, use the **DriftPad-Windows-x64**
+artifact from a successful [Windows desktop app build](https://github.com/The-Osprey1/DriftPad/actions/workflows/desktop.yml).
+See [desktop setup and packaging](docs/desktop.md) for details and current limitations.
+
+### Browser development setup
+
+Requirements for development: Node.js 24 or newer and a Chromium-based browser (Chrome, Edge, or Opera).
 
 ```bash
 npm install
@@ -99,9 +111,9 @@ SSD1306 is enabled by default. For an SH1106 display, set
 
 ### First connection and safe commissioning
 
-1. Start the web app with `npm run dev`.
+1. Open the DriftPad desktop app, or start the browser development app with `npm run dev`.
 2. Connect the Pico and choose **Hardware** in the configurator.
-3. Select the serial port in the browser permission dialog.
+3. Click **Connect USB** and select your pad's serial port.
 4. Keep HID output disabled while testing. The app disables HID on a new hardware
    connection so simulated or miscalibrated presses cannot type into the host.
 5. Run `CALIBRATE` with every key fully released.

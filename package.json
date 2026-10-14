@@ -7,8 +7,11 @@
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "tsc && vite build",
     "lint": "tsc --noEmit",
-    "test": "tsx --test \"src/**/*.test.ts\"",
-    "preview": "vite preview --port 3000"
+    "test": "node scripts/run-tests.cjs",
+    "preview": "vite preview --port 3000",
+    "desktop:prepare": "npm run build && node scripts/prepare-desktop.cjs",
+    "desktop:start": "npm --prefix desktop start",
+    "desktop:dist": "npm run desktop:prepare && npm --prefix desktop run dist"
   },
   "dependencies": {
     "clsx": "^2.1.1",

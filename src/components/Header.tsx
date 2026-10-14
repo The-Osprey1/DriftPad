@@ -243,10 +243,10 @@ export const HeaderComponent: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenFlashFirmware}
             className="px-3.5 py-1.5 bg-[#ede7da] hover:bg-[#e2dacb] text-[#1b2930] rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-[#d5cbb8] transition-colors shadow-xs group"
-            title="Automatically flash the RP2040 pad with latest firmware"
+            title="Install or update your pad’s firmware"
           >
             <Zap className="w-3.5 h-3.5 text-[#c86443] fill-[#c86443] group-hover:scale-110 transition-transform" />
-            <span className="font-bold">Flash Firmware</span>
+            <span className="font-bold">Set Up Pad</span>
           </button>
         )}
 
