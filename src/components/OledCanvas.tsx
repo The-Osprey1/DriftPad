@@ -33,7 +33,7 @@ interface OledCanvasProps {
   onOpenThemeModal?: () => void;
 }
 
-export const OledCanvas: React.FC<OledCanvasProps> = ({
+export const OledCanvasComponent: React.FC<OledCanvasProps> = ({
   actuation,
   rtSens,
   rtEnabled,
@@ -53,6 +53,35 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
   const [viewMode, setViewMode] = useState<'productivity' | 'cockpit' | 'screensaver' | 'test'>(
     'productivity'
   );
+
+  // Maintain a ref to current props to avoid re-subscribing requestAnimationFrame loop on every prop change
+  const propsRef = useRef({
+    actuation,
+    rtSens,
+    rtEnabled,
+    keys,
+    lastActiveKey,
+    profileName,
+    knobName,
+    theme,
+    isSleeping,
+    screensaverActive,
+    forcedAnim,
+  });
+
+  propsRef.current = {
+    actuation,
+    rtSens,
+    rtEnabled,
+    keys,
+    lastActiveKey,
+    profileName,
+    knobName,
+    theme,
+    isSleeping,
+    screensaverActive,
+    forcedAnim,
+  };
 
   const animFrameRef = useRef<number | null>(null);
   const stateRef = useRef<{
@@ -122,20 +151,32 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
     const W = 128;
     const H = 64;
 
-    // Single-Color Monochrome White OLED (SSD1306 hardware match)
-    const activeTheme = theme || DEFAULT_OLED_THEME;
-    const primaryColor = activeTheme.textColor || '#e8f1ee';
-    const bgColor = activeTheme.background || '#12242b';
-    const graphColor = activeTheme.graphColor || '#71938c';
-    const dimColor = activeTheme.dimColor || '#28464f';
-    const accentColor = activeTheme.accentColor || '#e07a5f';
-
     const render = () => {
+      const {
+        actuation: curActuation,
+        rtSens: curRtSens,
+        rtEnabled: curRtEnabled,
+        keys: curKeys,
+        lastActiveKey: curLastActiveKey,
+        profileName: curProfileName,
+        knobName: curKnobName,
+        theme: curTheme,
+        isSleeping: curIsSleeping,
+      } = propsRef.current;
+
+      // Single-Color Monochrome White OLED (SSD1306 hardware match)
+      const activeTheme = curTheme || DEFAULT_OLED_THEME;
+      const primaryColor = activeTheme.textColor || '#e8f1ee';
+      const bgColor = activeTheme.background || '#12242b';
+      const graphColor = activeTheme.graphColor || '#71938c';
+      const dimColor = activeTheme.dimColor || '#28464f';
+      const accentColor = activeTheme.accentColor || '#e07a5f';
+
       stateRef.current.time += 1;
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, W, H);
 
-      if (isSleeping) {
+      if (curIsSleeping) {
         animFrameRef.current = requestAnimationFrame(render);
         return;
       }
@@ -163,30 +204,52 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       }
 
       if (viewMode === 'screensaver') {
-        renderScreensaver(ctx, W, H, selectedAnim);
+        renderScreensaver(ctx, W, H, selectedAnim, primaryColor, bgColor, graphColor, dimColor, accentColor);
         animFrameRef.current = requestAnimationFrame(render);
         return;
       }
 
       if (viewMode === 'productivity') {
-        renderProductivity(ctx, W, H);
+        renderProductivity(
+          ctx, W, H, curActuation, curRtSens, curRtEnabled, curKeys, curLastActiveKey, curProfileName, curKnobName,
+          primaryColor, bgColor, graphColor, dimColor, accentColor
+        );
         animFrameRef.current = requestAnimationFrame(render);
         return;
       }
 
       // Default: Cockpit
-      renderCockpit(ctx, W, H);
+      renderCockpit(
+        ctx, W, H, curActuation, curRtSens, curRtEnabled, curKeys, curLastActiveKey, curProfileName,
+        primaryColor, bgColor, graphColor, dimColor, accentColor
+      );
       animFrameRef.current = requestAnimationFrame(render);
     };
 
-    const renderProductivity = (c: CanvasRenderingContext2D, w: number, h: number) => {
+    const renderProductivity = (
+      c: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      curActuation: number,
+      curRtSens: number,
+      curRtEnabled: boolean,
+      curKeys: KeyStatus[],
+      curLastActiveKey: number,
+      curProfileName: string,
+      curKnobName: string,
+      primaryColor: string,
+      bgColor: string,
+      graphColor: string,
+      dimColor: string,
+      accentColor: string
+    ) => {
       c.fillStyle = bgColor;
       c.fillRect(0, 0, w, h);
 
       // --- Top Status: Workspace Name & 16-Key Badge ---
       c.fillStyle = primaryColor;
       c.font = 'bold 7px monospace';
-      const cleanProfile = profileName.slice(0, 14).toUpperCase();
+      const cleanProfile = curProfileName.slice(0, 14).toUpperCase();
       c.fillText(cleanProfile, 2, 8);
 
       // Workspace 16-key pad badge
@@ -204,7 +267,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       c.stroke();
 
       // --- Center: Active Key Box + Knob Readout ---
-      const activeKeyObj = keys[lastActiveKey >= 0 ? lastActiveKey : 0] || {
+      const activeKeyObj = curKeys[curLastActiveKey >= 0 ? curLastActiveKey : 0] || {
         idx: 0,
         pressed: false,
         travel: 0.0,
@@ -233,7 +296,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       // Dial Readout on right
       c.fillStyle = primaryColor;
       c.font = '6px monospace';
-      c.fillText(`DIAL: ${knobName.slice(0, 13).toUpperCase()}`, 42, 22);
+      c.fillText(`DIAL: ${curKnobName.slice(0, 13).toUpperCase()}`, 42, 22);
 
       // Travel reading
       c.font = 'bold 7px monospace';
@@ -257,7 +320,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       c.fillRect(trackX + 1, trackY + 1, fillW, trackH - 2);
 
       // Actuation Line
-      const effAct = activeKeyObj.customActuation ?? actuation;
+      const effAct = activeKeyObj.customActuation ?? curActuation;
       const actX = trackX + (effAct / 4.0) * trackW;
       c.strokeStyle = accentColor;
       c.beginPath();
@@ -274,19 +337,34 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
 
       c.fillStyle = primaryColor;
       c.font = '6px monospace';
-      c.fillText(`ACT:${effAct.toFixed(2)}mm · RT:${rtEnabled ? `${rtSens.toFixed(2)}mm` : 'OFF'}`, 2, 61);
+      c.fillText(`ACT:${effAct.toFixed(2)}mm · RT:${curRtEnabled ? `${curRtSens.toFixed(2)}mm` : 'OFF'}`, 2, 61);
     };
 
-    const renderCockpit = (c: CanvasRenderingContext2D, w: number, h: number) => {
+    const renderCockpit = (
+      c: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      curActuation: number,
+      curRtSens: number,
+      curRtEnabled: boolean,
+      curKeys: KeyStatus[],
+      curLastActiveKey: number,
+      curProfileName: string,
+      primaryColor: string,
+      bgColor: string,
+      graphColor: string,
+      dimColor: string,
+      accentColor: string
+    ) => {
       c.fillStyle = bgColor;
       c.fillRect(0, 0, w, h);
 
       c.fillStyle = primaryColor;
       c.font = 'bold 7px monospace';
-      const cleanProfile = profileName.slice(0, 9).toUpperCase();
+      const cleanProfile = curProfileName.slice(0, 9).toUpperCase();
       c.fillText(cleanProfile, 2, 8);
 
-      if (rtEnabled) {
+      if (curRtEnabled) {
         c.fillStyle = accentColor;
         c.fillRect(48, 1, 32, 9);
         c.fillStyle = '#ffffff';
@@ -299,7 +377,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       }
 
       c.font = '6px monospace';
-      c.fillText(`ACT:${actuation.toFixed(2)}`, 84, 8);
+      c.fillText(`ACT:${curActuation.toFixed(2)}`, 84, 8);
 
       c.strokeStyle = dimColor;
       c.beginPath();
@@ -307,7 +385,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       c.lineTo(w, 12);
       c.stroke();
 
-      const activeKeyObj = keys[lastActiveKey >= 0 ? lastActiveKey : 0] || {
+      const activeKeyObj = curKeys[curLastActiveKey >= 0 ? curLastActiveKey : 0] || {
         idx: 0,
         pressed: false,
         travel: 0.0,
@@ -353,7 +431,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       c.fillStyle = isActuated ? accentColor : graphColor;
       c.fillRect(trackX + 1, trackY + 1, fillW, trackH - 2);
 
-      const effAct = activeKeyObj.customActuation ?? actuation;
+      const effAct = activeKeyObj.customActuation ?? curActuation;
       const actX = trackX + (effAct / 4.0) * trackW;
       c.strokeStyle = accentColor;
       c.beginPath();
@@ -369,12 +447,12 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
 
       c.fillStyle = primaryColor;
       c.font = '6px monospace';
-      c.fillText(`DRIFTPAD · RT ${rtSens.toFixed(2)}mm`, 3, 61);
+      c.fillText(`DRIFTPAD · RT ${curRtSens.toFixed(2)}mm`, 3, 61);
 
       for (let r = 0; r < 4; r++) {
         for (let col = 0; col < 4; col++) {
           const kIdx = r * 4 + col;
-          const kPressed = keys[kIdx]?.pressed;
+          const kPressed = curKeys[kIdx]?.pressed;
           const kActive = kIdx === activeKeyObj.idx;
           const dotX = 108 + col * 4;
           const dotY = 54 + r * 2;
@@ -396,7 +474,12 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       c: CanvasRenderingContext2D,
       w: number,
       h: number,
-      anim: ScreensaverAnimation
+      anim: ScreensaverAnimation,
+      primaryColor: string,
+      bgColor: string,
+      graphColor: string,
+      dimColor: string,
+      accentColor: string
     ) => {
       const st = stateRef.current;
       const glow = graphColor;
@@ -405,7 +488,10 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
         const cx = w / 2;
         const cy = h / 2;
         c.fillStyle = glow;
-        st.stars.forEach((s) => {
+        // Optimized indexed for-loop (avoids per-frame callback function allocations)
+        const stars = st.stars;
+        for (let i = 0; i < stars.length; i++) {
+          const s = stars[i];
           s.z -= 1.8;
           if (s.z <= 1) {
             s.z = 80;
@@ -418,7 +504,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
             const size = s.z < 25 ? 2 : 1;
             c.fillRect(px, py, size, size);
           }
-        });
+        }
 
         st.badge.x += st.badge.dx;
         st.badge.y += st.badge.dy;
@@ -438,7 +524,10 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       if (anim === 1) {
         c.fillStyle = glow;
         c.font = '7px monospace';
-        st.rain.forEach((r, i) => {
+        // Optimized indexed for-loop
+        const rain = st.rain;
+        for (let i = 0; i < rain.length; i++) {
+          const r = rain[i];
           r.y += r.speed;
           if (r.y > h + 10) r.y = -5;
           const char = String.fromCharCode(0x30 + ((st.time + i) % 10));
@@ -446,7 +535,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
           c.fillStyle = dimColor;
           c.fillRect(i * 8 + 4, r.y - r.len, 1, r.len);
           c.fillStyle = glow;
-        });
+        }
         return;
       }
 
@@ -501,14 +590,17 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       if (anim === 4) {
         c.strokeStyle = glow;
         c.lineWidth = 1;
-        st.ripples.forEach((r) => {
+        // Optimized indexed for-loop
+        const ripples = st.ripples;
+        for (let i = 0; i < ripples.length; i++) {
+          const r = ripples[i];
           r.r += 1.2;
           if (r.r < r.maxR) {
             c.beginPath();
             c.arc(r.x, r.y, r.r, 0, Math.PI * 2);
             c.stroke();
           }
-        });
+        }
         return;
       }
 
@@ -567,19 +659,7 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [
-    theme,
-    viewMode,
-    isSleeping,
-    selectedAnim,
-    lastActiveKey,
-    actuation,
-    rtSens,
-    rtEnabled,
-    profileName,
-    knobName,
-    keys,
-  ]);
+  }, [viewMode, selectedAnim]);
 
   const handleSelectAnim = (anim: ScreensaverAnimation) => {
     setSelectedAnim(anim);
@@ -724,3 +804,5 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
     </div>
   );
 };
+
+export const OledCanvas = React.memo(OledCanvasComponent);

@@ -58,7 +58,7 @@ const PRESET_ENCODER_CONFIGS: { name: string; config: EncoderConfig }[] = [
   }
 ];
 
-export const RotaryEncoderDial: React.FC<RotaryEncoderDialProps> = ({
+export const RotaryEncoderDialComponent: React.FC<RotaryEncoderDialProps> = ({
   config,
   variant = 'full',
   onUpdateConfig,
@@ -343,3 +343,5 @@ export const RotaryEncoderDial: React.FC<RotaryEncoderDialProps> = ({
     </div>
   );
 };
+
+export const RotaryEncoderDial = React.memo(RotaryEncoderDialComponent);

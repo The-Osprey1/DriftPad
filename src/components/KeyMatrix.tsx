@@ -58,7 +58,7 @@ function getHeatmapTier(ratio: number) {
   };
 }
 
-export const KeyMatrix: React.FC<KeyMatrixProps> = ({
+export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
   keys,
   keysStatus,
   selectedSimKey,
@@ -295,3 +295,5 @@ export const KeyMatrix: React.FC<KeyMatrixProps> = ({
     </div>
   );
 };
+
+export const KeyMatrix = React.memo(KeyMatrixComponent);

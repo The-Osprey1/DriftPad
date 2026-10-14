@@ -22,7 +22,7 @@ function formatModifiers(mods?: LayerKey['modifiers']): string[] {
   return res;
 }
 
-export const SelectedKeyInspector: React.FC<SelectedKeyInspectorProps> = ({
+export const SelectedKeyInspectorComponent: React.FC<SelectedKeyInspectorProps> = ({
   keyIdx,
   layerKey,
   status,
@@ -134,3 +134,5 @@ export const SelectedKeyInspector: React.FC<SelectedKeyInspectorProps> = ({
     </div>
   );
 };
+
+export const SelectedKeyInspector = React.memo(SelectedKeyInspectorComponent);
