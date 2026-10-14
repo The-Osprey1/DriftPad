@@ -5,16 +5,20 @@ import {
   RotateCcw,
   ShieldAlert,
   Grid,
+  Layers as LayersIcon,
 } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
 
 interface KeyMatrixProps {
   keys: LayerKey[];
+  allLayers?: LayerKey[][];
+  activeLayerIdx: number;
+  onSelectLayerIdx: (layerIdx: number) => void;
   keysStatus: KeyStatus[];
   selectedSimKey: number;
   workspaceName?: string;
   pressCounts: Record<number, number>;
-  onOpenRemap: (keyIdx: number) => void;
+  onOpenRemap: (keyIdx: number, layerIdx?: number) => void;
   onSelectSimKey: (keyIdx: number) => void;
   onResetHeatmap: () => void;
 }
@@ -60,6 +64,9 @@ function getHeatmapTier(ratio: number) {
 
 export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
   keys,
+  allLayers,
+  activeLayerIdx,
+  onSelectLayerIdx,
   keysStatus,
   selectedSimKey,
   workspaceName = 'Standard Number Pad & Calc',
@@ -69,6 +76,7 @@ export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
   onResetHeatmap,
 }) => {
   const [heatmapEnabled, setHeatmapEnabled] = useState<boolean>(false);
+  const [multiLayerOverlay, setMultiLayerOverlay] = useState<boolean>(false);
 
   const { maxCount, totalPresses, topKeyIdx } = useMemo(() => {
     let max = 1;
@@ -90,28 +98,61 @@ export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Workspace Header & Heatmap Navigation Bar */}
+      {/* Workspace Header & Heatmap/Layer Navigation Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#f0ebdF] pb-2.5">
-        {/* Left: Active Workspace Badge & Title */}
-        <div className="flex items-center gap-2">
+        {/* Left: Active Workspace Badge, Layer Switches & Title */}
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] text-xs">
             <Grid className="w-3.5 h-3.5 text-[#c86443]" />
             <span className="text-[#71828a] font-medium">Layout:</span>
-            <span className="font-bold text-[#1b2930] truncate max-w-[200px] sm:max-w-none">
+            <span className="font-bold text-[#1b2930] truncate max-w-[150px] sm:max-w-none">
               {workspaceName}
             </span>
           </div>
 
+          {/* Layer Switcher Pill */}
+          <div className="flex items-center bg-[#f6f3ec] p-0.5 rounded-xl border border-[#ded7ca]">
+            {[0, 1, 2].map((lIdx) => (
+              <button
+                key={lIdx}
+                onClick={() => onSelectLayerIdx(lIdx)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                  activeLayerIdx === lIdx
+                    ? 'bg-[#153641] text-white shadow-xs'
+                    : 'text-[#5a6a72] hover:text-[#1b2930]'
+                }`}
+                title={`Switch to Layer ${lIdx}`}
+              >
+                L{lIdx}
+              </button>
+            ))}
+          </div>
+
           <HoverExplain
-            title="4x4 Physical Key Matrix"
+            title="4x4 Physical Key Matrix & Layers"
             badge="Hardware"
-            explanation="16 linear Hall-effect key switches arranged in a standard 4x4 macropad grid. Double-click any key to remap its command or adjust per-key safety actuation."
-            tip="Click any key to simulate its physical travel down to 4.0mm."
+            explanation="16 linear Hall-effect key switches arranged in a standard 4x4 macropad grid. Toggle layers L0/L1/L2 or enable Multi-Layer view to see all layer assignments at once."
+            tip="Double-click any key to remap its command on the active layer."
           />
         </div>
 
-        {/* Right: Heatmap Toggle & Helper */}
+        {/* Right: Simultaneous Layer Overlay & Heatmap Toggles */}
         <div className="flex items-center gap-2">
+          {allLayers && allLayers.length > 1 && (
+            <button
+              onClick={() => setMultiLayerOverlay((prev) => !prev)}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-colors ${
+                multiLayerOverlay
+                  ? 'bg-[#153641] text-white border-[#153641]'
+                  : 'bg-[#f6f3ec] text-[#5a6a72] border-[#ded7ca] hover:text-[#1b2930]'
+              }`}
+              title="Show mappings across all layers on keycaps simultaneously"
+            >
+              <LayersIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">All Layers View</span>
+            </button>
+          )}
+
           <button
             onClick={() => setHeatmapEnabled((prev) => !prev)}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition-colors ${
@@ -123,12 +164,6 @@ export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
             <Flame className={`w-3.5 h-3.5 ${heatmapEnabled ? 'text-[#c86443]' : 'text-[#71828a]'}`} />
             <span>Heatmap</span>
           </button>
-
-          <HoverExplain
-            title="Activity Heatmap"
-            badge="Telemetry"
-            explanation="Visualizes keystroke frequency across your 16 keys. Terracotta represents peak hotkeys, and sea-glass represents moderate use."
-          />
         </div>
       </div>
 
@@ -177,12 +212,16 @@ export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
             const heatRatio = maxCount > 0 ? pressCount / maxCount : 0;
             const heat = getHeatmapTier(heatRatio);
 
+            const l0Key = allLayers?.[0]?.[i];
+            const l1Key = allLayers?.[1]?.[i];
+            const l2Key = allLayers?.[2]?.[i];
+
             return (
               <button
                 key={i}
                 type="button"
                 onClick={() => onSelectSimKey(i)}
-                onDoubleClick={() => onOpenRemap(i)}
+                onDoubleClick={() => onOpenRemap(i, activeLayerIdx)}
                 aria-label={`Key ${i}: ${k.label}${k.description ? `, ${k.description}` : ''}. ${status.travel.toFixed(2)}mm travel. ${isActuated ? 'Actuated' : 'Rest'}. Double click to remap.`}
                 className={`relative rounded-xl flex flex-col justify-between p-2.5 sm:p-3 select-none transition-all cursor-pointer h-24 sm:h-28 overflow-hidden shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c86443] focus-visible:ring-offset-2 ${
                   isSelected ? 'ring-2 ring-[#c86443] ring-offset-2' : ''
@@ -202,17 +241,28 @@ export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
                   style={{ height: `${travelRatio * 100}%` }}
                 />
 
-                {/* Top Row: Index, Modifiers, Heatmap Count */}
+                {/* Top Row: Index, Active Layer Tag, Modifiers, Heatmap Count */}
                 <div className="flex items-center justify-between text-[10px] z-10">
-                  <span
-                    className={`font-mono font-bold ${
-                      isActuated || (heatmapEnabled && heatRatio >= 0.15)
-                        ? 'text-white/80'
-                        : 'text-[#71828a]'
-                    }`}
-                  >
-                    #{i}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={`font-mono font-bold ${
+                        isActuated || (heatmapEnabled && heatRatio >= 0.15)
+                          ? 'text-white/80'
+                          : 'text-[#71828a]'
+                      }`}
+                    >
+                      #{i}
+                    </span>
+                    <span
+                      className={`text-[9px] font-mono px-1 rounded font-bold ${
+                        isActuated
+                          ? 'bg-black/20 text-white'
+                          : 'bg-[#f6f3ec] text-[#153641] border border-[#ded7ca]'
+                      }`}
+                    >
+                      L{activeLayerIdx}
+                    </span>
+                  </div>
 
                   <div className="flex items-center gap-1">
                     {mods && (
@@ -245,29 +295,43 @@ export const KeyMatrixComponent: React.FC<KeyMatrixProps> = ({
                   </div>
                 </div>
 
-                {/* Center: Key Primary Label */}
-                <div className="my-auto text-center z-10 flex flex-col items-center justify-center">
-                  <span
-                    className={`font-black tracking-tight leading-none text-base sm:text-xl font-mono ${
-                      isActuated || (heatmapEnabled && heatRatio >= 0.15)
-                        ? 'text-white'
-                        : 'text-[#1b2930]'
-                    }`}
-                  >
-                    {k.label}
-                  </span>
-                  {k.description && (
+                {/* Center: Key Primary Label or Simultaneous Multi-Layer Overlay */}
+                {multiLayerOverlay && allLayers ? (
+                  <div className="my-auto z-10 flex flex-col gap-0.5 text-[10px] font-mono w-full">
+                    <div className="flex justify-between items-center bg-[#e0f2fe]/80 px-1 py-0.5 rounded text-[#0369a1] font-bold">
+                      <span>L0:</span> <span className="truncate">{l0Key?.label || '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-[#f3e8ff]/80 px-1 py-0.5 rounded text-[#6b21a8] font-bold">
+                      <span>L1:</span> <span className="truncate">{l1Key?.label || '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-[#fce7f3]/80 px-1 py-0.5 rounded text-[#be185d] font-bold">
+                      <span>L2:</span> <span className="truncate">{l2Key?.label || '-'}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="my-auto text-center z-10 flex flex-col items-center justify-center">
                     <span
-                      className={`text-[9px] truncate max-w-full mt-1 font-medium ${
+                      className={`font-black tracking-tight leading-none text-base sm:text-xl font-mono ${
                         isActuated || (heatmapEnabled && heatRatio >= 0.15)
-                          ? 'text-white/80'
-                          : 'text-[#5a6a72]'
+                          ? 'text-white'
+                          : 'text-[#1b2930]'
                       }`}
                     >
-                      {k.description}
+                      {k.label}
                     </span>
-                  )}
-                </div>
+                    {k.description && (
+                      <span
+                        className={`text-[9px] truncate max-w-full mt-1 font-medium ${
+                          isActuated || (heatmapEnabled && heatRatio >= 0.15)
+                            ? 'text-white/80'
+                            : 'text-[#5a6a72]'
+                        }`}
+                      >
+                        {k.description}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Bottom Row: Live Analog Sensor Travel */}
                 <div className="flex items-center justify-between text-[10px] font-mono z-10 pt-1 border-t border-black/5">

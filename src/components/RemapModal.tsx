@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   COMMON_KEYCODES,
   PRODUCTIVITY_SHORTCUT_PRESETS,
@@ -11,6 +11,7 @@ import {
   Keyboard as KeyboardIcon,
   ShieldAlert,
   Sparkles,
+  Search,
 } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
 
@@ -38,6 +39,7 @@ export const RemapModal: React.FC<RemapModalProps> = ({
   const [customActuationEnabled, setCustomActuationEnabled] = useState<boolean>(false);
   const [customActuationMm, setCustomActuationMm] = useState<number>(1.20);
   const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   useEffect(() => {
     if (isOpen && currentKey) {
@@ -45,6 +47,7 @@ export const RemapModal: React.FC<RemapModalProps> = ({
       setCode(currentKey.code || 0);
       setDescription(currentKey.description || '');
       setModifiers(currentKey.modifiers || {});
+      setSearchQuery('');
       if (currentKey.customActuation !== undefined) {
         setCustomActuationEnabled(true);
         setCustomActuationMm(currentKey.customActuation);
@@ -54,6 +57,21 @@ export const RemapModal: React.FC<RemapModalProps> = ({
       }
     }
   }, [isOpen, currentKey]);
+
+  const categories = ['All', 'Numbers', 'Letters', 'Navigation', 'Control', 'Symbols', 'Function/Macro'];
+
+  const filteredKeycodes = useMemo(() => {
+    return COMMON_KEYCODES.filter((k) => {
+      const matchCategory = activeCategory === 'All' || k.category === activeCategory;
+      const q = searchQuery.trim().toLowerCase();
+      const matchQuery =
+        !q ||
+        k.label.toLowerCase().includes(q) ||
+        k.code.toString().includes(q) ||
+        k.category.toLowerCase().includes(q);
+      return matchCategory && matchQuery;
+    });
+  }, [activeCategory, searchQuery]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -92,12 +110,6 @@ export const RemapModal: React.FC<RemapModalProps> = ({
     setModifiers(preset.modifiers);
     setDescription(preset.label);
   };
-
-  const categories = ['All', 'Numbers', 'Letters', 'Navigation', 'Control', 'Symbols', 'Function/Macro'];
-  const filteredKeycodes =
-    activeCategory === 'All'
-      ? COMMON_KEYCODES
-      : COMMON_KEYCODES.filter((k) => k.category === activeCategory);
 
   return (
     <div
@@ -272,9 +284,22 @@ export const RemapModal: React.FC<RemapModalProps> = ({
             )}
           </div>
 
-          {/* Keycode Selection List */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold text-[#57676e]">Select Character / Keycode:</span>
+          {/* Keycode Selection List with Quick Search & Categories */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-[#57676e]">Select Character / Keycode:</span>
+              <div className="relative flex-1 max-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-[#84949b] absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Filter keycodes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-2 py-1 text-xs bg-[#ffffff] border border-[#e5dfd5] rounded-lg focus:outline-none focus:border-[#9e5b3d]"
+                />
+              </div>
+            </div>
+
             <div className="flex gap-1 overflow-x-auto pb-1 text-[11px] scrollbar-none">
               {categories.map((c) => (
                 <button
@@ -292,26 +317,32 @@ export const RemapModal: React.FC<RemapModalProps> = ({
               ))}
             </div>
 
-            <div className="max-h-32 overflow-y-auto grid grid-cols-4 sm:grid-cols-6 gap-1 p-2 bg-[#faf8f5] rounded-xl border border-[#e5dfd5] scrollbar-thin">
-              {filteredKeycodes.map((k) => (
-                <button
-                  type="button"
-                  key={`${k.label}-${k.code}`}
-                  onClick={() => {
-                    setLabel(k.label);
-                    setCode(k.code);
-                    if (!description) setDescription(k.label);
-                  }}
-                  className={`py-1 px-1.5 rounded-lg text-xs font-mono border transition-all flex flex-col items-center ${
-                    code === k.code && label === k.label
-                      ? 'bg-[#9e5b3d]/15 text-[#9e5b3d] border-[#9e5b3d] font-bold'
-                      : 'bg-[#ffffff] text-[#1c282e] border-[#e5dfd5] hover:border-[#9e5b3d]/50'
-                  }`}
-                >
-                  <span className="font-bold truncate max-w-full">{k.label}</span>
-                  <span className="text-[9px] text-[#84949b]">{k.code}</span>
-                </button>
-              ))}
+            <div className="max-h-36 overflow-y-auto grid grid-cols-4 sm:grid-cols-6 gap-1 p-2 bg-[#faf8f5] rounded-xl border border-[#e5dfd5] scrollbar-thin">
+              {filteredKeycodes.length === 0 ? (
+                <div className="col-span-full py-4 text-center text-xs text-[#84949b]">
+                  No matching keycodes found.
+                </div>
+              ) : (
+                filteredKeycodes.map((k) => (
+                  <button
+                    type="button"
+                    key={`${k.label}-${k.code}`}
+                    onClick={() => {
+                      setLabel(k.label);
+                      setCode(k.code);
+                      if (!description) setDescription(k.label);
+                    }}
+                    className={`py-1 px-1.5 rounded-lg text-xs font-mono border transition-all flex flex-col items-center ${
+                      code === k.code && label === k.label
+                        ? 'bg-[#9e5b3d]/15 text-[#9e5b3d] border-[#9e5b3d] font-bold'
+                        : 'bg-[#ffffff] text-[#1c282e] border-[#e5dfd5] hover:border-[#9e5b3d]/50'
+                    }`}
+                  >
+                    <span className="font-bold truncate max-w-full">{k.label}</span>
+                    <span className="text-[9px] text-[#84949b]">{k.code}</span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
