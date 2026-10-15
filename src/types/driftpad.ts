@@ -704,8 +704,8 @@ export const INITIAL_DEVICE_CONFIG: DeviceConfig = {
   rt_enabled: true,
   active_layer: 0,
   activeProfileId: 'number-pad',
-  layers: JSON.parse(JSON.stringify(PRODUCTIVITY_PROFILES[0].layers)),
-  encoder: JSON.parse(JSON.stringify(PRODUCTIVITY_PROFILES[0].encoder))
+  layers: structuredClone(PRODUCTIVITY_PROFILES[0].layers),
+  encoder: structuredClone(PRODUCTIVITY_PROFILES[0].encoder)
 };
 
 export const COMMON_KEYCODES: { label: string; code: number; category: string }[] = [

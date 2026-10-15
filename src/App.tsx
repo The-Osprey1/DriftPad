@@ -313,8 +313,8 @@ export const App: React.FC = () => {
       rt_enabled: initialProfile.tuning.rt_enabled,
       active_layer: 0,
       activeProfileId: initialProfile.id,
-      layers: JSON.parse(JSON.stringify(initialProfile.layers)),
-      encoder: JSON.parse(JSON.stringify(initialProfile.encoder)),
+      layers: structuredClone(initialProfile.layers),
+      encoder: structuredClone(initialProfile.encoder),
     };
 
     engine.setConfig(initialConfig);
@@ -371,8 +371,8 @@ export const App: React.FC = () => {
       rt_enabled: target.tuning.rt_enabled,
       active_layer: 0,
       activeProfileId: target.id,
-      layers: JSON.parse(JSON.stringify(target.layers)),
-      encoder: JSON.parse(JSON.stringify(target.encoder)),
+      layers: structuredClone(target.layers),
+      encoder: structuredClone(target.encoder),
     };
 
     setDeviceConfig(nextConfig);
@@ -462,7 +462,7 @@ export const App: React.FC = () => {
     if (!target) return;
 
     const duplicated: ProductivityProfile = {
-      ...JSON.parse(JSON.stringify(target)),
+      ...structuredClone(target),
       id: `custom-${Date.now()}`,
       name: `${target.name} (Copy)`,
       isCustom: true,
@@ -618,7 +618,7 @@ export const App: React.FC = () => {
   };
 
   const handleActuationChange = (val: number) => {
-    const clamped = Number(Math.max(0.1, Math.min(3.8, val)).toFixed(2));
+    const clamped = Math.round(Math.max(0.1, Math.min(3.8, val)) * 100) / 100;
     setDeviceConfig((prev) => ({ ...prev, actuation: clamped }));
     sendSerialCommand(`SET_ACTUATION ${clamped.toFixed(2)}`);
 
@@ -632,7 +632,7 @@ export const App: React.FC = () => {
   };
 
   const handleRtSensChange = (val: number) => {
-    const clamped = Number(Math.max(0.1, Math.min(2.0, val)).toFixed(2));
+    const clamped = Math.round(Math.max(0.1, Math.min(2.0, val)) * 100) / 100;
     setDeviceConfig((prev) => ({ ...prev, rt_sens: clamped }));
     sendSerialCommand(`SET_RT_SENS ${clamped.toFixed(2)}`);
 
