@@ -1,3 +1,6 @@
+> Historical design plan, preserved from the original AI Studio workspace.
+> This records design intent; it is not a verification of the current UI.
+
 # DriftPad 2D Chassis Layout, OLED Palette & UI Streamlining
 
 Refine the DriftPad interface into a cohesive 2D hardware chassis representation, fix tooltip edge-overflow issues, enforce the authentic Soft & Coastal palette on the live OLED canvas, and declutter visual telemetry.
