@@ -74,6 +74,7 @@ async function createWindow() {
     title: 'DriftPad', width: 1440, height: 940, minWidth: 960, minHeight: 680,
     backgroundColor: '#f5f2eb', show: false, icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
+      backgroundThrottling: !smoke,
       preload: path.join(__dirname, 'preload.cjs') },
   });
   const win = mainWindow;
