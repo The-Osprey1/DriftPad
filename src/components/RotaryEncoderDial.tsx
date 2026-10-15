@@ -83,6 +83,19 @@ export const RotaryEncoderDialComponent: React.FC<RotaryEncoderDialProps> = ({
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      triggerCw();
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      triggerCcw();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      triggerClick();
+    }
+  };
+
   const triggerCw = () => {
     setAngle((prev) => (prev + 15) % 360);
     setStepCount((prev) => prev + 1);
@@ -145,10 +158,18 @@ export const RotaryEncoderDialComponent: React.FC<RotaryEncoderDialProps> = ({
     <div className="flex flex-col items-center justify-between p-3.5 bg-[#ede8df] rounded-2xl border border-[#d5ccc0] shadow-inner h-full">
       <div
         ref={dialRef}
+        tabIndex={0}
+        role="slider"
+        aria-label="Rotary knob encoder"
+        aria-valuenow={Math.round(angle)}
+        aria-valuemin={0}
+        aria-valuemax={359}
+        aria-valuetext={`${Math.round(angle)} degrees`}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
-        className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#ffffff] border-2 border-[#d5ccc0] flex items-center justify-center cursor-ew-resize select-none active:scale-95 transition-transform shadow-md my-auto"
-        title="Drag left/right or scroll mouse wheel to rotate dial"
+        onKeyDown={handleKeyDown}
+        className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#ffffff] border-2 border-[#d5ccc0] flex items-center justify-center cursor-ew-resize select-none active:scale-95 transition-transform shadow-md my-auto focus-visible:ring-2 focus-visible:ring-[#9e5b3d] focus-visible:ring-offset-2 focus-visible:outline-none"
+        title="Drag left/right, scroll mouse wheel, or use arrow keys/space to control dial"
       >
         {/* Outer Knurled Notches */}
         {Array.from({ length: 24 }).map((_, i) => (
