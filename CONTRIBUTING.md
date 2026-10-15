@@ -12,7 +12,11 @@ adding or updating dependencies, and commit the resulting lockfile with
 ## Before opening a pull request
 
 1. Run `npm run check` for web changes.
-2. Run `pio run --project-dir firmware` for firmware changes.
+2. Install the tools listed in `tests/requirements-dev.txt` and `tools/requirements.txt`,
+   plus the PlatformIO version in `firmware/toolchain.lock.json`. Run
+   `python tests/run_all_tests.py --clean` for firmware or device-interface changes.
+   Once committed, use `--release` for strict no-skip verification, and run
+   `python tools/check_toolchain.py --require-libs` to check build dependencies.
 3. Update documentation when commands, setup, or behavior change.
 4. Describe what changed and which checks actually ran. Report manual browser and
    hardware observations separately from software test results.

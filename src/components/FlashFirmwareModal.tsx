@@ -95,7 +95,7 @@ export const FlashFirmwareModal: React.FC<FlashFirmwareModalProps> = ({ isOpen, 
           </div></li>
           <li className="flex gap-3"><span className="font-bold text-[#9e5b3d]">3</span><div>
             <strong>Reconnect your pad</strong>
-            <p className="mt-1 text-[#57676e]">The drive disappears when the Pico restarts. Close this window, click <strong>Connect USB</strong>, and select your pad. Calibrate with all keys released, then test before enabling HID.</p>
+            <p className="mt-1 text-[#57676e]">The drive disappears when the Pico restarts. Close this window, click <strong>Connect USB</strong>, then <strong>Connect DriftPad</strong>. Open <strong>Device → Calibration</strong>: start with all keys released, press each key fully, finish, and save. Test all 16 keys before turning keyboard output on.</p>
           </div></li>
         </ol>
         <p className="rounded-xl bg-[#f5f2eb] p-3 text-[#57676e]">

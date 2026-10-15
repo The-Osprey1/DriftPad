@@ -86,6 +86,7 @@ async function createWindow() {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) return;
     event.preventDefault();
     void openProjectLink(url).catch(console.error);
   });
@@ -102,6 +103,33 @@ async function createWindow() {
           !result.bridgeLimited || !result.nativeWritesDisabled || !result.setup || !result.setupError || !result.dialogFits) {
         throw new Error(JSON.stringify(result));
       }
+      const clickNavigation = async (script) => {
+        await new Promise((resolve, reject) => {
+          const loaded = () => { clearTimeout(timer); resolve(); };
+          const timer = setTimeout(() => {
+            win.webContents.removeListener('did-finish-load', loaded);
+            reject(new Error('Local navigation timed out'));
+          }, 10000);
+          win.webContents.once('did-finish-load', loaded);
+          win.webContents.executeJavaScript(script).catch(error => {
+            clearTimeout(timer);
+            win.webContents.removeListener('did-finish-load', loaded);
+            reject(error);
+          });
+        });
+      };
+      await clickNavigation(`document.querySelector('dialog[open] [aria-label="Close firmware setup"]').click();
+        [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Connect USB').click()`);
+      result.devicePage = await win.webContents.executeJavaScript(`!!window.DriftPadApp &&
+        location.pathname === '/configurator/index.html' && !window.DriftPadApp.session.isConnected &&
+        document.querySelector('#outputOnBtn').disabled && document.querySelector('#saveBtn').disabled &&
+        'serial' in navigator && window.isSecureContext && typeof window.require === 'undefined'`);
+      if (!result.devicePage) throw new Error('Bundled device page failed');
+      await win.loadURL(APP_URL + 'configurator/index.html?simulate=1');
+      result.device = await win.webContents.executeJavaScript(`(${require('./smoke-device.cjs').toString()})()`);
+      await clickNavigation(`document.querySelector('#studioLink').click()`);
+      result.returnedToStudio = await win.webContents.executeJavaScript(`!!document.querySelector('#root')`);
+      if (!result.returnedToStudio) throw new Error('Return to Studio failed');
       session.defaultSession.flushStorageData();
       if (process.env.DRIFTPAD_SMOKE_RESULT) {
         await fs.writeFile(process.env.DRIFTPAD_SMOKE_RESULT, JSON.stringify(result));

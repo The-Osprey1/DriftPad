@@ -1,0 +1,19 @@
+{
+  "oled_tests": {
+    "passed": 29,
+    "failed": 0,
+    "skipped": 0
+  },
+  "contract_and_document_tests": {
+    "passed": 17,
+    "failed": 0,
+    "skipped": 0
+  },
+  "firmware_build": "success",
+  "build_type": "incremental development build",
+  "native_frames_verified": 29,
+  "review_links": "all resolve",
+  "renderer_hash_matches_capture": true,
+  "flashed_image_matches_build": true,
+  "physical_screen_observed": false
+}

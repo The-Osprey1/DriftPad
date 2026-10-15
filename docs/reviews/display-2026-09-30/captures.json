@@ -1,0 +1,258 @@
+{
+  "captured_utc": "2026-09-30T22:23:28.906849+00:00",
+  "git_head": "79195cef451382de2771e6a11fa51aab7b23c956",
+  "renderer_sha256": "99da5bc6317d86393c5027a9c9d42daf7cdb42cbf17f0be01d65bf13327742be",
+  "capture_method": "Actual oled.cpp and Adafruit GFX, host clock and stub panel",
+  "physical_device_exercised": false,
+  "fixture": "Synthetic Numpad legends and values; not the connected pad configuration",
+  "native_resolution": [
+    128,
+    64
+  ],
+  "contact_sheet_scale": 4,
+  "captures": [
+    {
+      "number": 1,
+      "name": "boot-title",
+      "file": "01-boot-title.png",
+      "state": "Startup animation at 4.9 seconds",
+      "framebuffer_sha256": "74075313518111e10c293b030bda485791b668404bc868620812ae851de0f5a2"
+    },
+    {
+      "number": 2,
+      "name": "standby",
+      "file": "02-standby.png",
+      "state": {
+        "fixture_scene": "standby"
+      },
+      "framebuffer_sha256": "e515c5f3ceccb9b7bda17ed9fe49cecc1c664b034524098a61dfbff1fd19fdbe"
+    },
+    {
+      "number": 3,
+      "name": "travelling",
+      "file": "03-travelling.png",
+      "state": {
+        "fixture_scene": "travelling"
+      },
+      "framebuffer_sha256": "e901adf2d9f77ffb6053a005ac63a0b2ab1c8db252fee52437ede8e08f9d70d9"
+    },
+    {
+      "number": 4,
+      "name": "actuated",
+      "file": "04-actuated.png",
+      "state": {
+        "fixture_scene": "actuated"
+      },
+      "framebuffer_sha256": "a893d2dbfd10ed6b2d70bcbb9f59bfee33d97dd42bd3ac779e486bc37d4e7f33"
+    },
+    {
+      "number": 5,
+      "name": "actuated_ent",
+      "file": "05-actuated_ent.png",
+      "state": {
+        "fixture_scene": "actuated_ent"
+      },
+      "framebuffer_sha256": "1661b8674cbd3f716b183c2604d99b1ace6389652f41d80c6926b9e9b0d1c52c"
+    },
+    {
+      "number": 6,
+      "name": "rt_backing_off",
+      "file": "06-rt_backing_off.png",
+      "state": {
+        "fixture_scene": "rt_backing_off"
+      },
+      "framebuffer_sha256": "7b5afdb795e5ee416d55acf7cb601bb3f4ec5af009671f3aa62c401536a0f549"
+    },
+    {
+      "number": 7,
+      "name": "menu_rt",
+      "file": "07-menu_rt.png",
+      "state": {
+        "fixture_scene": "menu_rt"
+      },
+      "framebuffer_sha256": "ed1d97c6e0b45a13b23e282dbd788c84e53b0b9314d3cb86106b5f0b8a050aad"
+    },
+    {
+      "number": 8,
+      "name": "menu_actuation",
+      "file": "08-menu_actuation.png",
+      "state": {
+        "fixture_scene": "menu_actuation"
+      },
+      "framebuffer_sha256": "274df9b4ed95b3940d45f723fac322aee8eee6e552c9591fbe135ec3f947b6d6"
+    },
+    {
+      "number": 9,
+      "name": "menu_toggle",
+      "file": "09-menu_toggle.png",
+      "state": {
+        "fixture_scene": "menu_toggle"
+      },
+      "framebuffer_sha256": "16f7afe327259be0f0d40c4038bfbb13c7f22ad32d1dfdcb0bb7208ba3987f38"
+    },
+    {
+      "number": 10,
+      "name": "menu_layer",
+      "file": "10-menu_layer.png",
+      "state": {
+        "fixture_scene": "menu_layer"
+      },
+      "framebuffer_sha256": "989eebd24fc18c29288fd9bf5a6943ba59bbc625df8cdcd57ed1ba142bdb5566"
+    },
+    {
+      "number": 11,
+      "name": "standby_no_cal",
+      "file": "11-standby_no_cal.png",
+      "state": {
+        "fixture_scene": "standby_no_cal"
+      },
+      "framebuffer_sha256": "f6471a3072846a0fcf81ba571afb7ab906ac37c26fb89f5665fc58563a90bd8d"
+    },
+    {
+      "number": 12,
+      "name": "travelling_output_off",
+      "file": "12-travelling_output_off.png",
+      "state": {
+        "fixture_scene": "travelling_output_off"
+      },
+      "framebuffer_sha256": "c52cc64433ecf573740f5790615194f615584b1da104b7f4dbd57295ebc4c1cb"
+    },
+    {
+      "number": 13,
+      "name": "calibrating",
+      "file": "13-calibrating.png",
+      "state": "Calibration running",
+      "framebuffer_sha256": "6c82e35455f3bd5ef7fd5dba67d4b095eaa75c2593873db8ff4aade3be017943"
+    },
+    {
+      "number": 14,
+      "name": "unsaved",
+      "file": "14-unsaved.png",
+      "state": "Edited settings, saved sequence 5",
+      "framebuffer_sha256": "5b298d8bea5cffefdad936863f0de7adc0dec5cf1a267bd61fe76f0952fe290d"
+    },
+    {
+      "number": 15,
+      "name": "saved",
+      "file": "15-saved.png",
+      "state": "Save succeeded, sequence 6",
+      "framebuffer_sha256": "edebb3ac22833ae432218b0eae32b399567a7f476bec073066e5270076f1a215"
+    },
+    {
+      "number": 16,
+      "name": "saved-expired",
+      "file": "16-saved-expired.png",
+      "state": "Save notice expired after three seconds",
+      "framebuffer_sha256": "e515c5f3ceccb9b7bda17ed9fe49cecc1c664b034524098a61dfbff1fd19fdbe"
+    },
+    {
+      "number": 17,
+      "name": "wide-label",
+      "file": "17-wide-label.png",
+      "state": "Four-character stress fixture, WWWW",
+      "framebuffer_sha256": "74253e097b83207d075871987dd433821f561d436870715a7d8e5b84de078988"
+    },
+    {
+      "number": 18,
+      "name": "menu-at-entry",
+      "file": "18-menu-at-entry.png",
+      "state": "Manual RT page, entry wipe finished",
+      "framebuffer_sha256": "ed1d97c6e0b45a13b23e282dbd788c84e53b0b9314d3cb86106b5f0b8a050aad"
+    },
+    {
+      "number": 19,
+      "name": "menu-after-10s",
+      "file": "19-menu-after-10s.png",
+      "state": "Same RT page, ten seconds without input",
+      "framebuffer_sha256": "ed1d97c6e0b45a13b23e282dbd788c84e53b0b9314d3cb86106b5f0b8a050aad"
+    },
+    {
+      "number": 20,
+      "name": "menu-uncalibrated",
+      "file": "20-menu-uncalibrated.png",
+      "state": "RT menu while calibration is missing",
+      "framebuffer_sha256": "ed1d97c6e0b45a13b23e282dbd788c84e53b0b9314d3cb86106b5f0b8a050aad"
+    },
+    {
+      "number": 21,
+      "name": "menu-unsaved",
+      "file": "21-menu-unsaved.png",
+      "state": "RT menu while settings are unsaved",
+      "framebuffer_sha256": "ed1d97c6e0b45a13b23e282dbd788c84e53b0b9314d3cb86106b5f0b8a050aad"
+    },
+    {
+      "number": 22,
+      "name": "period-travelling",
+      "file": "22-period-travelling.png",
+      "state": "Isolated period label at 0.7 mm, released",
+      "framebuffer_sha256": "9eeaa81b23f7af7d28c4c75176320554f9ab7befc8a7dad3383f3235d766b718"
+    },
+    {
+      "number": 23,
+      "name": "period-actuated",
+      "file": "23-period-actuated.png",
+      "state": "Isolated period label at 1.85 mm, actuated",
+      "framebuffer_sha256": "62eb556b4d539df7768e46ac8b7491db40ebd23713e6dd7527a9fbfd5c6c36a4"
+    },
+    {
+      "number": 24,
+      "name": "screensaver-starfield",
+      "file": "24-screensaver-starfield.png",
+      "state": {
+        "explicit_screensaver": 0,
+        "frame": 120
+      },
+      "framebuffer_sha256": "57a327f8dc79e45c2a9e18ff57f81195742119994a4f7b438c0a3f36091fa6c7"
+    },
+    {
+      "number": 25,
+      "name": "screensaver-plasma",
+      "file": "25-screensaver-plasma.png",
+      "state": {
+        "explicit_screensaver": 1,
+        "frame": 120
+      },
+      "framebuffer_sha256": "288f33566473759572093f4b3a89b2539d28783aff7adb6e0163899aa2163d12"
+    },
+    {
+      "number": 26,
+      "name": "screensaver-tesseract",
+      "file": "26-screensaver-tesseract.png",
+      "state": {
+        "explicit_screensaver": 2,
+        "frame": 120
+      },
+      "framebuffer_sha256": "b06b1c0684b5835cec1edea55f987f16b548feec5cee9ca3937346736d4eec59"
+    },
+    {
+      "number": 27,
+      "name": "screensaver-horizon",
+      "file": "27-screensaver-horizon.png",
+      "state": {
+        "explicit_screensaver": 3,
+        "frame": 120
+      },
+      "framebuffer_sha256": "d485b8aea12272ab9cf6597398f9862a8efb5fc1d47dc294589b725323ec865a"
+    },
+    {
+      "number": 28,
+      "name": "screensaver-magnetic-pulse",
+      "file": "28-screensaver-magnetic-pulse.png",
+      "state": {
+        "explicit_screensaver": 4,
+        "frame": 120
+      },
+      "framebuffer_sha256": "aa0905c7e866685c407fd54003a3ace183b64a134d836de94f93f5a84cee89dd"
+    },
+    {
+      "number": 29,
+      "name": "screensaver-lava",
+      "file": "29-screensaver-lava.png",
+      "state": {
+        "explicit_screensaver": 5,
+        "frame": 120
+      },
+      "framebuffer_sha256": "d3aa43ee72b983bf69788383b3d3f66734a89a16fb0ec3e16e5d8d220def64eb"
+    }
+  ]
+}

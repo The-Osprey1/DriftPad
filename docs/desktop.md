@@ -14,7 +14,7 @@ artifact under a successful **Windows desktop app**
 GitHub requires sign-in to download Actions artifacts. Unzip once, then run Setup.
 No Node.js, Git, local server, terminal, or separate browser is needed to use the app.
 
-Start in **Digital Twin**, or plug in your pad and click **Connect USB**. The native
+Start in **Digital Twin**, or plug in your pad and click **Connect USB**. This opens the device interface. Click **Connect DriftPad**; the native
 picker asks which serial device to connect to; it never selects one automatically.
 If a device was connected after opening the picker, cancel and retry.
 
@@ -34,8 +34,10 @@ You do not need PlatformIO, Python, Node.js, or a separate firmware download.
    the **RPI-RP2** drive appears.
 3. Click **Choose drive & install**. Select **RPI-RP2** under **This PC**, then
    click **Install firmware here**. Keep the cable connected while the file copies.
-4. When the drive disappears, close setup and click **Connect USB**. Calibrate with
-   all keys released and test before enabling HID.
+4. When the drive disappears, close setup and click **Connect USB**, then
+   **Connect DriftPad**. Open **Device → Calibration**. Release all keys, start,
+   then press each of the 16 keys fully and release it. Finish, save, and test
+   before enabling keyboard output.
 
 The app checks the bundled UF2 blocks and RP2040 family, then checks the selected
 root drive's `INFO_UF2.TXT` before writing. It only copies the bundled firmware;

@@ -33,6 +33,20 @@ Open `http://localhost:3000`. Leave the connection mode in **Digital Twin** to
 explore profiles, layers, key travel, Rapid Trigger, and the OLED preview without
 hardware.
 
+## Studio and your pad
+
+**Connect USB** opens the device interface, then **Connect DriftPad** asks you to
+select the pad. This interface identifies firmware version and protocol, shows
+confirmed device settings, guides calibration, and waits for save acknowledgments.
+It runs offline in the Windows app and is also available at
+`/configurator/index.html` in the development server. **Back to Studio** returns to
+the simulator.
+
+Studio profiles, modifier combinations, encoder remaps, per-key actuation, and OLED
+themes are previews stored on this computer. They are not automatically written to
+the physical pad. Use the device interface for supported key mappings, global
+sensitivity, calibration, output, and display controls.
+
 ## What's included
 
 - A 4×4 key matrix with three mapping layers and productivity profile presets.
@@ -115,38 +129,26 @@ SSD1306 is enabled by default. For an SH1106 display, set
 
 ### First connection and safe commissioning
 
-1. Start the web app with `npm run dev`.
-2. Connect the Pico and choose **Hardware** in the configurator.
-3. Select the serial port in the browser permission dialog.
-4. Keep HID output disabled while testing. The app disables HID on a new hardware
-   connection so simulated or miscalibrated presses cannot type into the host.
-5. Run `CALIBRATE` with every key fully released.
-6. Run `PING`, `STATUS`, and `OLED_SCAN` from the serial console.
-7. Set actuation and Rapid Trigger sensitivity, then use `SAVE`.
-8. Enable HID only after the key matrix and OLED behave correctly.
+1. Install the bundled firmware with **Set Up Pad** if needed.
+2. Click **Connect USB**, then **Connect DriftPad**, and select the pad.
+3. In **Device**, check the firmware identity and keep keyboard output off.
+4. Open **Calibration**, release every key, and choose **Start**. After the rest
+   phase, press every key fully and release it. When all 16 are done, choose
+   **Finish** and **Save**.
+5. Test all 16 keys and the OLED; configure mappings and sensitivity, then save.
+6. Reconnect and verify calibration and saved settings before enabling keyboard
+   output. Standalone output at boot is a separate deliberate setting.
 
-The serial port runs at 115200 baud. Examples:
-
-```text
-PING
-CALIBRATE
-SET_ACTUATION 1.50
-SET_RT_SENS 0.25
-SET_RT_ENABLE 1
-SET_LAYER 0
-SAVE
-```
-
-Use `SET_LAYER 0`, `SET_LAYER 1`, or `SET_LAYER 2` to choose which layer is being
-edited. The configurator's layer selector updates the active layer, and remapping a
-key sends the selected layer to the device. Profile backups are JSON files exported
-from the profile bar; imports are schema-validated before replacing any local data.
+`CALIBRATE` only re-zeros an already calibrated pad. Initial calibration uses
+`CAL START` and `CAL FINISH`; see [calibration](docs/calibration.md).
+Viewing a layer does not change the active layer on the pad. Use the explicit
+**Make this the active layer on the pad** button when that is intended.
 
 ### Troubleshooting
 
 - **No serial port:** use a data-capable USB cable and Chrome, Edge, or Opera.
 - **Upload failure:** hold BOOTSEL while plugging in the Pico, then retry PlatformIO.
-- **Wrong key travel:** release every key and run `CALIBRATE`; then adjust actuation.
+- **Wrong key travel:** use guided calibration for missing or invalid calibration; use `CALIBRATE` only to re-zero a valid calibration.
 - **Blank OLED:** check GP0/GP1, power, ground, address `0x3C`, and run `OLED_SCAN`.
 - **Unexpected typing:** disable HID with `SET_HID 0` before further testing.
 - **Settings not retained:** use `SAVE` for device flash and export profile JSON for
@@ -156,6 +158,22 @@ See [`docs/hardware.md`](docs/hardware.md), [`docs/serial-protocol.md`](docs/ser
 and [`docs/testing.md`](docs/testing.md) for the authoritative pinout, command reference,
 and validation procedures.
 
+
+
+## Engineering guides
+
+- [firmware integration](docs/firmware-integration.md)
+- [beta checklist](docs/beta-checklist.md)
+- [bring up](docs/bring-up.md)
+- [calibration](docs/calibration.md)
+- [configurator](docs/configurator.md)
+- [desktop](docs/desktop.md)
+- [flash layout](docs/flash-layout.md)
+- [hardware acceptance](docs/hardware-acceptance.md)
+- [hardware](docs/hardware.md)
+- [scheduling](docs/scheduling.md)
+- [serial protocol](docs/serial-protocol.md)
+- [testing](docs/testing.md)
 
 ## License
 

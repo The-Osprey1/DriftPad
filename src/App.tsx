@@ -590,21 +590,8 @@ export const App: React.FC = () => {
   };
 
   const handleConnectToggle = async () => {
-    if (connectionMode === 'hardware') {
-      await serialServiceRef.current.disconnect();
-      setConnectionMode('virtual');
-      addLog('INFO', 'Switched to Digital Twin DSP mode.');
-      showToast('Disconnected from hardware USB');
-    } else {
-      const ok = await serialServiceRef.current.connectHardware();
-      if (ok) {
-        setConnectionMode('hardware');
-        setCommissioning((prev) => ({ ...prev, connected: true }));
-        setHidEnabled(false);
-        sendSerialCommand('SET_HID 0');
-        showToast('Connected to DriftPad USB');
-      }
-    }
+    await serialServiceRef.current.disconnect();
+    window.location.assign(new URL('configurator/index.html', window.location.href).href);
   };
 
   const handleToggleVirtualMode = () => {
@@ -680,7 +667,7 @@ export const App: React.FC = () => {
     const next = !hidEnabled;
     setHidEnabled(next);
     sendSerialCommand(`SET_HID ${next ? 1 : 0}`);
-    showToast(next ? 'Keyboard HID output enabled' : 'Keyboard HID output disabled');
+    showToast(next ? 'Simulated keyboard output enabled' : 'Simulated keyboard output disabled');
   };
 
   const handleToggleAudioFeedback = () => {
@@ -693,7 +680,7 @@ export const App: React.FC = () => {
   const handleSaveFlash = () => {
     sendSerialCommand('SAVE');
     setCommissioning((prev) => ({ ...prev, saved: true }));
-    showToast('Committed settings to RP2040 Flash');
+    showToast('Simulated save. Use Connect USB to save settings on your pad.');
   };
 
   const handleFactoryReset = () => {
@@ -709,7 +696,7 @@ export const App: React.FC = () => {
   const handleCalibrate = () => {
     sendSerialCommand('CALIBRATE');
     setCommissioning((prev) => ({ ...prev, calibrated: true }));
-    showToast('Rest baselines calibrated');
+    showToast('Simulated calibration. Use Connect USB to calibrate your pad.');
   };
 
   const handleOledScan = () => {

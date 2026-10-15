@@ -90,3 +90,6 @@ release/
 desktop/renderer/
 desktop/assets/
 firmware-bin/
+
+# Host-compiled firmware test cache
+tests/.host_build/

@@ -1,0 +1,233 @@
+{
+  "updated_utc": "2026-09-30T23:45:28.994157+00:00",
+  "port": "COM3",
+  "fw": "2.1.0-beta.1",
+  "build": "79195cef4513-dirty",
+  "uf2_sha256": "4f3068014744d8ded8fefbc57ad12e62ebd317c09037e215c28a28f8f6430a13",
+  "configuration_preserved": true,
+  "settings": {
+    "dirty": false,
+    "source": "slot_b",
+    "seq": 14,
+    "load_errors": []
+  },
+  "calibration": "missing",
+  "output": {
+    "enabled": false,
+    "reason": "calibration_missing",
+    "active_keys": [],
+    "suppressed_keys": [],
+    "overflow": 0,
+    "delivery": "confirmed"
+  },
+  "oled_scan": {
+    "status": "ok",
+    "id": "4",
+    "cmd": "OLED_SCAN",
+    "devices": [
+      60
+    ]
+  },
+  "physical_screen_observed": false,
+  "backup_directory": "C:\\Users\\devyn\\AppData\\Local\\DriftPad\\backups\\20260930T234525Z-screensaver-shuffle",
+  "states": [
+    {
+      "command": "ANIM 2",
+      "display": {
+        "available": true,
+        "mode": "screensaver",
+        "animation": 2,
+        "shuffle": false,
+        "dimmed": false
+      }
+    },
+    {
+      "command": "SLEEP",
+      "display": {
+        "available": true,
+        "mode": "sleep",
+        "animation": -1,
+        "shuffle": false,
+        "dimmed": false
+      }
+    },
+    {
+      "command": "SCREENSAVER",
+      "display": {
+        "available": true,
+        "mode": "screensaver",
+        "animation": 2,
+        "shuffle": false,
+        "dimmed": false
+      }
+    },
+    {
+      "command": "WAKE",
+      "display": {
+        "available": true,
+        "mode": "screen",
+        "animation": -1,
+        "shuffle": false,
+        "dimmed": false
+      }
+    },
+    {
+      "command": "ANIM",
+      "display": {
+        "available": true,
+        "mode": "screensaver",
+        "animation": 1,
+        "shuffle": true,
+        "dimmed": false
+      }
+    },
+    {
+      "command": "ANIM",
+      "display": {
+        "available": true,
+        "mode": "screensaver",
+        "animation": 3,
+        "shuffle": true,
+        "dimmed": false
+      }
+    },
+    {
+      "command": "WAKE",
+      "display": {
+        "available": true,
+        "mode": "screen",
+        "animation": -1,
+        "shuffle": false,
+        "dimmed": false
+      }
+    },
+    {
+      "command": "SLEEP",
+      "display": {
+        "available": true,
+        "mode": "sleep",
+        "animation": -1,
+        "shuffle": false,
+        "dimmed": false
+      }
+    },
+    {
+      "command": "WAKE",
+      "display": {
+        "available": true,
+        "mode": "screen",
+        "animation": -1,
+        "shuffle": false,
+        "dimmed": false
+      }
+    }
+  ],
+  "shuffle_order": [
+    {
+      "at_s": 0.02,
+      "animation": 1
+    },
+    {
+      "at_s": 21.21,
+      "animation": 3
+    },
+    {
+      "at_s": 42.41,
+      "animation": 0
+    },
+    {
+      "at_s": 64.03,
+      "animation": 2
+    },
+    {
+      "at_s": 85.65,
+      "animation": 5
+    },
+    {
+      "at_s": 107.28,
+      "animation": 4
+    },
+    {
+      "at_s": 128.48,
+      "animation": 1
+    },
+    {
+      "at_s": 150.09,
+      "animation": 5
+    },
+    {
+      "at_s": 171.71,
+      "animation": 0
+    }
+  ],
+  "dimmed_at_s": 180.02,
+  "timing_while_shuffling": {
+    "status": "ok",
+    "id": "459",
+    "cmd": "TIMING",
+    "type": "timing",
+    "uptime_ms": 185270,
+    "period_us": 1000,
+    "scans": 184545,
+    "scan_hz": 998,
+    "max_gap_us": 2787,
+    "missed_deadlines": 458,
+    "gap_hist_us": {
+      "le_1100": 184027,
+      "le_1500": 59,
+      "le_2000": 3,
+      "le_5000": 455,
+      "le_10000": 0,
+      "le_50000": 0,
+      "gt_50000": 0
+    },
+    "scan_max_us": 996,
+    "scan_avg_us": 600.4,
+    "command_last_us": 1133,
+    "command_max_us": 1754,
+    "command_count": 465,
+    "telemetry_last_us": 0,
+    "telemetry_max_us": 0,
+    "telemetry_count": 0,
+    "save_last_us": 0,
+    "save_max_us": 0,
+    "save_count": 0,
+    "calibration_last_us": 0,
+    "calibration_max_us": 0,
+    "calibration_count": 0,
+    "publish_last_us": 21,
+    "publish_max_us": 105,
+    "publish_count": 184545,
+    "display_request_last_us": 10,
+    "display_request_max_us": 10,
+    "display_request_count": 5,
+    "tx_drain_last_us": 0,
+    "tx_drain_max_us": 199,
+    "tx_drain_count": 2612982,
+    "tx_queue_bytes": 8192,
+    "tx_used": 0,
+    "tx_high_water": 1843,
+    "tx_bytes_queued": 473176,
+    "tx_bytes_sent": 473176,
+    "tx_events_dropped": 0,
+    "tx_replies_rejected": 0,
+    "telemetry_dropped": 0
+  },
+  "scan_rate_while_shuffling": {
+    "status": "ok",
+    "id": "460",
+    "cmd": "SCAN_RATE",
+    "type": "scan_rate",
+    "hz": 998,
+    "max_gap_us": 2535
+  },
+  "final_display": {
+    "available": true,
+    "mode": "screen",
+    "animation": -1,
+    "shuffle": false,
+    "dimmed": false
+  },
+  "configuration_preserved_after_operations": true,
+  "verified": true
+}
