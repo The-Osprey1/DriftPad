@@ -1,3 +1,0 @@
-## 2025-02-23 - React Canvas Animation Frame Teardowns
-**Learning:** React state updates (such as real-time sensor streams and serial log state in `App.tsx`) trigger frequent component re-renders. Placing props in the dependency array of a `useEffect` running `requestAnimationFrame` causes frame teardowns at 60 FPS. Storing dynamic props in a `useRef` allows canvas animation loops to run continuously without teardowns while maintaining access to live state.
-**Action:** Use a `propsRef` pattern for high-frequency 60 FPS canvas animation loops in React components with frequently updated parent state.
