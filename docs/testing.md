@@ -72,7 +72,7 @@ Counts change; `--list` and the runner's summary are the source of truth, not th
 | Chrome or Edge (or `DRIFTPAD_CHROME`) | both browser suites | skipped in a diagnostic run, fails `--release` |
 | `pyserial`, Pillow (`tools/requirements.txt`) | the tool scripts only; tests use fakes | |
 
-CI (`.github/workflows/ci.yml`) installs the locked toolchain (`firmware/toolchain.lock.json`) and
+CI (`.github/workflows/firmware.yml`, called by the desktop workflow) installs the locked toolchain (`firmware/toolchain.lock.json`) and
 runs `--release --clean` on Ubuntu 24.04 and Windows Server 2022; it uploads the reports and the
 build, and publishes nothing. The Linux runner alone explicitly opts into Chrome's `--no-sandbox`
 flag for the local test pages. Browser execution fails on a non-zero exit even if Chrome returns a

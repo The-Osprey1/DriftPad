@@ -711,9 +711,7 @@ export const App: React.FC = () => {
   };
 
   const handleBootsel = () => {
-    if (window.confirm('Reboot RP2040 into USB Bootloader for flashing?')) {
-      sendSerialCommand('BOOTSEL');
-    }
+    setFlashModalOpen(true);
   };
 
   // Keyboard shortcut listener for testing
@@ -815,6 +813,9 @@ export const App: React.FC = () => {
       />
 
       {/* Main Studio Grid: 2D Hardware Chassis & Controller Deck */}
+      <p className="text-xs text-[#5a6a72] px-2">
+        Studio previews and profiles stay on this computer. Use <strong>Connect USB</strong> to configure, calibrate, and save settings on your pad.
+      </p>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Left Column (7 cols): The 2D Hardware Macropad Chassis */}
         <div className="lg:col-span-7 flex flex-col gap-3">
@@ -1018,9 +1019,9 @@ export const App: React.FC = () => {
                 <div className="p-3 bg-[#eef6f3] rounded-xl border border-[#b8d8cf]">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div>
-                      <span className="font-bold text-[#153641]">First-run commissioning</span>
+                      <span className="font-bold text-[#153641]">Simulator checks</span>
                       <p className="text-[10px] text-[#5a6a72] mt-0.5">
-                        Complete these checks before enabling HID output.
+                        These checks only exercise the Digital Twin. Use Connect USB for your pad.
                       </p>
                     </div>
                     <span className="font-mono text-[10px] text-[#5b8e85]">
@@ -1029,7 +1030,7 @@ export const App: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[10px]">
                     {[
-                      ['connected', 'Connect hardware'],
+                      ['connected', 'Device connection'],
                       ['calibrated', 'Calibrate sensors'],
                       ['oledChecked', 'Scan OLED'],
                       ['saved', 'Save to flash'],
@@ -1057,10 +1058,10 @@ export const App: React.FC = () => {
                 <div className="p-3 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] flex items-center justify-between">
                   <div className="flex flex-col">
                     <span className="font-bold text-[#1b2930] flex items-center gap-1.5">
-                      <Shield className="w-3.5 h-3.5 text-[#153641]" /> Keyboard HID Output
+                      <Shield className="w-3.5 h-3.5 text-[#153641]" /> Simulated Keyboard Output
                     </span>
                     <span className="text-[11px] text-[#5a6a72]">
-                      Send real keystrokes to connected OS
+                      Preview output state in the Digital Twin
                     </span>
                   </div>
                   <button
@@ -1102,7 +1103,7 @@ export const App: React.FC = () => {
                     className="p-3 bg-[#faf7f2] hover:bg-[#ede7da] rounded-xl border border-[#ded7ca] text-left transition-colors flex flex-col gap-1 shadow-xs"
                   >
                     <div className="flex items-center gap-1.5 font-bold text-[#1b2930]">
-                      <Check className="w-3.5 h-3.5 text-[#15803d]" /> Calibrate Sensors
+                      <Check className="w-3.5 h-3.5 text-[#15803d]" /> Simulate Calibration
                     </div>
                     <span className="text-[10px] text-[#5a6a72] leading-tight">
                       Re-zero Hall rest baselines
@@ -1126,10 +1127,10 @@ export const App: React.FC = () => {
                     className="p-3 bg-[#faf7f2] hover:bg-[#ede7da] rounded-xl border border-[#ded7ca] text-left transition-colors flex flex-col gap-1 shadow-xs"
                   >
                     <div className="flex items-center gap-1.5 font-bold text-[#1b2930]">
-                      <DownloadCloud className="w-3.5 h-3.5 text-[#5a6a72]" /> USB Bootloader
+                      <DownloadCloud className="w-3.5 h-3.5 text-[#5a6a72]" /> Firmware Setup
                     </div>
                     <span className="text-[10px] text-[#5a6a72] leading-tight">
-                      Reboot RP2040 into UF2 mode
+                      Install the bundled Pico firmware
                     </span>
                   </button>
 
@@ -1148,13 +1149,13 @@ export const App: React.FC = () => {
                   <button
                     onClick={handleSaveFlash}
                     className="p-3 bg-[#faf7f2] hover:bg-[#ede7da] rounded-xl border border-[#ded7ca] text-left transition-colors flex flex-col gap-1 shadow-xs"
-                    title="Commit current configuration to non-volatile RP2040 flash"
+                    title="Simulate saving settings; use Connect USB for your physical pad"
                   >
                     <div className="flex items-center gap-1.5 font-bold text-[#1b2930]">
-                      <Save className="w-3.5 h-3.5 text-[#5b8e85]" /> Commit to Flash
+                      <Save className="w-3.5 h-3.5 text-[#5b8e85]" /> Simulate Save
                     </div>
                     <span className="text-[10px] text-[#5a6a72] leading-tight">
-                      Save active RAM to flash
+                      Preview a save in the Digital Twin
                     </span>
                   </button>
                 </div>
