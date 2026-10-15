@@ -2,7 +2,7 @@
 
 ## Setup
 
-Use Node.js 22 or newer and npm. `.nvmrc` records the version used by web CI.
+Use Node.js 24 or newer and npm. `.nvmrc` records the version used by web CI.
 Run `npm ci` from the repository root, then `npm run dev`.
 
 `package-lock.json` is the dependency lockfile. Use `npm install` when deliberately

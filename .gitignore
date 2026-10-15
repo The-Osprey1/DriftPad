@@ -84,3 +84,9 @@ desktop.ini
 # Generated reports and TypeScript state
 coverage/
 *.tsbuildinfo
+
+# Generated desktop bundles
+release/
+desktop/renderer/
+desktop/assets/
+firmware-bin/

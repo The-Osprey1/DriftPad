@@ -1222,15 +1222,10 @@ export const App: React.FC = () => {
         onSaveTheme={handleSaveOledTheme}
       />
 
-      {/* Automatic Firmware Flashing Modal */}
+      {/* Firmware setup and real bundled UF2 download */}
       <FlashFirmwareModal
         isOpen={flashModalOpen}
         onClose={() => setFlashModalOpen(false)}
-        onFlashComplete={() => {
-          showToast(`Firmware v2.4.1 flashed and verified successfully!`);
-          addLog('INFO', `Flash complete: RP2040 running v2.4.1, workspace "${activeProfile.name}" synced.`);
-        }}
-        activeWorkspaceName={activeProfile.name}
       />
     </div>
   );

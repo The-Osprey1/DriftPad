@@ -2,7 +2,7 @@
 
 ## Automated web checks
 
-From the repository root, with Node.js 22 or newer and npm:
+From the repository root, with Node.js 24 or newer and npm:
 
 ```bash
 npm ci
@@ -17,6 +17,12 @@ configuration, and creates the production build. Individual commands are
 |---|---|
 | [`dspEngine.test.ts`](../src/engine/dspEngine.test.ts) | Digital Twin command responses, per-key actuation, simulated events, and streaming start/stop |
 | [`profileValidation.test.ts`](../src/services/profileValidation.test.ts) | Built-in profiles, invalid layer/key data, duplicate profile IDs, and backup validation |
+
+Desktop tests in `desktop/*.test.cjs` also run with `npm test`. They cover asset
+and navigation restrictions, serial selection, UF2 corruption/wrong-family
+rejection, drive validation, exact copy bytes, cancellation, concurrent requests,
+and failed writes. Drive I/O is substituted in these tests; no physical pad is
+flashed. Packaged-app smoke checks are described in [desktop.md](desktop.md).
 
 These tests run in Node without a browser or device. They do not execute the C++
 firmware or exercise browser permissions, real USB communication, or rendered UI.

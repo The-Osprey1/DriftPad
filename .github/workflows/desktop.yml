@@ -1,0 +1,115 @@
+name: Windows desktop app
+
+on:
+  pull_request:
+  push:
+    branches: [main, codex/windows-desktop-app]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install platformio
+      - run: pio run
+        working-directory: firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pico-firmware
+          path: firmware/.pio/build/pico/firmware.uf2
+          if-no-files-found: error
+
+  windows:
+    needs: firmware
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: pico-firmware
+          path: firmware-bin
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - name: Install pinned desktop build tools
+        run: npm install --no-audit --no-fund
+        working-directory: desktop
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag must match desktop/package.json version." }
+      - name: Build installer and portable app
+        run: npm run desktop:dist
+        env:
+          DRIFTPAD_FIRMWARE: firmware-bin/firmware.uf2
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Launch packaged app and verify persistence
+        run: node scripts/smoke-desktop.cjs release/win-unpacked/DriftPad.exe packaged
+      - name: Install for current user
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem release/*Setup*.exe | Select-Object -First 1).FullName
+          $installPath = Join-Path $env:RUNNER_TEMP 'DriftPadInstalled'
+          $process = Start-Process -FilePath $installer -ArgumentList "/S /D=$installPath" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode)" }
+          $installedApp = Join-Path $installPath 'DriftPad.exe'
+          if (-not (Test-Path -LiteralPath $installedApp)) { throw 'Installed app is missing.' }
+          node scripts/smoke-desktop.cjs $installedApp installed
+          if ($LASTEXITCODE -ne 0) { throw 'Installed app smoke test failed.' }
+      - name: Package firmware and checksums
+        shell: pwsh
+        run: |
+          Copy-Item firmware-bin/firmware.uf2 release/DriftPad.uf2
+          $checksums = Get-ChildItem release -File | Where-Object { $_.Extension -in '.exe', '.uf2' } |
+            ForEach-Object { "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" }
+          $checksums | Set-Content release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DriftPad-Windows-x64
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.uf2
+            release/SHA256SUMS.txt
+      - name: Save launch reports and resolved build dependencies
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-validation
+          path: |
+            release/smoke-*.json
+            release/smoke-*.png
+            desktop/package-lock.json
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: DriftPad-Windows-x64
+          path: release
+      - name: Prepare a draft download page
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" release/* --verify-tag --draft --title "DriftPad $TAG" --notes "Download the Setup exe to install DriftPad, or the Portable exe to run it without installation. Node.js, Git, a browser, and a terminal are not required. This build is unsigned. Physical-device testing is required before publishing."

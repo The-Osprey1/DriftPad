@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "npm run typecheck && vite build",
     "lint": "npm run typecheck",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "node scripts/run-tests.cjs",
     "preview": "vite preview --port 3000",
     "typecheck": "tsc --noEmit && tsc --project tsconfig.node.json",
     "check": "npm test && npm run build",
-    "benchmark:life": "tsx src/benchmarks/lifeGrid.bench.ts"
+    "benchmark:life": "tsx src/benchmarks/lifeGrid.bench.ts",
+    "desktop:prepare": "npm run build && node scripts/prepare-desktop.cjs",
+    "desktop:start": "npm --prefix desktop start",
+    "desktop:dist": "npm run desktop:prepare && npm --prefix desktop run dist"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -31,6 +34,6 @@
     "vite": "^6.2.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   }
 }
