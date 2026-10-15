@@ -13,7 +13,7 @@ for (const pass of ['first', 'second']) {
   fs.rmSync(resultPath, { force: true });
   const result = spawnSync(executable, ['--smoke-test'], {
     env: { ...process.env, DRIFTPAD_SMOKE_DATA: data, DRIFTPAD_SMOKE_RESULT: resultPath },
-    stdio: 'inherit', timeout: 90000,
+    stdio: 'inherit', timeout: 90000, windowsHide: true,
   });
   if (result.error) throw result.error;
   assert.equal(result.status, 0, 'Packaged app failed to start.');

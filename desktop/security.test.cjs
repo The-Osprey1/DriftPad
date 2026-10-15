@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
-const { resolveAsset, isAppUrl, isProjectLink } = require('./security.cjs');
+const { resolveAsset, isAppUrl, isProjectLink, isTrustedAppFrame } = require('./security.cjs');
 const { selectSerialPort } = require('./serial-picker.cjs');
 test('serves only packaged app assets', () => {
   const root = path.resolve('test-renderer');
@@ -16,6 +16,25 @@ test('serves only packaged app assets', () => {
 test('opens only project HTTPS links externally', () => {
   assert.equal(isProjectLink('https://github.com/The-Osprey1/DriftPad/releases'), true);
   for (const url of ['file:///secret', 'javascript:alert(1)', 'https://evil.com', 'https://github.com.evil/The-Osprey1/DriftPad', 'https://github.com/The-Osprey1/DriftPad-evil', 'https://user@github.com/The-Osprey1/DriftPad']) assert.equal(isProjectLink(url), false, url);
+});
+
+test('firmware IPC accepts only the live app window and its own top-level frame', () => {
+  const mainFrame = { url: 'driftpad://app/' };
+  const contents = { mainFrame, isDestroyed: () => false, getURL: () => 'driftpad://app/' };
+  const event = { sender: contents, senderFrame: mainFrame };
+  assert.equal(isTrustedAppFrame(event, contents), true);
+  assert.equal(isTrustedAppFrame(event, null), false);
+  assert.equal(isTrustedAppFrame({ ...event, sender: {} }, contents), false);
+  assert.equal(isTrustedAppFrame({ ...event, senderFrame: { url: 'driftpad://app/' } }, contents), false);
+  assert.equal(isTrustedAppFrame({ ...event, senderFrame: null }, contents), false);
+  mainFrame.url = 'https://evil.example';
+  assert.equal(isTrustedAppFrame(event, contents), false);
+  mainFrame.url = 'driftpad://app/';
+  contents.getURL = () => 'https://evil.example';
+  assert.equal(isTrustedAppFrame(event, contents), false);
+  contents.getURL = () => 'driftpad://app/';
+  contents.isDestroyed = () => true;
+  assert.equal(isTrustedAppFrame(event, contents), false);
 });
 const ports = [{ portId: 'one', portName: 'COM3', displayName: 'Pico' }, { portId: 'two', portName: 'COM4' }];
 test('serial selection uses an explicit choice and releases listeners', async () => {

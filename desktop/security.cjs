@@ -25,4 +25,9 @@ function isProjectLink(value) {
       (url.pathname === '/The-Osprey1/DriftPad' || url.pathname.startsWith('/The-Osprey1/DriftPad/'));
   } catch { return false; }
 }
-module.exports = { APP_URL, isAppUrl, resolveAsset, isProjectLink };
+function isTrustedAppFrame(event, contents) {
+  return !!contents && !contents.isDestroyed() && event?.sender === contents &&
+    !!event.senderFrame && event.senderFrame === contents.mainFrame &&
+    isAppUrl(contents.getURL()) && isAppUrl(event.senderFrame.url);
+}
+module.exports = { APP_URL, isAppUrl, resolveAsset, isProjectLink, isTrustedAppFrame };

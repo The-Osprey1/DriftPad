@@ -14,7 +14,9 @@ browser is needed. The portable executable runs without installation.
 
 Until the first desktop release is published, download the **DriftPad-Windows-x64**
 artifact from a successful [desktop build](https://github.com/The-Osprey1/DriftPad/actions/workflows/desktop.yml).
-Both versions include Digital Twin, USB configuration, and Pico firmware.
+Both versions include Digital Twin, USB configuration, and Pico firmware. Open
+**Set Up Pad** to install the bundled firmware directly onto the Pico's BOOTSEL drive;
+no developer tools are needed.
 See [desktop setup](docs/desktop.md) for details.
 
 ### Browser development setup

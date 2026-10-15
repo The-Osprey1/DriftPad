@@ -1,17 +1,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
+const { validateUf2 } = require('../desktop/firmware-install.cjs');
 const root = path.resolve(__dirname, '..');
 const desktop = path.join(root, 'desktop');
 const renderer = path.join(desktop, 'renderer');
 const firmware = path.resolve(root, process.env.DRIFTPAD_FIRMWARE || 'firmware/.pio/build/pico/firmware.uf2');
 const uf2 = fs.readFileSync(firmware);
-if (!uf2.length || uf2.length % 512 !== 0) throw new Error('Firmware is not a UF2 file.');
-for (let offset = 0; offset < uf2.length; offset += 512) {
-  if (uf2.readUInt32LE(offset) !== 0x0a324655 ||
-      uf2.readUInt32LE(offset + 4) !== 0x9e5d5157 ||
-      uf2.readUInt32LE(offset + 508) !== 0x0ab16f30) throw new Error('Invalid UF2 block.');
-}
+validateUf2(uf2);
 fs.accessSync(path.join(root, 'dist', 'index.html'));
 // Delete only this script's generated renderer directory, never source or user data.
 fs.rmSync(renderer, { recursive: true, force: true });

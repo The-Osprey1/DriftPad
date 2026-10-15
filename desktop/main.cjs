@@ -1,9 +1,10 @@
-const { app, BrowserWindow, Menu, dialog, net, protocol, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, session, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
-const { APP_URL, isAppUrl, resolveAsset, isProjectLink } = require('./security.cjs');
+const { APP_URL, isAppUrl, resolveAsset, isProjectLink, isTrustedAppFrame } = require('./security.cjs');
 const { selectSerialPort } = require('./serial-picker.cjs');
+const { createFirmwareInstaller } = require('./firmware-install.cjs');
 
 const smoke = process.argv.includes('--smoke-test');
 app.setName('DriftPad');
@@ -16,6 +17,7 @@ protocol.registerSchemesAsPrivileged([{
 }]);
 
 let mainWindow;
+let firmwareBusy = false;
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'";
 async function openProjectLink(url) {
   if (isProjectLink(url)) await shell.openExternal(url);
@@ -36,6 +38,16 @@ async function setupSession() {
   });
   const trusted = (contents) => !!contents && contents === mainWindow?.webContents &&
     !contents.isDestroyed() && isAppUrl(contents.getURL());
+  ipcMain.handle('driftpad:install-firmware', createFirmwareInstaller({
+    onBusyChange: (busy) => { firmwareBusy = busy; },
+    readFirmware: () => fs.readFile(path.join(root, 'driftpad.uf2')),
+    isAllowed: (event) => !smoke && process.platform === 'win32' && isTrustedAppFrame(event, mainWindow?.webContents),
+    chooseDrive: () => dialog.showOpenDialog(mainWindow, {
+      title: 'Select the RPI-RP2 drive under This PC',
+      buttonLabel: 'Install firmware here',
+      properties: ['openDirectory', 'dontAddToRecent'],
+    }),
+  }));
   ses.setPermissionCheckHandler((contents, permission, origin) =>
     permission === 'serial' && trusted(contents) && isAppUrl(origin));
   ses.setPermissionRequestHandler((contents, permission, callback, details) =>
@@ -61,11 +73,13 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     title: 'DriftPad', width: 1440, height: 940, minWidth: 960, minHeight: 680,
     backgroundColor: '#f5f2eb', show: false, icon: path.join(__dirname, 'assets', 'icon.png'),
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true },
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
+      preload: path.join(__dirname, 'preload.cjs') },
   });
   const win = mainWindow;
   win.once('ready-to-show', () => { if (!smoke) win.show(); });
   win.on('closed', () => { mainWindow = null; });
+  win.on('close', (event) => { if (firmwareBusy) event.preventDefault(); });
   win.webContents.setWindowOpenHandler(({ url }) => {
     void openProjectLink(url).catch(console.error);
     return { action: 'deny' };
@@ -81,10 +95,10 @@ async function createWindow() {
   await win.loadURL(APP_URL);
   if (smoke) {
     try {
-      const result = await win.webContents.executeJavaScript(
-        "(async () => { for(let i=0;i<100 && !document.querySelector('#root')?.textContent.includes('Digital Twin');i++) await new Promise(r=>setTimeout(r,50)); const previous=localStorage.getItem('desktop-smoke'); localStorage.setItem('desktop-smoke','saved'); const firmware=await fetch('./driftpad.uf2'); const bytes=new Uint8Array(await firmware.arrayBuffer()); return { rendered:document.querySelector('#root').textContent.includes('Digital Twin'), serial:'serial' in navigator, secure:window.isSecureContext, node:typeof window.require, previous, firmware:firmware.ok && bytes[0]===0x55 && bytes[1]===0x46 && bytes[2]===0x32 }; })()"
-      );
-      if (!result.rendered || !result.serial || !result.secure || result.node !== 'undefined' || !result.firmware) {
+      const smokeRenderer = require('./smoke-renderer.cjs');
+      const result = await win.webContents.executeJavaScript(`(${smokeRenderer.toString()})()`);
+      if (!result.rendered || !result.serial || !result.secure || result.node !== 'undefined' || !result.firmware ||
+          !result.bridgeLimited || !result.nativeWritesDisabled || !result.setup || !result.setupError || !result.dialogFits) {
         throw new Error(JSON.stringify(result));
       }
       session.defaultSession.flushStorageData();

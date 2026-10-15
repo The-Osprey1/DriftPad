@@ -26,15 +26,34 @@ Only one DriftPad instance runs at a time.
 
 ## First hardware setup
 
-Open **Set Up Pad** for a real, bundled **DriftPad.uf2** built from the same source
-checkout. Hold BOOTSEL while plugging in the Pico and copy the UF2 onto its
-**RPI-RP2** drive. The app does not claim it has flashed, calibrated, or verified
-the pad. Reconnect after the Pico restarts, calibrate with keys released, and test
-before enabling HID.
+The app includes a real **DriftPad.uf2** built from the same source checkout.
+You do not need PlatformIO, Python, Node.js, or a separate firmware download.
 
-The bundled firmware targets the documented V2 Raspberry Pi Pico wiring and
-SSD1306 OLED. Other hardware or SH1106 displays require a matching firmware build.
-Export profiles before changing firmware. See [hardware.md](hardware.md).
+1. Open **Set Up Pad**. Disconnect the pad in DriftPad and unplug its cable.
+2. Hold the Pico's **BOOTSEL** button while plugging it back in. Release it when
+   the **RPI-RP2** drive appears.
+3. Click **Choose drive & install**. Select **RPI-RP2** under **This PC**, then
+   click **Install firmware here**. Keep the cable connected while the file copies.
+4. When the drive disappears, close setup and click **Connect USB**. Calibrate with
+   all keys released and test before enabling HID.
+
+The app checks the bundled UF2 blocks and RP2040 family, then checks the selected
+root drive's `INFO_UF2.TXT` before writing. It only copies the bundled firmware;
+there is no arbitrary file picker or automatic selection of a connected board.
+Canceling the picker writes nothing. A failed or interrupted copy is reported as
+an error, not success. **Firmware copied** means the Windows write completed;
+it does not verify the running firmware, calibration, or physical inputs.
+
+**Save UF2 file** remains available for manual drag-and-drop to RPI-RP2. Browser
+builds without the desktop bridge use this manual route when firmware is bundled.
+If RPI-RP2 is missing, use a data-capable USB cable and hold BOOTSEL before plugging
+it in. Select the drive itself, not a folder. If copying fails, reconnect in
+BOOTSEL mode before retrying.
+
+The firmware targets the documented V2 Raspberry Pi Pico wiring and SSD1306 OLED.
+Pico 2/RP2350 boards and SH1106 displays require different builds. The bootloader
+marker identifies the chip family, not the DriftPad wiring or display. Export your
+profiles before updating. See [hardware.md](hardware.md).
 
 ## Maintainers: build from source
 
@@ -42,14 +61,18 @@ Node.js 24, npm, and PlatformIO are build-time requirements only.
 
 ~~~sh
 npm ci
-npm install --prefix desktop
+cd desktop
+npm install
+cd ..
 pio run --project-dir firmware
 npm run desktop:dist
 ~~~
 
+Run the desktop dependency install inside `desktop/`; installing the repository
+root into that package would bundle source and build output recursively.
 Build on Windows to produce Setup and Portable executables. To use an existing
 firmware image, set DRIFTPAD_FIRMWARE to its path. The preparation script validates
-UF2 block framing before bundling it. To launch from source:
+UF2 framing, RP2040 family, block completeness, and Pico flash bounds before bundling it. To launch from source:
 
 ~~~sh
 npm run desktop:prepare
@@ -67,18 +90,25 @@ dependencies are resolved at build time.
 The desktop workflow compiles firmware, runs tests and TypeScript checks, builds
 both executables, launches the packaged app twice, installs it silently on the
 disposable Windows runner, and repeats launch checks on the installed app.
-It verifies UI rendering, a secure Web Serial context, absence of Node access in
-the renderer, bundled firmware, and storage persistence across restarts.
+It verifies UI rendering, the firmware setup dialog and focus, a secure Web Serial
+context, absence of Node access in the renderer, the restricted firmware bridge,
+bundled firmware, and storage persistence across restarts. Smoke mode refuses
+firmware installation before a native picker opens or any drive is written.
 Launch reports and screenshots are attached to the run.
 
 Before publishing, test on a Windows PC:
 - Start offline, create a profile, quit, reopen, and export/import JSON.
 - Connect a real Pico; cancel the picker; unplug during connection; reconnect.
 - Verify telemetry, calibration, HID enable/disable, and saving device settings.
-- Copy the bundled UF2 in BOOTSEL mode and confirm the pad boots and reconnects.
+- Install with **Choose drive & install** in BOOTSEL mode and confirm the pad boots
+  and reconnects; also check cancellation, wrong-drive rejection, and manual copying.
 - Check installer shortcuts and an upgrade with an existing saved profile.
 
-The app uses a sandboxed renderer without Node integration or a privileged preload.
+The app uses a sandboxed renderer without Node integration. Its isolated preload
+exposes only `installFirmware()` with no arguments. The main process checks the
+calling window and top-level frame, owns the native drive picker, reads only the
+bundled image, and writes only `DriftPad.uf2` on the validated selected drive.
+Concurrent installs are rejected and normal window closing is blocked during setup.
 Packaged assets use a stable secure custom origin. Navigation is blocked;
 only project GitHub links open externally. Only the app can request serial access,
 and each port is explicitly selected. Local system fonts keep the app offline.
