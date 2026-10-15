@@ -60,6 +60,8 @@ __pycache__/
 
 # Agent working notes
 .agents/
+.aistudio/
+.jules/
 .venv/
 venv/
 .pytest_cache/
@@ -72,6 +74,16 @@ dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local environment and logs
+.env
+.env.*
+!.env.example
+*.log
+
+# Generated reports and TypeScript state
+coverage/
+*.tsbuildinfo
 
 # Generated desktop bundles
 release/

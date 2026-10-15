@@ -1,77 +1,79 @@
-# DriftPad Productivity Workstation & Macropad Suite
+# DriftPad
 
-A high-performance React application and WebSerial configurator for **DriftPad**, the 16-key Hall-effect macropad built around analog magnetic key sensing, Rapid Trigger DSP, a rotary encoder, and an SSD1306 OLED cockpit display on the Raspberry Pi Pico (RP2040).
+A browser configurator and simulator for a 16-key Hall-effect macropad built on
+the Raspberry Pi Pico (RP2040). The repository includes the React app, firmware,
+hardware reference, and OLED design studies.
 
-## Features
-
-- **Productivity Workspace Profiles**:
-  - **Code & Terminal Studio**: Git Pull/Push/Commit, terminal toggle, code formatting, build tasks, test runner, line comments, and safe 3.5mm process kill.
-  - **Video Timeline & NLE**: Razor cut, ripple delete, play/pause, frame jog left/right, marker drop, timeline zoom, and export media.
-  - **3D CAD & Blender**: Orthographic viewport snaps (Top, Front, Side), camera view, extrude, bevel, loop cut, inset, and wireframe toggle.
-  - **Spreadsheets & Finance**: AutoSum (`=SUM()`), paste values, currency format `$`, percent `%`, insert/delete row, filter, and table formatting.
-  - **Design & OS Multitasking**: Figma frame tools, auto-layout, CSS property export, screen snip, virtual desktop navigation, and app launchers.
-- **Heatmap Overlay & Layout Optimizer**:
-  - Live color-graded heat distribution (Cool -> Moderate -> High -> Peak Flame) based on real activation frequency per profile.
-  - Frequency counters (`hits` & `% density`) on keycaps.
-  - Automatic layout advice highlighting top high-traffic shortcuts and underutilized keys to optimize thumb reach and ergonomics.
-  - One-click frequency reset per profile.
-- **Global Multi-Layer View (All Layers Simultaneous)**:
-  - View mappings across all 3 layers at once on each keycap with color-coded tags (Cyan L0, Purple L1, Pink L2).
-  - Direct row click to remap shortcuts on any layer without tab switching.
-- **Hardware Rotary Encoder (GP20/GP21/GP4)**:
-  - Interactive on-screen knurled dial with horizontal drag and mouse wheel spinning.
-  - Configurable clockwise (CW), counter-clockwise (CCW), and center push-click actions per layer or profile.
-  - Presets for Timeline Jogging, Master Volume/Mute, Canvas Zoom/Fit, Document Scroll, and Tab Switching.
-- **Easiest & Most Reliable Storage**:
-  - Single-click **Export Backup (.json)** file download.
-  - **Import Backup (.json)** file restore with schema verification.
-  - Direct synchronization to RP2040 Flash memory (`SAVE`).
-- **Safety Depth & Per-Key Actuation Override**:
-  - Configure individual keys to require deeper actuation (e.g. 3.50mm for destructive keys like Delete, Kill Server, or Format) to prevent accidental triggers while keeping navigation hair-trigger light.
-- **Enhanced Key Remapping**:
-  - Support for multi-key modifier combos (Ctrl `^`, Alt `⌥`, Shift `⇧`, Meta/Win/Cmd `⌘`).
-  - Pre-packaged productivity shortcuts and custom key labels.
-- **SSD1306 128×64 OLED Cockpit**:
-  - Productivity HUD showing active profile name, current rotary dial assignment, and analog travel gauges.
-  - 6 screensaver modes: 3D Warp Starfield, Cyber Rain, Analog Oscilloscope, Synthwave 3D Grid, Magnetic Ripples, and Conway's Game of Life.
-- **Dual Mode (Hardware USB + Digital Twin DSP)**:
-  - Connect directly to physical RP2040 boards via WebSerial at 115200 baud, or test in browser using the complete Hall-effect Rapid Trigger DSP emulator.
-
-## Getting Started
+## Start the app
 
 ### Windows desktop app
 
-DriftPad can be packaged as a standalone Windows app. Download the **Setup.exe**
-from [Releases](https://github.com/The-Osprey1/DriftPad/releases), install it, and open
-DriftPad from your desktop. No terminal, Node.js, or separate browser is needed.
-A portable executable is also built. Both include Digital Twin, USB configuration,
-and real Pico firmware with guided setup.
+Download **Setup.exe** from a published [release](https://github.com/The-Osprey1/DriftPad/releases),
+install it, and open DriftPad from your desktop. No terminal, Node.js, or separate
+browser is needed. The portable executable runs without installation.
 
-Until the first desktop release is published, use the **DriftPad-Windows-x64**
-artifact from a successful [Windows desktop app build](https://github.com/The-Osprey1/DriftPad/actions/workflows/desktop.yml).
-See [desktop setup and packaging](docs/desktop.md) for details and current limitations.
+Until the first desktop release is published, download the **DriftPad-Windows-x64**
+artifact from a successful [desktop build](https://github.com/The-Osprey1/DriftPad/actions/workflows/desktop.yml).
+Both versions include Digital Twin, USB configuration, and Pico firmware.
+See [desktop setup](docs/desktop.md) for details.
 
 ### Browser development setup
 
-Requirements for development: Node.js 24 or newer and a Chromium-based browser (Chrome, Edge, or Opera).
+Use **Node.js 24 or newer**, npm, and a Chromium-based browser such as Chrome or
+Edge for WebSerial. The recommended Node version is recorded in [`.nvmrc`](.nvmrc).
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Runs on `http://localhost:3000`.
+Open `http://localhost:3000`. Leave the connection mode in **Digital Twin** to
+explore profiles, layers, key travel, Rapid Trigger, and the OLED preview without
+hardware.
 
-Open that URL and leave the connection mode in **Digital Twin** to test profiles, layers,
-Rapid Trigger behavior, the OLED preview, and the serial console without hardware.
+## What's included
 
-Useful project commands:
+- A 4×4 key matrix with three mapping layers and productivity profile presets.
+- Actuation and Rapid Trigger controls, including per-key actuation overrides.
+- Profile backup import/export, a usage heatmap, and rotary encoder controls.
+- A 128×64 OLED preview with six screensavers and adjustable display themes.
+- USB WebSerial communication and a browser-side DSP simulator.
+- RP2040 firmware for Hall sensors, a multiplexer, an encoder, and an OLED display.
 
-```bash
-npm run lint    # TypeScript validation
-npm run build   # TypeScript validation plus production Vite build
-npm run preview # Preview the production build
-```
+The Digital Twin is a software model. Simulator tests and successful firmware
+builds do not establish physical sensor accuracy, USB timing, or hardware acceptance.
+PCB and enclosure directories currently contain placeholders.
+
+## Development commands
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Start the development server on port 3000 |
+| `npm test` | Run the Digital Twin and profile validation tests |
+| `npm run typecheck` | Check app and Vite configuration types |
+| `npm run lint` | Alias for type checking; no separate style linter is configured |
+| `npm run build` | Check types and build the app into `dist/` |
+| `npm run check` | Run tests and the production build |
+| `npm run preview` | Serve the production build on port 3000 |
+| `npm run benchmark:life` | Compare the Game of Life implementations |
+
+Use npm and commit `package-lock.json` when changing dependencies. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
+
+## Repository guide
+
+| Path | Contents |
+|---|---|
+| [`src/`](src) | React UI, browser services, DSP model, tests, and benchmark |
+| [`firmware/`](firmware) | PlatformIO project for the Raspberry Pi Pico |
+| [`docs/hardware.md`](docs/hardware.md) | Pinout, mux channel map, and default keymaps |
+| [`docs/serial-protocol.md`](docs/serial-protocol.md) | USB serial commands |
+| [`docs/testing.md`](docs/testing.md) | Automated checks and manual verification |
+| [`docs/design/`](docs/design) | Historical interface design plan |
+| [`docs/oled_concepts/`](docs/oled_concepts) | OLED visual studies and previews |
+| [`hardware/`](hardware) | Placeholder locations for PCB and enclosure sources |
+
+## Hardware
 
 ### Hardware setup
 
@@ -111,9 +113,9 @@ SSD1306 is enabled by default. For an SH1106 display, set
 
 ### First connection and safe commissioning
 
-1. Open the DriftPad desktop app, or start the browser development app with `npm run dev`.
+1. Start the web app with `npm run dev`.
 2. Connect the Pico and choose **Hardware** in the configurator.
-3. Click **Connect USB** and select your pad's serial port.
+3. Select the serial port in the browser permission dialog.
 4. Keep HID output disabled while testing. The app disables HID on a new hardware
    connection so simulated or miscalibrated presses cannot type into the host.
 5. Run `CALIBRATE` with every key fully released.
@@ -151,3 +153,8 @@ from the profile bar; imports are schema-validated before replacing any local da
 See [`docs/hardware.md`](docs/hardware.md), [`docs/serial-protocol.md`](docs/serial-protocol.md),
 and [`docs/testing.md`](docs/testing.md) for the authoritative pinout, command reference,
 and validation procedures.
+
+
+## License
+
+See [LICENSE](LICENSE).
