@@ -40,7 +40,8 @@ const isLayerKey = (value: unknown, index: number): value is LayerKey => {
     typeof key.label === 'string' &&
     key.label.trim().length > 0 &&
     key.label.length <= 4 &&
-    (key.description === undefined || typeof key.description === 'string') &&
+    (key.description === undefined ||
+      (typeof key.description === 'string' && key.description.length <= 128)) &&
     (key.modifiers === undefined || isModifierFlags(key.modifiers)) &&
     (key.customActuation === undefined ||
       (typeof key.customActuation === 'number' &&
@@ -55,12 +56,14 @@ const isEncoderAction = (value: unknown): value is EncoderAction => {
   return (
     typeof action.label === 'string' &&
     action.label.trim().length > 0 &&
+    action.label.length <= 32 &&
     typeof action.actionType === 'string' &&
     ACTION_TYPES.has(action.actionType) &&
     (action.code === undefined ||
       (Number.isInteger(action.code) && action.code >= 0 && action.code <= 255)) &&
     (action.delta === undefined || typeof action.delta === 'number') &&
-    (action.description === undefined || typeof action.description === 'string') &&
+    (action.description === undefined ||
+      (typeof action.description === 'string' && action.description.length <= 128)) &&
     (action.modifiers === undefined || isModifierFlags(action.modifiers))
   );
 };
@@ -71,6 +74,7 @@ const isEncoderConfig = (value: unknown): value is EncoderConfig => {
   return (
     typeof encoder.name === 'string' &&
     encoder.name.trim().length > 0 &&
+    encoder.name.length <= 64 &&
     isEncoderAction(encoder.cw) &&
     isEncoderAction(encoder.ccw) &&
     isEncoderAction(encoder.click)
@@ -78,7 +82,7 @@ const isEncoderConfig = (value: unknown): value is EncoderConfig => {
 };
 
 export const validateProductivityProfiles = (value: unknown): value is ProductivityProfile[] => {
-  if (!Array.isArray(value) || value.length === 0) return false;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 50) return false;
   const ids = new Set<string>();
   return value.every((candidate) => {
     if (typeof candidate !== 'object' || candidate === null) return false;
@@ -86,9 +90,13 @@ export const validateProductivityProfiles = (value: unknown): value is Productiv
     if (
       typeof profile.id !== 'string' ||
       profile.id.trim().length === 0 ||
+      profile.id.length > 64 ||
       ids.has(profile.id) ||
       typeof profile.name !== 'string' ||
+      profile.name.trim().length === 0 ||
+      profile.name.length > 64 ||
       typeof profile.description !== 'string' ||
+      profile.description.length > 256 ||
       typeof profile.category !== 'string' ||
       !CATEGORIES.has(profile.category) ||
       !Array.isArray(profile.layers) ||

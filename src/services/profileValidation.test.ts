@@ -28,3 +28,24 @@ test('extracts only validated backup profiles', () => {
   assert.equal(valid?.length, PRODUCTIVITY_PROFILES.length);
   assert.equal(getValidatedBackupProfiles({ profiles: [] }), null);
 });
+
+test('rejects oversized profile fields and excessive array counts', () => {
+  const invalidName = structuredClone(PRODUCTIVITY_PROFILES);
+  invalidName[0].name = 'A'.repeat(65);
+  assert.equal(validateProductivityProfiles(invalidName), false);
+
+  const invalidDesc = structuredClone(PRODUCTIVITY_PROFILES);
+  invalidDesc[0].description = 'B'.repeat(257);
+  assert.equal(validateProductivityProfiles(invalidDesc), false);
+
+  const invalidKeyDesc = structuredClone(PRODUCTIVITY_PROFILES);
+  invalidKeyDesc[0].layers[0][0].description = 'C'.repeat(129);
+  assert.equal(validateProductivityProfiles(invalidKeyDesc), false);
+
+  const excessiveProfiles = Array.from({ length: 51 }, (_, i) => {
+    const p = structuredClone(PRODUCTIVITY_PROFILES[0]);
+    p.id = `profile-${i}`;
+    return p;
+  });
+  assert.equal(validateProductivityProfiles(excessiveProfiles), false);
+});

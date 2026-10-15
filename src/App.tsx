@@ -13,7 +13,7 @@ import {
   OledThemeConfig,
   DEFAULT_OLED_THEME,
 } from './types/driftpad';
-import { getValidatedBackupProfiles } from './services/profileValidation';
+import { getValidatedBackupProfiles, validateProductivityProfiles } from './services/profileValidation';
 import { SerialService, ConnectionMode } from './services/serialService';
 import { DriftPadDspEngine } from './engine/dspEngine';
 import { audioService } from './services/audioService';
@@ -75,7 +75,7 @@ export const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (validateProductivityProfiles(parsed)) {
           const hasNumpad = parsed.some((p: ProductivityProfile) => p.id === 'number-pad');
           if (hasNumpad) return parsed;
           return [PRODUCTIVITY_PROFILES[0], ...parsed];
