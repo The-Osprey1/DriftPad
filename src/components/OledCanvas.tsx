@@ -643,8 +643,9 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
         <div className="flex items-center gap-2">
           <Monitor className="w-3.5 h-3.5 text-[#153641]" />
           <span className="text-xs font-bold text-[#1b2930]">OLED Live Display</span>
-          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#f6f3ec] text-[#71828a] border border-[#ded7ca]">
-            0.96&quot; 128x64 White
+          <span aria-hidden="true" className="text-[#ded7ca]">·</span>
+          <span className="text-[11px] font-mono text-[#71828a]">
+            0.96&quot; · 128×64 White
           </span>
         </div>
 

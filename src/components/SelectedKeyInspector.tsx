@@ -63,8 +63,8 @@ export const SelectedKeyInspector: React.FC<SelectedKeyInspectorProps> = ({
             />
             {layerKey.customActuation && (
               <div className="flex items-center gap-1">
-                <span className="text-[#b45309] font-mono text-[10px] bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-semibold">
-                  {layerKey.customActuation.toFixed(1)}mm Safety
+                <span className="text-[#b45309] font-mono text-[11px] font-semibold">
+                  · {layerKey.customActuation.toFixed(1)}mm Safety
                 </span>
                 <HoverExplain
                   title="Per-Key Safety Actuation"

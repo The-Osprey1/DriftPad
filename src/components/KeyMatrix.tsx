@@ -92,15 +92,17 @@ export const KeyMatrix: React.FC<KeyMatrixProps> = ({
     <div className="flex flex-col gap-3">
       {/* Workspace Header & Heatmap Navigation Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#f0ebdF] pb-2.5">
-        {/* Left: Active Workspace Badge & Title */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] text-xs">
+        {/* Left: Active Workspace Title & Hardware Info */}
+        <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-1.5 text-[#1b2930] font-semibold">
             <Grid className="w-3.5 h-3.5 text-[#c86443]" />
-            <span className="text-[#71828a] font-medium">Layout:</span>
-            <span className="font-bold text-[#1b2930] truncate max-w-[200px] sm:max-w-none">
+            <span className="text-[#71828a] font-normal">Workspace:</span>
+            <span className="font-bold truncate max-w-[200px] sm:max-w-none">
               {workspaceName}
             </span>
           </div>
+
+          <span aria-hidden="true" className="text-[#ded7ca]">·</span>
 
           <HoverExplain
             title="4x4 Physical Key Matrix"
@@ -181,20 +183,42 @@ export const KeyMatrix: React.FC<KeyMatrixProps> = ({
                 key={i}
                 onClick={() => onSelectSimKey(i)}
                 onDoubleClick={() => onOpenRemap(i)}
-                className={`relative rounded-xl flex flex-col justify-between p-2.5 sm:p-3 select-none transition-all cursor-pointer h-24 sm:h-28 overflow-hidden shadow-xs ${
+                className={`relative rounded-xl flex flex-col justify-between p-2.5 sm:p-3 select-none transition-all cursor-pointer h-24 sm:h-28 overflow-hidden ${
                   isSelected ? 'ring-2 ring-[#c86443] ring-offset-2' : ''
                 } ${
                   heatmapEnabled
                     ? heat.bg
                     : isActuated
                     ? 'translate-y-1 bg-[#c86443] text-white border-b-2 border-r border-[#a84e31] shadow-inner'
-                    : 'bg-[#ffffff] hover:bg-[#faf7f2] text-[#1b2930] border border-[#ded7ca] border-b-4 border-r-2 border-b-[#cfc5b3] border-r-[#ded7ca] hover:border-b-[#b8ad99]'
+                    : 'bg-gradient-to-b from-[#ffffff] via-[#faf8f5] to-[#f1ebe0] text-[#1b2930] border border-[#ded7ca] border-b-[4px] border-r-[2px] border-b-[#cfc5b3] border-r-[#ded7ca] hover:border-b-[#b8ad99] shadow-xs active:translate-y-1 active:border-b-2'
                 }`}
               >
+                {/* Subtle Mechanical Switch Cross-Stem Behind Legend */}
+                <div
+                  aria-hidden="true"
+                  className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity ${
+                    isActuated ? 'opacity-10 text-white' : 'opacity-[0.06] text-[#153641]'
+                  }`}
+                >
+                  <div className="w-6 h-6 border border-current rounded-xs flex items-center justify-center">
+                    <span className="font-mono text-base font-black">+</span>
+                  </div>
+                </div>
+
+                {/* Tactile Homing Pip on Key #6 (Numpad 5) */}
+                {i === 6 && (
+                  <div
+                    aria-hidden="true"
+                    className={`absolute bottom-6 left-1/2 -translate-x-1/2 w-2 h-0.5 rounded-full pointer-events-none ${
+                      isActuated ? 'bg-white/40' : 'bg-[#ded7ca]'
+                    }`}
+                  />
+                )}
+
                 {/* Dynamic Key Travel Fill Bar */}
                 <div
                   className={`absolute bottom-0 left-0 right-0 pointer-events-none transition-all duration-75 ${
-                    isActuated ? 'bg-white/20' : 'bg-[#5b8e85]/20'
+                    isActuated ? 'bg-white/25' : 'bg-[#5b8e85]/20'
                   }`}
                   style={{ height: `${travelRatio * 100}%` }}
                 />

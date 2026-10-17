@@ -129,14 +129,14 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
                   onRtSensChange(p.sens);
                   onRtToggle(p.rt);
                 }}
-                className={`p-2 rounded-xl border text-left transition-colors shadow-xs ${
+                className={`p-2.5 rounded-xl border text-left transition-colors shadow-xs ${
                   isMatch
-                    ? 'bg-[#9e5b3d]/15 text-[#1c282e] border-[#9e5b3d] font-bold'
-                    : 'bg-[#ffffff] text-[#1c282e] border-[#ddd6ca] hover:border-[#9e5b3d]/50'
+                    ? 'bg-[#c86443]/10 text-[#1b2930] border-[#c86443] font-bold'
+                    : 'bg-[#ffffff] text-[#1b2930] border-[#ded7ca] hover:border-[#c86443]/40'
                 }`}
               >
                 <div className="text-xs font-bold">{p.name}</div>
-                <div className="text-[10px] text-[#57676e] font-mono mt-0.5 tabular-nums">
+                <div className="text-[10px] text-[#5a6a72] font-mono mt-0.5 tabular-nums">
                   Act {p.act.toFixed(2)}mm · RT {p.rt ? `${p.sens.toFixed(2)}mm` : 'OFF'}
                 </div>
               </button>
@@ -146,11 +146,11 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
       </div>
 
       {/* Global Actuation Slider */}
-      <div className="flex flex-col gap-2 bg-[#faf8f5] p-3.5 rounded-xl border border-[#e5dfd5]">
+      <div className="flex flex-col gap-2 bg-[#faf8f5] p-3.5 rounded-xl border border-[#ded7ca]">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-1.5">
-            <Sliders className="w-3.5 h-3.5 text-[#9e5b3d]" />
-            <span className="text-xs font-bold text-[#1c282e]">Actuation Point</span>
+            <Sliders className="w-3.5 h-3.5 text-[#c86443]" />
+            <span className="text-xs font-bold text-[#1b2930]">Actuation Point</span>
             <HoverExplain
               title="Actuation Point"
               badge="Hardware Travel"
@@ -158,7 +158,7 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
               tip="If you experience accidental mis-types, increase actuation to 1.5mm - 2.0mm."
             />
           </div>
-          <span className="font-mono text-xs font-bold text-[#9e5b3d] bg-[#ffffff] px-2.5 py-0.5 rounded-lg border border-[#e5dfd5] tabular-nums shadow-xs">
+          <span className="font-mono text-xs font-bold text-[#c86443] bg-[#ffffff] px-2.5 py-0.5 rounded-lg border border-[#ded7ca] tabular-nums shadow-xs">
             {actuation.toFixed(2)} mm
           </span>
         </div>
@@ -170,21 +170,21 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
           step="0.05"
           value={actuation}
           onChange={(e) => onActuationChange(parseFloat(e.target.value))}
-          className="w-full accent-[#9e5b3d] cursor-pointer h-2 bg-[#e5dfd5] rounded-lg"
+          className="w-full accent-[#c86443] cursor-pointer h-2 bg-[#ded7ca] rounded-lg"
         />
 
-        <div className="flex justify-between items-center text-[10px] text-[#84949b] font-mono tabular-nums">
+        <div className="flex justify-between items-center text-[10px] text-[#71828a] font-mono tabular-nums">
           <span>0.10 mm (Hair Trigger)</span>
           <span>3.80 mm (Deep Stroke)</span>
         </div>
       </div>
 
       {/* Rapid Trigger Sensitivity */}
-      <div className="flex flex-col gap-2 bg-[#faf8f5] p-3.5 rounded-xl border border-[#e5dfd5]">
+      <div className="flex flex-col gap-2 bg-[#faf8f5] p-3.5 rounded-xl border border-[#ded7ca]">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-1.5">
-            <Zap className="w-3.5 h-3.5 text-[#71938c]" />
-            <span className="text-xs font-bold text-[#1c282e]">Rapid Trigger Sensitivity</span>
+            <Zap className="w-3.5 h-3.5 text-[#5b8e85]" />
+            <span className="text-xs font-bold text-[#1b2930]">Rapid Trigger Sensitivity</span>
             <HoverExplain
               title="Rapid Trigger Sensitivity"
               badge="Dynamic Reset"
@@ -192,7 +192,7 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
               tip="Set to 0.15mm - 0.25mm for fast double-taps on calculator or numpad entries."
             />
           </div>
-          <span className="font-mono text-xs font-bold text-[#1e3f48] bg-[#ffffff] px-2.5 py-0.5 rounded-lg border border-[#e5dfd5] tabular-nums shadow-xs">
+          <span className="font-mono text-xs font-bold text-[#153641] bg-[#ffffff] px-2.5 py-0.5 rounded-lg border border-[#ded7ca] tabular-nums shadow-xs">
             {rtSens.toFixed(2)} mm
           </span>
         </div>
@@ -204,34 +204,34 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
           step="0.05"
           value={rtSens}
           onChange={(e) => onRtSensChange(parseFloat(e.target.value))}
-          className="w-full accent-[#71938c] cursor-pointer h-2 bg-[#e5dfd5] rounded-lg"
+          className="w-full accent-[#5b8e85] cursor-pointer h-2 bg-[#ded7ca] rounded-lg"
         />
 
-        <div className="flex justify-between items-center text-[10px] text-[#84949b] font-mono tabular-nums">
+        <div className="flex justify-between items-center text-[10px] text-[#71828a] font-mono tabular-nums">
           <span>0.10 mm (Instant Reset)</span>
           <span>2.00 mm (Soft Cushion)</span>
         </div>
       </div>
 
       {/* Rapid Trigger Enable Switch */}
-      <div className="flex items-center justify-between p-3.5 bg-[#faf8f5] rounded-xl border border-[#e5dfd5]">
+      <div className="flex items-center justify-between p-3.5 bg-[#faf8f5] rounded-xl border border-[#ded7ca]">
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[#1c282e]">Rapid Trigger DSP</span>
+            <span className="text-xs font-bold text-[#1b2930]">Rapid Trigger DSP</span>
             <HoverExplain
               title="Rapid Trigger Mode"
               badge="DSP Filter"
               explanation="When active, the RP2040 DSP tracks the exact velocity and turnaround point of the magnet inside the key switch at 8,000 samples/sec, resetting keystrokes dynamically on release."
             />
             <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-bold ${
-                rtEnabled ? 'bg-[#15803d]/15 text-[#15803d]' : 'bg-[#e5dfd5] text-[#57676e]'
+              className={`text-[10px] font-mono font-bold ${
+                rtEnabled ? 'text-[#15803d]' : 'text-[#71828a]'
               }`}
             >
-              {rtEnabled ? 'ACTIVE' : 'OFF'}
+              · {rtEnabled ? 'Active' : 'Off'}
             </span>
           </div>
-          <span className="text-[11px] text-[#57676e] mt-0.5">
+          <span className="text-[11px] text-[#5a6a72] mt-0.5">
             Dynamic reset as soon as key begins upward travel
           </span>
         </div>
@@ -242,20 +242,20 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
             onChange={(e) => onRtToggle(e.target.checked)}
             className="sr-only peer"
           />
-          <div className="w-10 h-5 bg-[#d5ccc0] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#71938c]"></div>
+          <div className="w-10 h-5 bg-[#ded7ca] peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#5b8e85]"></div>
         </label>
       </div>
 
       {/* Key Stem Travel Simulator Sandbox */}
-      <div className="flex flex-col gap-3 p-3.5 bg-[#faf8f5] rounded-xl border border-[#e5dfd5]">
+      <div className="flex flex-col gap-3 p-3.5 bg-[#faf8f5] rounded-xl border border-[#ded7ca]">
         <div className="flex justify-between items-center flex-wrap gap-2">
           <div className="flex items-center gap-1.5">
-            <Activity className="w-3.5 h-3.5 text-[#9e5b3d]" />
-            <span className="text-xs font-bold text-[#1c282e]">Live Stem Cross-Section</span>
+            <Activity className="w-3.5 h-3.5 text-[#c86443]" />
+            <span className="text-xs font-bold text-[#1b2930]">Live Stem Cross-Section</span>
             <HoverExplain
               title="Stem Travel Visualizer"
               badge="Simulation"
-              explanation="Simulates the physical depression of the key switch stem into the PCB. The vertical line marks the actuation threshold. Watch it turn red when registered."
+              explanation="Simulates the physical depression of the key switch stem into the PCB. The vertical line marks the actuation threshold. Watch it turn terracotta when registered."
             />
           </div>
 
@@ -263,7 +263,7 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
             <select
               value={selectedSimKey}
               onChange={(e) => onSelectSimKey(parseInt(e.target.value, 10))}
-              className="bg-[#ffffff] text-[#1c282e] border border-[#d5ccc0] rounded-lg px-2.5 py-0.5 text-xs font-mono font-semibold focus:outline-none focus:border-[#9e5b3d]"
+              className="bg-[#ffffff] text-[#1b2930] border border-[#ded7ca] rounded-lg px-2.5 py-0.5 text-xs font-mono font-semibold focus:outline-hidden focus:border-[#c86443]"
             >
               {Array.from({ length: 16 }).map((_, i) => (
                 <option key={i} value={i}>
@@ -272,13 +272,11 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
               ))}
             </select>
             <span
-              className={`text-[10px] px-2 py-0.5 rounded-md font-mono font-bold ${
-                isSimPressed
-                  ? 'bg-[#9e5b3d]/15 text-[#9e5b3d]'
-                  : 'bg-[#e5dfd5] text-[#57676e]'
+              className={`text-[10px] font-mono font-bold ${
+                isSimPressed ? 'text-[#c86443]' : 'text-[#71828a]'
               }`}
             >
-              {isSimPressed ? 'ACTUATED' : 'REST'}
+              · {isSimPressed ? 'Actuated' : 'Rest'}
             </span>
           </div>
         </div>
@@ -293,27 +291,27 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
         )}
 
         {/* Stem Cross-Section Graphic */}
-        <div className="relative h-11 bg-[#ede8df] rounded-xl border border-[#d5ccc0] overflow-hidden flex items-center px-3 shadow-inner">
+        <div className="relative h-11 bg-[#ebe5d9] rounded-xl border border-[#ded7ca] overflow-hidden flex items-center px-3 shadow-inner">
           {/* Active travel fill */}
           <div
             className={`absolute top-0 bottom-0 left-0 transition-all duration-75 ${
-              isSimPressed ? 'bg-[#9e5b3d]/45' : 'bg-[#71938c]/35'
+              isSimPressed ? 'bg-[#c86443]/40' : 'bg-[#5b8e85]/35'
             }`}
             style={{ width: `${travelPct}%` }}
           />
 
           {/* Actuation point marker line */}
           <div
-            className="absolute top-0 bottom-0 w-1 bg-[#9e5b3d] z-10"
+            className="absolute top-0 bottom-0 w-1 bg-[#c86443] z-10"
             style={{ left: `${actPct}%` }}
           />
 
           <div className="relative z-20 w-full flex justify-between items-center font-mono text-[11px] tabular-nums">
-            <span className="text-[#84949b]">0.0mm (Rest)</span>
-            <span className="text-[#1c282e] font-bold bg-[#ffffff] px-2.5 py-0.5 rounded-lg border border-[#d5ccc0] shadow-xs">
+            <span className="text-[#71828a]">0.0mm (Rest)</span>
+            <span className="text-[#1b2930] font-bold bg-[#ffffff] px-2.5 py-0.5 rounded-lg border border-[#ded7ca] shadow-xs">
               {currentSimTravel.toFixed(2)} mm
             </span>
-            <span className="text-[#84949b]">4.0mm (Bottom)</span>
+            <span className="text-[#71828a]">4.0mm (Bottom)</span>
           </div>
         </div>
 
@@ -326,35 +324,35 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
           value={currentSimTravel}
           disabled={animating}
           onChange={(e) => onSimTravelChange(selectedSimKey, parseFloat(e.target.value))}
-          className="w-full accent-[#9e5b3d] cursor-pointer h-2 bg-[#e5dfd5] rounded-lg"
+          className="w-full accent-[#c86443] cursor-pointer h-2 bg-[#ded7ca] rounded-lg"
         />
 
         {/* Action buttons */}
-        <div className="flex items-center gap-1.5 pt-1 border-t border-[#e5dfd5]">
+        <div className="flex items-center gap-1.5 pt-1 border-t border-[#f0ebdf]">
           <button
             onClick={handleQuickTap}
             disabled={animating}
-            className="flex-1 py-1.5 px-2 bg-[#ffffff] hover:bg-[#faf8f5] text-[#1c282e] rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-[#e5dfd5] transition-colors shadow-xs"
+            className="flex-1 py-1.5 px-2 bg-[#ffffff] hover:bg-[#faf8f5] text-[#1b2930] rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-[#ded7ca] transition-colors shadow-xs"
           >
-            <Play className="w-3 h-3 text-[#9e5b3d]" /> Quick Tap
+            <Play className="w-3 h-3 text-[#c86443]" /> Quick Tap
           </button>
           <button
             onClick={handleRtJiggle}
             disabled={animating}
-            className="flex-1 py-1.5 px-2 bg-[#ffffff] hover:bg-[#faf8f5] text-[#1c282e] rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-[#e5dfd5] transition-colors shadow-xs"
+            className="flex-1 py-1.5 px-2 bg-[#ffffff] hover:bg-[#faf8f5] text-[#1b2930] rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-[#ded7ca] transition-colors shadow-xs"
           >
-            <Zap className="w-3 h-3 text-[#71938c]" /> Flutter Tap
+            <Zap className="w-3 h-3 text-[#5b8e85]" /> Flutter Tap
           </button>
           <button
             onClick={handleBottomOut}
             disabled={animating}
-            className="flex-1 py-1.5 px-2 bg-[#ffffff] hover:bg-[#faf8f5] text-[#1c282e] rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-[#e5dfd5] transition-colors shadow-xs"
+            className="flex-1 py-1.5 px-2 bg-[#ffffff] hover:bg-[#faf8f5] text-[#1b2930] rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-[#ded7ca] transition-colors shadow-xs"
           >
             Bottom Out
           </button>
           <button
             onClick={handleResetTravel}
-            className="py-1.5 px-2.5 bg-[#ffffff] hover:bg-[#faf8f5] text-[#57676e] hover:text-[#1c282e] rounded-xl text-xs flex items-center justify-center border border-[#e5dfd5] transition-colors shadow-xs"
+            className="py-1.5 px-2.5 bg-[#ffffff] hover:bg-[#faf8f5] text-[#5a6a72] hover:text-[#1b2930] rounded-xl text-xs flex items-center justify-center border border-[#ded7ca] transition-colors shadow-xs"
             title="Reset to 0mm"
           >
             <RotateCcw className="w-3.5 h-3.5" />
