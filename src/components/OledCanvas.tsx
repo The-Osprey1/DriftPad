@@ -680,17 +680,32 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
       </div>
 
       {/* Physical OLED Glass & Chamfered Bezel */}
-      <div className="relative flex justify-center items-center bg-[#070b0e] p-3.5 rounded-2xl border-2 border-[#1a272e] shadow-inner overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          width={128}
-          height={64}
-          className="w-[256px] h-[128px] sm:w-[280px] sm:h-[140px] image-pixelated rounded ring-1 ring-white/10 shadow-lg"
-          style={{
-            imageRendering: 'pixelated',
-            backgroundColor: activeTheme.background,
-          }}
-        />
+      <div className="relative flex flex-col items-center bg-[#060a0d] p-3 rounded-2xl border-2 border-[#162127] shadow-[inset_0_2px_8px_rgba(0,0,0,0.8),0_4px_12px_rgba(0,0,0,0.25)] overflow-hidden">
+        {/* Hardware PCB Top Silkscreen Pinout */}
+        <div className="w-full flex items-center justify-between text-[8px] font-mono font-bold text-[#d4af37]/70 pb-1.5 px-2 border-b border-[#162127] mb-1.5 select-none tracking-widest">
+          <span>SSD1306 · 0.96&quot; 128x64</span>
+          <span className="text-[#84949b]">I2C: [ GND · VCC · SCL · SDA ]</span>
+        </div>
+
+        <div className="relative rounded overflow-hidden">
+          <canvas
+            ref={canvasRef}
+            width={128}
+            height={64}
+            className="w-[256px] h-[128px] sm:w-[280px] sm:h-[140px] image-pixelated rounded ring-1 ring-white/10 shadow-lg block"
+            style={{
+              imageRendering: 'pixelated',
+              backgroundColor: activeTheme.background,
+            }}
+          />
+
+          {/* Diagonal Glass Glare Reflection */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-white/[0.08] pointer-events-none rounded"
+          />
+        </div>
+
         {isSleeping && (
           <div className="absolute inset-0 bg-[#070b0e]/90 flex items-center justify-center gap-1.5 text-xs text-[#71938c] font-mono">
             <Moon className="w-4 h-4 text-[#c86443]" /> DISPLAY SLEEPING
