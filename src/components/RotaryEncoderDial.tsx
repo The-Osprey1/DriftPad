@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { EncoderConfig, EncoderAction } from '../types/driftpad';
-import { Disc3, RotateCw, RotateCcw, MousePointer } from 'lucide-react';
+import { Disc3, RotateCw, RotateCcw, MousePointer, ChevronLeft, ChevronRight } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
+import { soundService } from '../services/soundService';
 
 interface RotaryEncoderDialProps {
   config: EncoderConfig;
@@ -68,6 +69,7 @@ export const RotaryEncoderDial: React.FC<RotaryEncoderDialProps> = ({
   const [stepCount, setStepCount] = useState<number>(0);
   const [lastAction, setLastAction] = useState<string>('Ready');
   const [isPressing, setIsPressing] = useState<boolean>(false);
+  const [turnPulse, setTurnPulse] = useState<'cw' | 'ccw' | null>(null);
   const isDraggingRef = useRef<boolean>(false);
   const lastXRef = useRef<number>(0);
 
@@ -86,22 +88,29 @@ export const RotaryEncoderDial: React.FC<RotaryEncoderDialProps> = ({
   const triggerCw = () => {
     setAngle((prev) => (prev + 15) % 360);
     setStepCount((prev) => prev + 1);
-    setLastAction(`CW -> ${config.cw.label}`);
+    setLastAction(`CW ➔ ${config.cw.label}`);
+    setTurnPulse('cw');
+    soundService.playEncoderTick('cw');
     onTriggerAction(config.cw, 'cw');
+    setTimeout(() => setTurnPulse(null), 150);
   };
 
   const triggerCcw = () => {
     setAngle((prev) => (prev - 15 + 360) % 360);
     setStepCount((prev) => prev - 1);
-    setLastAction(`CCW <- ${config.ccw.label}`);
+    setLastAction(`CCW ➔ ${config.ccw.label}`);
+    setTurnPulse('ccw');
+    soundService.playEncoderTick('ccw');
     onTriggerAction(config.ccw, 'ccw');
+    setTimeout(() => setTurnPulse(null), 150);
   };
 
   const triggerClick = () => {
     setIsPressing(true);
-    setLastAction(`CLICK -> ${config.click.label}`);
+    setLastAction(`CLICK ➔ ${config.click.label}`);
+    soundService.playEncoderTick('click');
     onTriggerAction(config.click, 'click');
-    setTimeout(() => setIsPressing(false), 200);
+    setTimeout(() => setIsPressing(false), 180);
   };
 
   // Drag interaction
@@ -114,7 +123,7 @@ export const RotaryEncoderDial: React.FC<RotaryEncoderDialProps> = ({
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingRef.current) return;
       const deltaX = e.clientX - lastXRef.current;
-      if (Math.abs(deltaX) > 10) {
+      if (Math.abs(deltaX) > 12) {
         if (deltaX > 0) {
           triggerCw();
         } else {
@@ -142,50 +151,84 @@ export const RotaryEncoderDial: React.FC<RotaryEncoderDialProps> = ({
 
   // Dial Visualizer Sub-component
   const dialVisualizer = (
-    <div className="flex flex-col items-center justify-between p-3.5 bg-[#ebe5d9] rounded-2xl border border-[#ded7ca] shadow-inner h-full">
-      <div
-        ref={dialRef}
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#ffffff] border-2 border-[#ded7ca] flex items-center justify-center cursor-ew-resize select-none active:scale-95 transition-transform shadow-md my-auto"
-        title="Drag left/right or scroll mouse wheel to rotate dial"
-      >
-        {/* Outer Knurled Notches */}
-        {Array.from({ length: 24 }).map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-2 bg-[#cfc5b3] rounded-full"
-            style={{
-              top: '4px',
-              transformOrigin: 'bottom center',
-              transform: `rotate(${i * 15}deg) translateY(0px)`,
-            }}
-          />
-        ))}
-
-        {/* Rotating Rotor */}
-        <div
-          className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-[#f6f3ec] border border-[#ded7ca] flex items-center justify-center transition-transform duration-75 shadow-inner"
-          style={{ transform: `rotate(${angle}deg)` }}
+    <div className="flex flex-col items-center justify-between p-3.5 bg-gradient-to-b from-[#ebe5d9] to-[#e4ded0] rounded-2xl border border-[#ded7ca] shadow-inner h-full">
+      <div className="flex items-center justify-center gap-2 w-full my-auto">
+        {/* Nudge CCW Detent Button */}
+        <button
+          onClick={triggerCcw}
+          title="Turn Counter-Clockwise (-15°)"
+          className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all tactile-spring shrink-0 ${
+            turnPulse === 'ccw'
+              ? 'bg-[#c86443] text-white border-[#a84e31] scale-90'
+              : 'bg-white/80 hover:bg-white text-[#5a6a72] border-[#ded7ca] hover:text-[#1b2930] shadow-xs active:scale-95'
+          }`}
         >
-          {/* Dial Indicator Pip */}
-          <div className="absolute top-1.5 w-2 h-3.5 rounded-full bg-[#c86443] shadow-xs" />
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[#ffffff] border border-[#ded7ca] flex items-center justify-center text-[10px] font-mono font-bold text-[#5a6a72]">
-            {Math.round(angle)}°
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        {/* Outer Knurled Ring & Rotating Knob */}
+        <div
+          ref={dialRef}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-gradient-to-br from-[#ffffff] via-[#f7f4ee] to-[#e8e2d5] border-2 border-[#d5ccbe] flex items-center justify-center cursor-ew-resize select-none active:scale-[0.97] transition-transform duration-100 shadow-[0_4px_10px_rgba(0,0,0,0.08)]"
+          title="Drag left/right or scroll mouse wheel to rotate dial"
+        >
+          {/* Outer Knurled Perimeter Notches */}
+          {Array.from({ length: 24 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute w-1 h-2 bg-[#cfc5b3] rounded-full"
+              style={{
+                top: '4px',
+                transformOrigin: 'bottom center',
+                transform: `rotate(${i * 15}deg) translateY(0px)`,
+              }}
+            />
+          ))}
+
+          {/* Rotating Rotor Dial Cap with brushed concentric ring */}
+          <div
+            className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-b from-[#fbf9f5] via-[#eee7db] to-[#ded6c5] border border-[#cfc5b3] flex items-center justify-center shadow-[inset_0_2px_4px_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.1)] transition-transform duration-150 ease-out"
+            style={{ transform: `rotate(${angle}deg)` }}
+          >
+            {/* Concentric CNC Lathe Ring */}
+            <div className="absolute inset-2 rounded-full border border-black/5 pointer-events-none" />
+
+            {/* Glowing Dial Indicator Pip */}
+            <div className="absolute top-1.5 w-2 h-3.5 rounded-full bg-gradient-to-b from-[#e07b5a] to-[#c86443] shadow-[0_0_8px_rgba(200,100,67,0.7)]" />
+
+            {/* Center Cap with Angle Readout */}
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-b from-[#ffffff] to-[#f4f0e6] border border-[#d5ccbe] flex items-center justify-center text-[10px] font-mono font-bold text-[#1b2930] shadow-xs">
+              {Math.round(angle)}°
+            </div>
           </div>
         </div>
+
+        {/* Nudge CW Detent Button */}
+        <button
+          onClick={triggerCw}
+          title="Turn Clockwise (+15°)"
+          className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all tactile-spring shrink-0 ${
+            turnPulse === 'cw'
+              ? 'bg-[#c86443] text-white border-[#a84e31] scale-90'
+              : 'bg-white/80 hover:bg-white text-[#5a6a72] border-[#ded7ca] hover:text-[#1b2930] shadow-xs active:scale-95'
+          }`}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       <div className="mt-2.5 flex flex-col items-center gap-1.5 w-full">
         <button
           onClick={triggerClick}
-          className={`w-full py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-xs ${
+          className={`w-full py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all tactile-spring shadow-xs ${
             isPressing
-              ? 'bg-[#c86443] text-white scale-95 shadow-inner'
-              : 'bg-[#ffffff] hover:bg-[#faf8f5] text-[#1b2930] border border-[#ded7ca]'
+              ? 'bg-gradient-to-b from-[#c86443] to-[#ad4d2e] text-white scale-95 shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]'
+              : 'bg-[#ffffff] hover:bg-[#faf8f5] text-[#1b2930] border border-[#ded7ca] hover:border-[#c86443]/40'
           }`}
         >
-          <MousePointer className="w-3.5 h-3.5 text-[#c86443]" />
+          <MousePointer className={`w-3.5 h-3.5 ${isPressing ? 'text-white' : 'text-[#c86443]'}`} />
           <span>Press Knob (Click)</span>
         </button>
 

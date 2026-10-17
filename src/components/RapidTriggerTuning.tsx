@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sliders, Zap, Activity, Play, RotateCcw, ShieldAlert } from 'lucide-react';
+import { Sliders, Zap, Activity, Play, RotateCcw, ShieldAlert, LineChart } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
+import { soundService } from '../services/soundService';
 
 interface RapidTriggerTuningProps {
   actuation: number;
@@ -40,10 +41,108 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
 }) => {
   const [animating, setAnimating] = useState<boolean>(false);
   const animIntervalRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const historyRef = useRef<{ travel: number; pressed: boolean }[]>([]);
 
   const effectiveActuation = customKeyActuation !== undefined ? customKeyActuation : actuation;
   const actPct = (effectiveActuation / 4.0) * 100;
   const travelPct = Math.min(100, Math.max(0, (currentSimTravel / 4.0) * 100));
+
+  // Live Oscilloscope Waveform Stream
+  useEffect(() => {
+    let animId: number;
+
+    const renderOscilloscope = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Append current point to history
+      historyRef.current.push({ travel: currentSimTravel, pressed: isSimPressed });
+      if (historyRef.current.length > w) {
+        historyRef.current.shift();
+      }
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Background grid
+      ctx.fillStyle = '#f5efe6';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#e6ddce';
+      ctx.lineWidth = 1;
+
+      // 1mm, 2mm, 3mm grid lines
+      for (let mm = 1; mm <= 3; mm++) {
+        const y = (mm / 4.0) * h;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Actuation threshold line (Terracotta)
+      const actY = (effectiveActuation / 4.0) * h;
+      ctx.strokeStyle = '#c86443';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(0, actY);
+      ctx.lineTo(w, actY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label on right edge
+      ctx.fillStyle = '#c86443';
+      ctx.font = 'bold 8px monospace';
+      ctx.fillText(`${effectiveActuation.toFixed(1)}mm ACT`, w - 55, Math.max(9, actY - 3));
+
+      // Waveform line
+      const pts = historyRef.current;
+      if (pts.length > 1) {
+        ctx.beginPath();
+        const startX = w - pts.length;
+        pts.forEach((p, idx) => {
+          const x = startX + idx;
+          const y = (p.travel / 4.0) * h;
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+
+        ctx.strokeStyle = isSimPressed ? '#c86443' : '#5b8e85';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Shaded area under curve
+        ctx.lineTo(w, 0);
+        ctx.lineTo(startX, 0);
+        ctx.fillStyle = isSimPressed ? 'rgba(200, 100, 67, 0.12)' : 'rgba(91, 142, 133, 0.10)';
+        ctx.fill();
+
+        // Current head dot
+        const headY = (currentSimTravel / 4.0) * h;
+        ctx.fillStyle = isSimPressed ? '#c86443' : '#153641';
+        ctx.beginPath();
+        ctx.arc(w - 2, headY, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      animId = requestAnimationFrame(renderOscilloscope);
+    };
+
+    animId = requestAnimationFrame(renderOscilloscope);
+
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, [currentSimTravel, isSimPressed, effectiveActuation]);
 
   useEffect(() => {
     return () => {
@@ -57,7 +156,11 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
     let stepIdx = 0;
     animIntervalRef.current = window.setInterval(() => {
       if (stepIdx < steps.length) {
-        onSimTravelChange(selectedSimKey, steps[stepIdx]);
+        const val = steps[stepIdx];
+        onSimTravelChange(selectedSimKey, val);
+        if (val >= effectiveActuation && stepIdx === 3) {
+          soundService.playSwitchDown(val, val >= 3.8);
+        }
         stepIdx++;
       } else {
         if (animIntervalRef.current) clearInterval(animIntervalRef.current);
@@ -312,6 +415,25 @@ export const RapidTriggerTuning: React.FC<RapidTriggerTuningProps> = ({
               {currentSimTravel.toFixed(2)} mm
             </span>
             <span className="text-[#71828a]">4.0mm (Bottom)</span>
+          </div>
+        </div>
+
+        {/* Live Displacement Oscilloscope Waveform */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between text-[10px] text-[#71828a] font-mono px-0.5">
+            <span className="flex items-center gap-1 font-semibold text-[#153641]">
+              <LineChart className="w-3 h-3 text-[#5b8e85]" />
+              <span>Real-Time Travel Waveform</span>
+            </span>
+            <span className="tabular-nums">3s Window · 60 FPS</span>
+          </div>
+          <div className="relative rounded-xl border border-[#ded7ca] overflow-hidden shadow-inner bg-[#f5efe6]">
+            <canvas
+              ref={canvasRef}
+              width={340}
+              height={70}
+              className="w-full h-[70px] block"
+            />
           </div>
         </div>
 

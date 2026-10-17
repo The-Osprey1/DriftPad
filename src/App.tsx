@@ -18,6 +18,7 @@ import {
   DEFAULT_PINOUT_CONFIG,
 } from './types/driftpad';
 import { SerialService, ConnectionMode } from './services/serialService';
+import { soundService } from './services/soundService';
 import { DriftPadDspEngine } from './engine/dspEngine';
 import { Header } from './components/Header';
 import { KeyMatrix } from './components/KeyMatrix';
@@ -820,6 +821,7 @@ export const App: React.FC = () => {
         setSelectedSimKey(idx);
         recordKeyPress(idx);
         handleSimTravelChange(idx, 2.5);
+        soundService.playSwitchDown(2.5, true);
       }
     };
 
@@ -828,6 +830,7 @@ export const App: React.FC = () => {
       const idx = keyMapToIdx[e.code];
       if (idx !== undefined) {
         handleSimTravelChange(idx, 0.0);
+        soundService.playSwitchUp();
       }
     };
 
@@ -889,16 +892,29 @@ export const App: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Left Column (7 cols): The 2D Hardware Macropad Chassis */}
         <div className="lg:col-span-7 flex flex-col gap-3">
-          {/* Physical Pad Hardware Enclosure */}
-          <div className="bg-[#ebe5d9] border-2 border-[#d3c9b8] rounded-3xl p-3.5 sm:p-5 shadow-sm flex flex-col gap-3.5 relative">
-            {/* Chassis Header Bar */}
-            <div className="flex items-center justify-between text-[11px] font-mono text-[#5a6a72] border-b border-[#ded7ca] pb-2">
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${connectionMode === 'hardware' ? 'bg-[#15803d]' : 'bg-[#5b8e85]'}`} />
-                <span className="font-bold tracking-wider text-[#1b2930]">DRIFTPAD · RP2040</span>
+          {/* Physical Pad Hardware Enclosure with Ambient Underglow */}
+          <div className="relative group">
+            {/* Ambient Chassis Underglow Bar */}
+            <div
+              aria-hidden="true"
+              className="absolute -inset-1 rounded-[28px] bg-gradient-to-r from-[#71938c]/20 via-[#9e5b3d]/25 to-[#71938c]/20 blur-md pointer-events-none animate-chassis-glow"
+            />
+
+            <div className="relative bg-gradient-to-b from-[#eee8dc] via-[#e6dfd1] to-[#ded6c7] border-2 border-[#cfc4b2] rounded-3xl p-3.5 sm:p-5 shadow-[0_12px_28px_-6px_rgba(27,41,48,0.09),0_4px_10px_-2px_rgba(27,41,48,0.05)] flex flex-col gap-3.5">
+              {/* Chassis Header Bar */}
+              <div className="flex items-center justify-between text-[11px] font-mono text-[#5a6a72] border-b border-[#ded7ca] pb-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      connectionMode === 'hardware'
+                        ? 'bg-[#15803d] shadow-[0_0_8px_rgba(21,128,61,0.6)]'
+                        : 'bg-[#5b8e85] shadow-[0_0_6px_rgba(91,142,133,0.4)]'
+                    }`}
+                  />
+                  <span className="font-bold tracking-wider text-[#1b2930]">DRIFTPAD · RP2040</span>
+                </div>
+                <span className="text-[#71828a] font-semibold text-[10px]">16-KEY HALL EFFECT CHASSIS</span>
               </div>
-              <span className="text-[#71828a] font-semibold text-[10px]">16-KEY HALL EFFECT CHASSIS</span>
-            </div>
 
             {/* Top Deck: OLED Screen on Left, Rotary Dial on Right */}
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-stretch">
@@ -962,6 +978,7 @@ export const App: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
 
         {/* Right Column (5 cols): Inspection Drawer & DSP Tuning Deck */}
         <div className="lg:col-span-5 flex flex-col gap-3.5">

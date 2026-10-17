@@ -2,6 +2,7 @@ import React from 'react';
 import { LayerKey, KeyStatus } from '../types/driftpad';
 import { Edit3, ArrowDown } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
+import { soundService } from '../services/soundService';
 
 export interface SelectedKeyInspectorProps {
   keyIdx: number;
@@ -32,19 +33,24 @@ export const SelectedKeyInspector: React.FC<SelectedKeyInspectorProps> = ({
 }) => {
   const mods = formatModifiers(layerKey.modifiers);
 
+  const handlePress = () => {
+    soundService.playSwitchDown(2.5, true);
+    onSimulatePress(keyIdx);
+  };
+
   return (
     <div className="bg-[#ffffff] border border-[#ded7ca] rounded-2xl p-3 sm:px-4 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
       {/* Left: Key Identity */}
       <div className="flex items-center gap-3">
         <div
-          className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center font-mono border transition-all ${
+          className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center font-mono border transition-all duration-150 tactile-spring ${
             status.pressed
-              ? 'bg-[#c86443] text-white border-[#a84e31] font-bold shadow-xs'
-              : 'bg-[#f6f3ec] text-[#1b2930] border-[#ded7ca] shadow-xs'
+              ? 'bg-gradient-to-b from-[#d97352] to-[#b85334] text-white border-[#8f3a20] font-bold shadow-inner translate-y-0.5'
+              : 'bg-gradient-to-b from-[#ffffff] to-[#f4f0e6] text-[#1b2930] border-[#ded7ca] shadow-xs'
           }`}
         >
           <span className="text-xs font-black leading-none">{layerKey.label}</span>
-          <span className="text-[9px] opacity-65 mt-0.5 tabular-nums">#{keyIdx}</span>
+          <span className="text-[9px] opacity-75 mt-0.5 tabular-nums">#{keyIdx}</span>
         </div>
 
         <div className="flex flex-col gap-0.5">
@@ -115,8 +121,8 @@ export const SelectedKeyInspector: React.FC<SelectedKeyInspectorProps> = ({
         </div>
 
         <button
-          onClick={() => onSimulatePress(keyIdx)}
-          className="px-3 py-1.5 bg-[#f7f4ee] hover:bg-[#ede7da] text-[#1b2930] rounded-xl text-xs font-semibold border border-[#ded7ca] flex items-center gap-1.5 transition-colors shadow-xs"
+          onClick={handlePress}
+          className="px-3 py-1.5 bg-[#f7f4ee] hover:bg-[#ede7da] active:scale-95 text-[#1b2930] rounded-xl text-xs font-semibold border border-[#ded7ca] flex items-center gap-1.5 transition-all tactile-spring shadow-xs"
           title="Simulate pressing down this key"
         >
           <ArrowDown className="w-3.5 h-3.5 text-[#c86443]" />
@@ -125,7 +131,7 @@ export const SelectedKeyInspector: React.FC<SelectedKeyInspectorProps> = ({
 
         <button
           onClick={() => onOpenRemap(keyIdx)}
-          className="px-3.5 py-1.5 bg-[#153641] hover:bg-[#0f262e] text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-xs"
+          className="px-3.5 py-1.5 bg-[#153641] hover:bg-[#0f262e] active:scale-95 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-all tactile-spring shadow-xs"
         >
           <Edit3 className="w-3.5 h-3.5 text-[#5b8e85]" />
           <span>Remap</span>

@@ -47,3 +47,50 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #9e5b3d;
 }
+
+/* Micro-physics Keyframe Animations */
+@keyframes keycap-actuation-ripple {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes chassis-led-glow {
+  0%, 100% {
+    opacity: 0.4;
+    filter: drop-shadow(0 0 6px rgba(113, 147, 140, 0.3));
+  }
+  50% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 12px rgba(158, 91, 61, 0.45));
+  }
+}
+
+@keyframes rotary-detent-tick {
+  0% {
+    transform: scale(0.96) rotate(var(--rot-from, 0deg));
+  }
+  60% {
+    transform: scale(1.02) rotate(var(--rot-to, 15deg));
+  }
+  100% {
+    transform: scale(1) rotate(var(--rot-to, 15deg));
+  }
+}
+
+.animate-keycap-ripple {
+  animation: keycap-actuation-ripple 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-chassis-glow {
+  animation: chassis-led-glow 4s ease-in-out infinite;
+}
+
+.tactile-spring {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease-out;
+}
