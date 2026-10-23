@@ -79,7 +79,7 @@ export const HardwareInfoModal: React.FC<HardwareInfoModalProps> = ({ isOpen, on
                   </tr>
                   <tr>
                     <td className="p-2.5 font-bold text-[#1c282e]">Rotary Encoder</td>
-                    <td className="p-2.5 text-[#71938c] font-bold">GP20 (A), GP21 (B), GP2 (SW)</td>
+                    <td className="p-2.5 text-[#71938c] font-bold">GP20 (A), GP21 (B), GP4 (SW)</td>
                     <td className="p-2.5 text-[#57676e]">Quadrature menu input &amp; push-to-click</td>
                   </tr>
                 </tbody>

@@ -1,0 +1,29 @@
+{
+  "rule": "a-z are uppercased; result must be 1..4 characters, each printable ASCII 0x21..0x7E except '\"', '\\\\' and '@'. Anything else is rejected, never silently rewritten.",
+  "source": "firmware configNormalizeLabel() and configurator contract.js normalizeLabel() must both satisfy every vector",
+  "vectors": [
+    {"in": "ESC",   "out": "ESC"},
+    {"in": "esc",   "out": "ESC"},
+    {"in": "Home",  "out": "HOME"},
+    {"in": "7",     "out": "7"},
+    {"in": "N/",    "out": "N/"},
+    {"in": "N*",    "out": "N*"},
+    {"in": "N+",    "out": "N+"},
+    {"in": "N.",    "out": "N."},
+    {"in": "F13",   "out": "F13"},
+    {"in": "a_b-",  "out": "A_B-"},
+    {"in": "[x]",   "out": "[X]"},
+    {"in": "!?#$",  "out": "!?#$"},
+    {"in": "~",     "out": "~"},
+    {"in": "",      "out": null},
+    {"in": "ABCDE", "out": null},
+    {"in": "A B",   "out": null},
+    {"in": " A",    "out": null},
+    {"in": "A\"",   "out": null},
+    {"in": "A\\",   "out": null},
+    {"in": "@A",    "out": null},
+    {"in": "A\t",   "out": null},
+    {"in": "É",     "out": null},
+    {"in": "\u007f", "out": null}
+  ]
+}

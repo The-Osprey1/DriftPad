@@ -1,107 +1,109 @@
 # Testing
 
-DriftPad's firmware logic is verified by a Python test harness in [`tests/`](../tests). It models the Hall-effect signal chain and Rapid Trigger algorithm, builds the real firmware with PlatformIO and checks the UF2 output, and validates the configurator's serial protocol and profile schema.
+What is verified, by what, and what none of it proves. Run everything from the repository root
+(use the full interpreter path where `python` is not on PATH).
 
----
-
-## 1. Summary
-
-The automated verification harness for the DriftPad 16-key Hall-effect Rapid Trigger macropad has been built in **pure Python 3 (Python 3.12 standard library, zero external pip dependencies)**. The results below were recorded on a Windows host with PlatformIO installed. Without PlatformIO, the four build tests (`TC-13`, `TC-B1`, `TC-B2`, `TC-B3`) fail and everything else still passes.
-
-Snapshot of the master runner output from that run:
-
-```
-======================================================================================
-  DRIFTPAD 16-KEY HALL-EFFECT RAPID TRIGGER MACROPAD // AUTOMATED TEST HARNESS
-======================================================================================
-  Platform       : Windows (x86_64) // Python 3.12.10
-  Framework      : Python unittest (Standard Library)
-  Total Tests    : 25 Executed
-  Pass Rate      : 100.0% (25 Passed, 0 Failed, 0 Errors, 0 Skipped)
-  Execution Time : ~2.84 seconds (including full PlatformIO firmware compilation)
-  Overall Status : VERIFIED READY FOR MILESTONE M2 & FULL ACCEPTANCE
-======================================================================================
-```
-
----
-
-## 2. Test Execution Commands
-
-Run these from the repository root:
-
-### 2.1 Complete Master Test Suite
 ```bash
-python tests/run_all_tests.py
+python tests/run_all_tests.py            # diagnostic run: skips allowed, printed with reasons
+python tests/run_all_tests.py --release  # what CI runs: no skips, fresh firmware build, clean git tree
+python tests/run_all_tests.py --list     # suites, test counts and scopes; runs nothing
+python tests/run_all_tests.py --json out.json --clean
 ```
-*Executes all 25 test cases across all tiers, formatting a real-time status matrix with timing and status.*
 
-### 2.2 Individual Subsystem Runners
+Nothing in the suite touches a physical DriftPad. A green run means "the software behaves as specified
+against models and fakes"; [hardware-acceptance.md](hardware-acceptance.md) lists what still needs a
+pad. The runner labels every suite with a **scope** and prints the tools it found (host C++ compiler,
+headless Chrome, PlatformIO). Skipped and errored *classes* are reported with the number of tests they
+held, and in `--release` any skip, import error, missing tool, dirty tree or stale build fails the run.
+
+## 1. What each scope means
+
+| Scope | Meaning | Not proof of |
+|---|---|---|
+| compiled firmware on host | The production `.cpp` files (`hall.cpp`, the protocol core, `commands.cpp`, settings, `display_link`, keyboard output, ...) compiled for the PC with fake ADC, flash, USB and display, and driven through their real entry points | Timing on the RP2040, real flash, USB enumeration, the OLED |
+| headless browser | The configurator's real JavaScript modules and pages in headless Chrome against `fake_device.js` | WebSerial with a real port, other browsers |
+| headless browser + compiled firmware on host | The fake device's replies compared line by line with the compiled firmware's | |
+| synthetic model | The Python model of the sensor chain and Rapid Trigger (`test_dsp_harness.py`) | Real magnets, sensors and noise |
+| build artifacts | The PlatformIO build's UF2/ELF/BIN, flash layout and linker symbols | That the image runs |
+| source inspection | Text checks of the repository (limits, docs, workflow, offline pages, core ownership) | Behaviour |
+| host tooling with fakes | `tools/` scripts against fake serial ports, drives and subprocesses | The scripts on real hardware |
+| test validator self-check | Tests of the validators the other suites rely on | |
+
+## 2. Test modules
+
+| Module | Scope | What it establishes |
+|---|---|---|
+| `test_build` | build artifacts | PlatformIO build succeeds; UF2 structure and RP2040 family id; ELF/BIN belong to this run |
+| `test_sensor_faults` | compiled firmware on host | Isolated rail spike rejection, sustained-fault key release, healthy key isolation, fault reporting, rest-only recovery, boot faults and both sensor polarities |
+| `test_flash_layout` | build artifacts | The settings sectors (A/B slots, legacy sector at `_FS_start`) do not overlap the program |
+| `test_challenger2_verification` | build artifacts + source inspection | Binary layout, RAM/flash budgets, command coverage |
+| `test_dsp_harness` | synthetic model | Waveforms, Rapid Trigger accuracy, EMI/noise rejection, latency, auto-zero drift (TC-01..TC-12 and helpers) |
+| `test_adversarial_m2` | synthetic model | ADV-01..ADV-05: chatter at the RT floor, auto-zero lockout |
+| `test_firmware_parity` | compiled firmware on host | The same DSP scenarios on the real `hall.cpp`, and lockstep event equality with the Python model |
+| `test_protocol_core` | compiled firmware on host | Line reader, request ids, parser, JSON writer, dispatcher, transmit queue, deferred replies, command table |
+| `test_protocol_device` | compiled firmware on host | The whole firmware (`main.cpp`, `commands.cpp`) over a fake serial port: every command, every error code, limits, streaming |
+| `test_keyboard_output` | compiled firmware on host | Output ownership: no stuck keys, 6-key rollover, remap or layer change while held, host sleep, boot suppression, calibration gating; includes a reproduction of the pre-fix revision |
+| `test_persistence_device` | compiled firmware on host | A/B slot saves, torn-write and corruption recovery, legacy migration, calibration lifecycle and rules |
+| `test_display_link` | compiled firmware on host | Core 0 to core 1 snapshot (seqlock) and request counters |
+| `test_display_scheduling` | compiled firmware on host + source inspection | Display work never delays a scan; deferred `OLED_TEST`/`OLED_SCAN`; the encoder save waits for typing to stop; core ownership in source |
+| `test_oled_frames` | compiled firmware on host (real Adafruit GFX) | Pixel checks on the real OLED screens: no text wrap or clipping at the right edge, key box fill, every screen draws, idle dimming and its restore. Skipped until a PlatformIO build has installed Adafruit GFX |
+| `test_screensaver_player` | compiled firmware on host | 15 playlist checks: every shuffled bag contains all six animations, no adjacent repeat across bags, fixed selections, deterministic seeds, dwell/wipe timing, bounded delayed-frame handling, restart and clock wrap |
+| `test_screensaver_operations` | compiled firmware on host (real Adafruit GFX) | 17 operation checks: panel availability/retry, brightness and dim-timer resets, sleep/wake, tap capture, untrusted input, preserved menu selection, frame pacing, elapsed-time animation motion, bounded catch-up, actual mode reports, test-pattern clock wrap, cancellation of older active/queued test patterns and retained sleep after late panel initialization |
+| `test_timing` | compiled firmware on host | Scan statistics and the `TIMING` counters |
+| `test_config_schema` | test validator self-check + compiled firmware on host | Profile schema, adversarial profiles, protocol vectors against the firmware |
+| `test_configurator_contract` | headless browser + compiled firmware on host | `fake_device.js` answers exactly as the firmware does |
+| `test_configurator_js` | headless browser | The configurator's module tests (`configurator/tests/unit_tests.js`, `session_tests.js`), page-level tests (`app_tests.js`), and reproductions of the old page's defects |
+| `test_contract_consistency` | source inspection | Limits, error codes, factory keymaps, label rules, offline pages and these documents agree with the code |
+| `test_chrome_host` | host tooling with fakes | Browser path discovery, explicit sandbox opt-in and non-zero browser process handling |
+| `test_flash_tool` | host tooling with fakes | `tools/flash.py` and the UF2/ELF/manifest checks |
+| `test_release_tooling` | host tooling with fakes + source inspection | `check_toolchain.py`, `timing_capture.py`, `save_stress.py`, `acceptance_record.py`, `qualify_release.py`, the CI workflow |
+
+Classes named `TestPreFix...` compile earlier commits (`e2031e2`, `21834a8`) to show that the
+regression tests **fail** against the old implementation, so CI checks out the full history.
+Counts change; `--list` and the runner's summary are the source of truth, not this page.
+
+## 3. Requirements
+
+| Needs | Used by | Without it |
+|---|---|---|
+| Python 3.9+ (standard library) | everything | |
+| PlatformIO 6.2.0 with the locked platform | `test_build`, `test_flash_layout`, release | those suites fail |
+| A host C++ compiler: `$CXX`, else the pinned `ziglang` (`pip install -r tests/requirements-dev.txt`), else `g++`/`clang++` | every "compiled firmware on host" suite | skipped in a diagnostic run, fails `--release` |
+| Chrome or Edge (or `DRIFTPAD_CHROME`) | both browser suites | skipped in a diagnostic run, fails `--release` |
+| `pyserial`, Pillow (`tools/requirements.txt`) | the tool scripts only; tests use fakes | |
+
+CI (`.github/workflows/firmware.yml`, called by the desktop workflow) installs the locked toolchain (`firmware/toolchain.lock.json`) and
+runs `--release --clean` on Ubuntu 24.04 and Windows Server 2022; it uploads the reports and the
+build, and publishes nothing. The Linux runner alone explicitly opts into Chrome's `--no-sandbox`
+flag for the local test pages. Browser execution fails on a non-zero exit even if Chrome returns a
+partial results page. The compiler, Chrome/Edge and PlatformIO checks all use the same discovery
+functions as the tools that actually run them.
+
+## 4. Building and qualifying
+
 ```bash
-# DSP Engine, Waveform Generators, RT Reversals, Latency, & Auto-Zero Drift:
-python tests/test_dsp_harness.py
-
-# PlatformIO RP2040 Build, Firmware Binary, & UF2 Magic Header Verification:
-python tests/test_build.py
-
-# WebSerial Command Parser, 3-Layer Schema, & Zero-CDN Offline Validation:
-python tests/test_config_schema.py
+python tools/check_toolchain.py --require-libs   # installed toolchain equals firmware/toolchain.lock.json
+cd firmware && pio run                            # build; artifacts in firmware/.pio/build/pico/
+python tools/qualify_release.py                   # release gate: clean tree, changelog, locked toolchain, all suites, image checks
 ```
 
----
+`qualify_release.py` writes `dist/driftpad-<version>-<build>/` and publishes nothing.
 
-## 3. Tiered Test Architecture & Coverage Matrix
+## 5. Signal-chain derivations
 
-The suite is partitioned into four distinct validation tiers:
+### 5.1 60 Hz Comb Filter and Adaptive Smoothing
+A 60 Hz period is 16.67 samples at the 1 kHz scan, so samples 8 and 9 back, weighted 2/3 : 1/3, sit half a period behind and cancel the 60 Hz component when averaged with the current sample:
+$$c[n] = \tfrac{1}{2}\left(ADC[n] + \tfrac{2}{3}ADC[n-8] + \tfrac{1}{3}ADC[n-9]\right)$$
+Each sample then updates $ADC_{filt} \mathrel{+}= \alpha\,(target - ADC_{filt})$, with the target and $\alpha$ picked by state:
 
-| Tier | Category | Test Module | Test Cases | Objective & Coverage Scope |
-|:---:|:---|:---|:---:|:---|
-| **Tier 1** | **Physical Waveforms & ADC Model** | `test_dsp_harness.py` | `TC-W1`, `TC-W2`, `TC-W3`, `TC-P1`, `TC-S1` | Verifies continuous sinusoidal (1Hz–20Hz), triangle ramp (10–500 mm/s), 60Hz/120Hz EMI + thermal noise synthesis, Hall polarity auto-detection, and direct simulated travel injection. |
-| **Tier 2** | **DSP Algorithms & Rapid Trigger** | `test_dsp_harness.py` | `TC-01` through `TC-12` | Verifies Rapid Trigger turnaround accuracy on sub-millimeter reversals ($\ge 99\%$), zero false actuations under 10s 60Hz EMI, response latency ($\le 2.0\text{ms}$), and $\pm 100$ count auto-zero drift compensation. |
-| **Tier 3** | **Build & Binary Artifacts** | `test_build.py` | `TC-13`, `TC-B1`, `TC-B2`, `TC-B3` | Executes `python -m platformio run` in `firmware/` with exit code 0; validates `.pio/build/pico/firmware.uf2` existence, size bounds, 512-byte blocks, UF2 magic bytes, and RP2040 family ID (`0xe48bff56`). |
-| **Tier 4** | **Configurator & Protocol Schema** | `test_config_schema.py` | `TC-14`, `TC-15`, `TC-C1`, `TC-C2` | Validates WebSerial CLI protocol bounds, 3-layer keymap schema (16 keys per layer), 100% roundtrip fidelity on profile JSON backup/restore, and proves 0 external CDN dependencies in `configurator/index.html`. |
+| State | Target | $\alpha$ |
+|---|---|---|
+| Pressed and moving up by more than 1.5 counts (RT release), unless $d_0 \cdot d_8 < -2$ says it is EMI | raw | 0.95 |
+| Unpressed and moving fast ($|\Delta ADC| > 10$ or $|d_0| > 22$ counts) | raw | 0.95 |
+| Held: more than 30 samples in the current state | $c[n]$ | 0.25 |
+| Otherwise (state just changed) | raw | 0.90 |
 
----
-
-## 4. Test Case Manifest & Pass Criteria
-
-| Test ID | Method Name | Description | Authoritative Target | Measured Result | Status |
-|:---|:---|:---|:---:|:---:|:---:|
-| **TC-01** | `test_tc01_rapid_trigger_accuracy_0_20mm` | RT Turnaround Accuracy ($S_{rt} = 0.20\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
-| **TC-02** | `test_tc02_rapid_trigger_accuracy_0_15mm` | RT Turnaround Accuracy ($S_{rt} = 0.15\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
-| **TC-03** | `test_tc03_rapid_trigger_accuracy_0_10mm` | RT Turnaround Accuracy ($S_{rt} = 0.10\text{mm}$) | $\ge 99.0\%$ | **100.0%** (100/100 Up, 100/100 Down) | **PASS** |
-| **TC-04** | `test_tc04_rapid_trigger_accuracy_min_sensitivity_depth_sweep` | RT Turnaround Accuracy at floor ($S_{rt} = 0.10\text{mm}$, depths 1.0 to 3.0mm) | $\ge 99.0\%$ | **100.0%** | **PASS** |
-| **TC-05** | `test_tc05_rapid_trigger_multi_velocity_sweep` | Dynamic Velocity Sweep (20–100 mm/s) | $\ge 99.0\%$ | **100.0%** (180/180 events) | **PASS** |
-| **TC-06** | `test_tc06_quiescent_noise_stationary_hold` | 10s Rest with 60Hz EMI (20 cnts) + Thermal | 0 false KeyDowns | **0 false KeyDowns** (10,000 samples) | **PASS** |
-| **TC-07** | `test_tc07_in_stroke_stationary_hold_sub_rt_jitter` | 5s Held at 2.0mm with $0.5 \cdot S_{rt}$ Jitter | 0 false KeyUps | **0 false KeyUps** (5,000 samples) | **PASS** |
-| **TC-08** | `test_tc08_released_stationary_hold_sub_rt_jitter` | 5s Released at 1.5mm with $0.5 \cdot S_{rt}$ Jitter | 0 false KeyDowns | **0 false KeyDowns** (5,000 samples) | **PASS** |
-| **TC-09** | `test_tc09_actuation_latency_measurement` | Fixed Actuation Response Latency | Mean $\le 2.0\text{ms}$, Max $\le 4.0\text{ms}$ | **Mean 0.68ms, Max 1.40ms** | **PASS** |
-| **TC-10** | `test_tc10_release_latency_measurement` | Rapid Trigger Release Response Latency | Mean $\le 2.0\text{ms}$, Max $\le 4.0\text{ms}$ | **Mean 0.55ms, Max 1.00ms** | **PASS** |
-| **TC-11** | `test_tc11_positive_baseline_auto_zero_drift` | +100 Counts Drift over 500ms + 500ms Rest | 0 acts, err $\le 5$ cnts, travel $< 0.20\text{mm}$ | **0 acts, err = 0.80 cnts, max travel = 0.004mm** | **PASS** |
-| **TC-12** | `test_tc12_negative_baseline_auto_zero_drift` | -100 Counts Drift over 500ms + 500ms Rest | 0 acts, err $\le 5$ cnts, travel $< 0.20\text{mm}$ | **0 acts, err = 0.80 cnts, max travel = 0.001mm** | **PASS** |
-| **TC-13** | `test_tc13_platformio_clean_build` | `python -m platformio run` in `firmware/` | Exit Code 0 | **Exit Code 0** (Took 2.8s) | **PASS** |
-| **TC-14** | `test_tc14_webserial_protocol_commands` | Command Parser & Bounds Checking | Valid syntax & error bounds | **100% Parameter Validation** | **PASS** |
-| **TC-15** | `test_tc15_profile_json_backup_restore_roundtrip` | 3-Layer Profile Export & Restore Roundtrip | Exact deep equality | **100% Parameter Match across 48 Keys** | **PASS** |
-| **TC-P1** | `test_polarity_auto_detection` | Polarity Auto-Detection ($\pm 150$ count delta) | Auto latch $\pm$ polarity | **Both North & South Poles Verified** | **PASS** |
-| **TC-S1** | `test_simulated_travel_injection` | Direct Simulated Travel Injection | Bypasses ADC | **Verified Actuation & Release** | **PASS** |
-| **TC-W1** | `test_waveform_sinusoid_properties` | Sinusoid Waveform Generator (1Hz–20Hz) | Range $[0.0, 4.0]\text{mm}$ | **Verified 1.0, 5.0, 10.0, 20.0 Hz** | **PASS** |
-| **TC-W2** | `test_waveform_triangle_properties` | Triangle Ramp Generator (10–500 mm/s) | Linearity & peak travel | **Verified Slopes & Continuity** | **PASS** |
-| **TC-W3** | `test_waveform_noise_injection_statistics` | 60Hz EMI + Thermal Gaussian Noise | Mean 2548, 12-bit bounds | **Mean = 2548.0 counts** | **PASS** |
-| **TC-B1** | `test_firmware_uf2_artifact_exists_and_non_empty` | `.pio/build/pico/firmware.uf2` Exists | Size $> 0$ bytes | **180,224 bytes** | **PASS** |
-| **TC-B2** | `test_firmware_elf_and_bin_artifacts` | `firmware.elf` and `firmware.bin` Exist | Valid binaries | **926,088 bytes ELF, 90,108 bytes BIN** | **PASS** |
-| **TC-B3** | `test_uf2_binary_header_and_magic_numbers` | UF2 Block Format & RP2040 Family ID | Magic $0\times0\text{a}324655$, Family $0\text{xe}48\text{bff}56$ | **Header Valid (352 blocks, 256 B payload)** | **PASS** |
-| **TC-C1** | `test_offline_zero_external_dependencies` | Zero CDN / External Links in Configurator | Count == 0 | **0 External URLs Detected** | **PASS** |
-| **TC-C2** | `test_profile_schema_adversarial_rejection` | Adversarial Profile Corruptions Rejection | Rejection of bad schemas | **100% Malformed Payloads Rejected** | **PASS** |
-
----
-
-## 5. Mathematical & Algorithmic Derivations
-
-### 5.1 Velocity-Adaptive Low-Pass Filter
-To prevent chattering under 60Hz electromagnetic interference ($\pm 20$ ADC counts) while eliminating phase lag during esports-speed strokes:
-$$v_{est}[k] = \left| ADC_{input}[k] - ADC_{filt}[k-1] \right|$$
-$$\alpha[k] = \alpha_{min} + (\alpha_{max} - \alpha_{min}) \cdot \min\left(1.0, \frac{v_{est}[k]}{V_{thresh}}\right)$$
-$$ADC_{filt}[k] = ADC_{filt}[k-1] + \alpha[k] \cdot \left(ADC_{input}[k] - ADC_{filt}[k-1]\right)$$
-Where $\alpha_{min} = 0.25$, $\alpha_{max} = 0.95$, and $V_{thresh} = 2.0\text{ counts}$. At rest ($v_{est} \approx 0$), strong smoothing suppresses 60Hz ripple; during stroke motion, $\alpha \to 0.95$, yielding near-instant response ($< 1.0\text{ms}$ latency).
+Here $d_0 = ADC[n] - ADC_{filt}$ and $d_8$ is the same deviation 8 samples earlier. Held keys get the comb filter and strong smoothing; motion and releases bypass it for low latency.
 
 ### 5.2 Dynamic Rapid Trigger Peak/Valley Ratchet
 - **Actuation Rule (`!isPressed`):**
@@ -118,38 +120,40 @@ Where $\alpha_{min} = 0.25$, $\alpha_{max} = 0.95$, and $V_{thresh} = 2.0\text{ 
 
 ### 5.3 Auto-Zero Resting Baseline Drift Integrator
 To track ambient thermal and power supply drift up to $\pm 100\text{ counts}$ within $500\text{ms}$ ($200\text{ counts/second}$) without false triggering:
-- **Active condition:** $x_{calc} < 0.15\text{mm}$ and `!isPressed`.
-- **Integrator:**
-  $$\Delta_{step} = \text{sign}(ADC_{filt} - ADC_{rest}) \cdot \min\left(step_{max}, \max\left(1.0, \lceil \beta \cdot |ADC_{filt} - ADC_{rest}| \rceil\right)\right)$$
-  With $\beta = 0.10$ and $step_{max} = 2.0\text{ counts/sample}$, the baseline tracks drift smoothly with residual steady-state error $< 1.0\text{ counts}$ and max travel during drift $< 0.005\text{mm}$.
+- **Active condition:** $x_{calc} < 0.20\text{mm}$, a slow average of travel ($x_{drift} \mathrel{+}= 0.05(x_{calc} - x_{drift})$) below $0.15\text{mm}$, `!isPressed`, and no fast motion while polarity is still undetected.
+- **Integrator:** the error is low-pass filtered first, $e \mathrel{+}= 0.04\,(ADC_{filt} - ADC_{rest} - e)$, then, once $|e| > 0.01$:
+  $$\Delta_{step} = \text{sign}(e) \cdot \min\left(step_{max}, \max\left(0.1, \beta \cdot |e|\right)\right)$$
+  With $\beta = 0.20$ and $step_{max} = 2.0\text{ counts/sample}$ (`BETA`, `MAX_STEP` in `hall.h`), TC-11/TC-12 require tracking error $\le 5$ counts at 500 ms and $\le 2$ counts at steady state, with travel staying under the $0.20\text{mm}$ top deadzone throughout.
+- **Stationary step recovery:** a key that has never actuated this stroke, shows no finger contact, and sits still between $0.20$ and $0.80\text{mm}$ for 400 samples is treated as a rest offset and re-zeroed (ADV-04). A key resting there right after a keypress is not, since that is likely a finger (ADV-05).
 
 ---
 
-## 6. Known Variances & Non-Deterministic Factors
+## 6. Determinism
 
-1. **PlatformIO Toolchain Execution Time:**
-   - On the Windows host system, `python -m platformio run` requires between 2.5s and 3.5s depending on filesystem caching.
-2. **Thermal Noise Pseudo-Random Sequences:**
+1. **Thermal Noise Pseudo-Random Sequences:**
    - Gaussian thermal noise in synthetic waveform generators uses `random.gauss(0, sigma)` with an explicit seed (`seed=42` or `seed=123`) to ensure bit-exact, deterministic test repeatability across test runs.
-3. **Sub-Millisecond Timing Offsets:**
+2. **Sub-Millisecond Timing Offsets:**
    - Latency tests evaluate 10 sub-millisecond continuous phase offsets ($0.0\text{ms}$ to $0.9\text{ms}$) to verify that discrete sampling jitter does not cause latency spikes exceeding $4.0\text{ms}$.
 
 ---
 
-## 7. Test Files
-
-| File | Contents |
-|---|---|
-| [`tests/run_all_tests.py`](../tests/run_all_tests.py) | Master runner that prints the status table |
-| [`tests/test_dsp_harness.py`](../tests/test_dsp_harness.py) | DSP model, waveform generators, Rapid Trigger, noise, latency and drift tests |
-| [`tests/test_build.py`](../tests/test_build.py) | PlatformIO build and UF2 / ELF / BIN checks |
-| [`tests/test_config_schema.py`](../tests/test_config_schema.py) | Serial protocol, keymap schema and configurator checks |
-| [`tests/test_firmware_parity.py`](../tests/test_firmware_parity.py) | Compiles `firmware/src/hall.cpp` for the host, runs the TC and ADV suites against it, and requires identical key events to the Python model. Skipped when no `g++`/`clang++` is on PATH |
-| [`tests/test_adversarial_m2.py`](../tests/test_adversarial_m2.py) | Extra adversarial cases (chatter under noise, baseline lockout, OLED bounds). Not part of the master runner |
-| [`tests/test_challenger2_verification.py`](../tests/test_challenger2_verification.py) | Firmware binary layout and serial command coverage checks. Not part of the master runner |
-
-Run the last two directly, for example `python -m unittest tests.test_adversarial_m2`.
-
-## 8. Known Open Issues
+## 7. Known open issues
 
 - **Resolved: ADV-02.** At 0.05 mm the DSP produced 285 false releases in 5 s under 10-count 60 Hz EMI plus 3-sigma Gaussian noise. The RT sensitivity floor is now 0.10 mm (`HallKey::RT_SENS_MIN_MM`, mirrored by `HallKeyDSP.RT_SENS_MIN_MM`), where ADV-02 produces none.
+- **Scan rate.** Several constants are counted in samples, not milliseconds: the comb filter's `raw[n-8]`/`raw[n-9]` taps (half a 60 Hz period at 1 kHz), the 8-sample EMI correlation, the 30-sample held window and `_stationaryUnpressedMs`. They rely on the firmware's fixed 1 kHz scan in `loop()`. Unpaced, the loop ran at about 1,480 Hz, which put the comb taps near a third of a 60 Hz cycle instead of a half. `SCAN_RATE` reports the live rate and the longest gap between scans (about 1.5 ms at worst, when USB serial traffic delays a scan).
+- **Never measured on hardware:** every latency, noise and drift figure above comes from the synthetic model or the compiled `hall.cpp` fed synthetic samples. Real values come from [hardware-acceptance.md](hardware-acceptance.md) items HW-06, HW-10..HW-12 and HW-25..HW-28.
+
+
+## Studio and Windows integration
+
+Run `npm ci` and `npm run check` for Studio, desktop security/installer tests,
+TypeScript checks, and the web build. The build also copies the tested device
+interface into `dist/configurator/`. Development serves the same source at
+`/configurator/index.html`.
+
+`firmware.yml` runs the full firmware suite on Windows and Linux. `desktop.yml`
+builds the locked firmware and packages it with both interfaces. Desktop smoke
+checks exercise setup, the device page under the installed Content Security
+Policy, and return navigation without opening a physical port. See [desktop
+setup](desktop.md) for packaging commands. Browser tests against a simulated
+serial port and compiled host firmware are not physical-device acceptance.

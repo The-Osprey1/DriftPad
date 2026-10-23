@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   COMMON_KEYCODES,
   PRODUCTIVITY_SHORTCUT_PRESETS,
@@ -11,6 +11,7 @@ import {
   Keyboard as KeyboardIcon,
   ShieldAlert,
   Sparkles,
+  Search,
 } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
 
@@ -38,6 +39,7 @@ export const RemapModal: React.FC<RemapModalProps> = ({
   const [customActuationEnabled, setCustomActuationEnabled] = useState<boolean>(false);
   const [customActuationMm, setCustomActuationMm] = useState<number>(1.20);
   const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   useEffect(() => {
     if (isOpen && currentKey) {
@@ -45,6 +47,7 @@ export const RemapModal: React.FC<RemapModalProps> = ({
       setCode(currentKey.code || 0);
       setDescription(currentKey.description || '');
       setModifiers(currentKey.modifiers || {});
+      setSearchQuery('');
       if (currentKey.customActuation !== undefined) {
         setCustomActuationEnabled(true);
         setCustomActuationMm(currentKey.customActuation);
@@ -54,6 +57,31 @@ export const RemapModal: React.FC<RemapModalProps> = ({
       }
     }
   }, [isOpen, currentKey]);
+
+  const categories = ['All', 'Numbers', 'Letters', 'Navigation', 'Control', 'Symbols', 'Function/Macro'];
+
+  const filteredKeycodes = useMemo(() => {
+    return COMMON_KEYCODES.filter((k) => {
+      const matchCategory = activeCategory === 'All' || k.category === activeCategory;
+      const q = searchQuery.trim().toLowerCase();
+      const matchQuery =
+        !q ||
+        k.label.toLowerCase().includes(q) ||
+        k.code.toString().includes(q) ||
+        k.category.toLowerCase().includes(q);
+      return matchCategory && matchQuery;
+    });
+  }, [activeCategory, searchQuery]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -83,26 +111,26 @@ export const RemapModal: React.FC<RemapModalProps> = ({
     setDescription(preset.label);
   };
 
-  const categories = ['All', 'Numbers', 'Letters', 'Navigation', 'Control', 'Symbols', 'Function/Macro'];
-  const filteredKeycodes =
-    activeCategory === 'All'
-      ? COMMON_KEYCODES
-      : COMMON_KEYCODES.filter((k) => k.category === activeCategory);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="remap-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto"
+    >
       <div className="bg-[#ffffff] border border-[#e5dfd5] rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[95vh]">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-[#e5dfd5] bg-[#faf8f5]">
           <div className="flex items-center gap-2">
             <KeyboardIcon className="w-5 h-5 text-[#9e5b3d]" />
-            <h3 className="text-base font-bold text-[#1c282e]">
+            <h3 id="remap-modal-title" className="text-base font-bold text-[#1c282e]">
               Remap Key #{keyIdx} <span className="text-[#84949b] font-normal text-xs sm:text-sm">· {workspaceName}</span>
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="text-[#84949b] hover:text-[#1c282e] p-1 rounded-lg transition-colors"
+            aria-label="Close modal"
+            className="text-[#84949b] hover:text-[#1c282e] p-1 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9e5b3d]"
           >
             <X className="w-5 h-5" />
           </button>
@@ -256,9 +284,22 @@ export const RemapModal: React.FC<RemapModalProps> = ({
             )}
           </div>
 
-          {/* Keycode Selection List */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold text-[#57676e]">Select Character / Keycode:</span>
+          {/* Keycode Selection List with Quick Search & Categories */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-[#57676e]">Select Character / Keycode:</span>
+              <div className="relative flex-1 max-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-[#84949b] absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Filter keycodes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-2 py-1 text-xs bg-[#ffffff] border border-[#e5dfd5] rounded-lg focus:outline-none focus:border-[#9e5b3d]"
+                />
+              </div>
+            </div>
+
             <div className="flex gap-1 overflow-x-auto pb-1 text-[11px] scrollbar-none">
               {categories.map((c) => (
                 <button
@@ -276,26 +317,32 @@ export const RemapModal: React.FC<RemapModalProps> = ({
               ))}
             </div>
 
-            <div className="max-h-32 overflow-y-auto grid grid-cols-4 sm:grid-cols-6 gap-1 p-2 bg-[#faf8f5] rounded-xl border border-[#e5dfd5] scrollbar-thin">
-              {filteredKeycodes.map((k) => (
-                <button
-                  type="button"
-                  key={`${k.label}-${k.code}`}
-                  onClick={() => {
-                    setLabel(k.label);
-                    setCode(k.code);
-                    if (!description) setDescription(k.label);
-                  }}
-                  className={`py-1 px-1.5 rounded-lg text-xs font-mono border transition-all flex flex-col items-center ${
-                    code === k.code && label === k.label
-                      ? 'bg-[#9e5b3d]/15 text-[#9e5b3d] border-[#9e5b3d] font-bold'
-                      : 'bg-[#ffffff] text-[#1c282e] border-[#e5dfd5] hover:border-[#9e5b3d]/50'
-                  }`}
-                >
-                  <span className="font-bold truncate max-w-full">{k.label}</span>
-                  <span className="text-[9px] text-[#84949b]">{k.code}</span>
-                </button>
-              ))}
+            <div className="max-h-36 overflow-y-auto grid grid-cols-4 sm:grid-cols-6 gap-1 p-2 bg-[#faf8f5] rounded-xl border border-[#e5dfd5] scrollbar-thin">
+              {filteredKeycodes.length === 0 ? (
+                <div className="col-span-full py-4 text-center text-xs text-[#84949b]">
+                  No matching keycodes found.
+                </div>
+              ) : (
+                filteredKeycodes.map((k) => (
+                  <button
+                    type="button"
+                    key={`${k.label}-${k.code}`}
+                    onClick={() => {
+                      setLabel(k.label);
+                      setCode(k.code);
+                      if (!description) setDescription(k.label);
+                    }}
+                    className={`py-1 px-1.5 rounded-lg text-xs font-mono border transition-all flex flex-col items-center ${
+                      code === k.code && label === k.label
+                        ? 'bg-[#9e5b3d]/15 text-[#9e5b3d] border-[#9e5b3d] font-bold'
+                        : 'bg-[#ffffff] text-[#1c282e] border-[#e5dfd5] hover:border-[#9e5b3d]/50'
+                    }`}
+                  >
+                    <span className="font-bold truncate max-w-full">{k.label}</span>
+                    <span className="text-[9px] text-[#84949b]">{k.code}</span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
 

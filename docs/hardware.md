@@ -8,7 +8,7 @@ DriftPad V2 is built around a Raspberry Pi Pico (RP2040). The pin assignments be
 |---|---|---|
 | OLED SDA | GP0 | I2C0, SSD1306 128×64 at address `0x3C` |
 | OLED SCL | GP1 | I2C0 |
-| Encoder switch | GP2 | Active low with internal pull-up |
+| Encoder switch | GP4 | Fallback / rework pin, active low with internal pull-up |
 | Mux S0 | GP14 | CD74HC4067 channel select |
 | Mux S1 | GP15 | |
 | Mux S2 | GP16 | |
@@ -18,16 +18,6 @@ DriftPad V2 is built around a Raspberry Pi Pico (RP2040). The pin assignments be
 | Mux common | GP26 / ADC0 | 12-bit analog input shared by all 16 sensors |
 
 The SH1106 display driver is also supported: set `-DUSE_SH1106=1` in `build_flags` in [`firmware/platformio.ini`](../firmware/platformio.ini).
-
-### Encoder wiring test
-
-To check the encoder wiring on its own, flash the `pin_test` build from the `firmware/` folder:
-
-```
-pio run -e pin_test -t upload
-```
-
-It prints the raw A, B and switch levels over serial (115200 baud) every 250 ms. Each pin reads `1` at rest and `0` when its contact closes, so turning the knob should step A and B through `0` and `1`, and pressing it should show `SW: 0`. Flash the normal firmware again afterwards with `pio run -t upload`.
 
 ## Key to multiplexer channel map
 
@@ -86,3 +76,16 @@ Defined in [`firmware/src/config.cpp`](../firmware/src/config.cpp) and restored 
 ## Design files
 
 KiCad sources belong in [`hardware/kicad/`](../hardware/kicad) and enclosure models in [`hardware/mechanical/stl/`](../hardware/mechanical/stl) and [`hardware/mechanical/step/`](../hardware/mechanical/step). These folders are placeholders until the files are published.
+
+## Hardware readiness
+
+| Item | State |
+|---|---|
+| Pin map, mux channel map, default keymaps | Taken from `pins.h` and `config.cpp`; checked against the code by the tests, **not** against a built board |
+| Firmware | Flashed to the owner's assembled Pico during September 2026 troubleshooting; OLED operation reported after signal bypass repair. Full sensor, HID and acceptance checks remain pending |
+| KiCad project, gerbers, BOM, enclosure STL/STEP, assembly guide, photographs | **Not in this repository.** `hardware/` holds placeholders |
+| Sensor part number and magnet polarity | Not recorded here (the firmware auto-detects polarity); needed for anyone building a pad |
+| Real-world figures (rest noise, actuation depth, latency, scan gaps, save pause, power-cut behaviour) | None measured; procedure in [hardware-acceptance.md](hardware-acceptance.md) |
+
+Until the acceptance record is signed, treat every behaviour claim in these documents as verified in
+software only. What is missing before an external beta is listed in [beta-checklist.md](beta-checklist.md).

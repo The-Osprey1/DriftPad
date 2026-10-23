@@ -21,6 +21,8 @@ export class DriftPadDspEngine {
   private isSleeping: boolean = false;
   private screensaverActive: boolean = false;
   private forcedAnim: number = -1;
+  private streaming: boolean = false;
+  private streamTimer: ReturnType<typeof setInterval> | null = null;
   private onSerialOutput?: (line: string) => void;
 
   constructor(onSerialOutput?: (line: string) => void) {
@@ -67,6 +69,10 @@ export class DriftPadDspEngine {
   public setConfig(cfg: DeviceConfig) {
     this.config = cfg;
     this.saveConfigToStorage();
+  }
+
+  public dispose() {
+    this.stopStreaming();
   }
 
   public getKeysStatus(): KeyStatus[] {
@@ -375,7 +381,12 @@ export class DriftPadDspEngine {
 
     if (upper.startsWith('STREAM ')) {
       const en = parseInt(line.substring(7), 10) !== 0;
-      const resp = JSON.stringify({ status: 'ok', streaming: en });
+      if (en) {
+        this.startStreaming();
+      } else {
+        this.stopStreaming();
+      }
+      const resp = JSON.stringify({ status: 'ok', streaming: this.streaming });
       this.onSerialOutput?.(resp);
       return resp;
     }
@@ -388,6 +399,7 @@ export class DriftPadDspEngine {
     }
 
     if (upper === 'RESET') {
+      this.stopStreaming();
       this.config = JSON.parse(JSON.stringify(INITIAL_DEVICE_CONFIG));
       this.saveConfigToStorage();
       this.initKeys();
@@ -491,6 +503,29 @@ export class DriftPadDspEngine {
       localStorage.setItem('driftpad_config', JSON.stringify(this.config));
     } catch {
       // storage unavailable
+    }
+  }
+
+  private startStreaming() {
+    if (this.streaming) return;
+    this.streaming = true;
+    this.streamTimer = setInterval(() => {
+      this.onSerialOutput?.(
+        JSON.stringify({
+          type: 'status',
+          active_layer: this.config.active_layer,
+          last_key: this.lastActiveKey,
+          keys: this.getKeysStatus(),
+        })
+      );
+    }, 33);
+  }
+
+  private stopStreaming() {
+    this.streaming = false;
+    if (this.streamTimer) {
+      clearInterval(this.streamTimer);
+      this.streamTimer = null;
     }
   }
 

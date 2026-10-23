@@ -12,14 +12,11 @@ import {
   EncoderAction,
   OledThemeConfig,
   DEFAULT_OLED_THEME,
-  OledCustomBitmap,
-  KeyCalibrationData,
-  PinoutConfig,
-  DEFAULT_PINOUT_CONFIG,
 } from './types/driftpad';
+import { getValidatedBackupProfiles } from './services/profileValidation';
 import { SerialService, ConnectionMode } from './services/serialService';
-import { soundService } from './services/soundService';
 import { DriftPadDspEngine } from './engine/dspEngine';
+import { audioService } from './services/audioService';
 import { Header } from './components/Header';
 import { KeyMatrix } from './components/KeyMatrix';
 import { SelectedKeyInspector } from './components/SelectedKeyInspector';
@@ -31,9 +28,6 @@ import { RemapModal } from './components/RemapModal';
 import { HardwareInfoModal } from './components/HardwareInfoModal';
 import { OledThemeModal } from './components/OledThemeModal';
 import { FlashFirmwareModal } from './components/FlashFirmwareModal';
-import { OledPixelEditorModal } from './components/OledPixelEditorModal';
-import { SensorCalibrationModal } from './components/SensorCalibrationModal';
-import { PinoutConfigModal } from './components/PinoutConfigModal';
 import {
   Sliders,
   Disc3,
@@ -46,6 +40,8 @@ import {
   Info,
   Sparkles,
   Save,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -56,11 +52,19 @@ export const App: React.FC = () => {
   // Connection & Config State
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('virtual');
   const [deviceConfig, setDeviceConfig] = useState<DeviceConfig>(INITIAL_DEVICE_CONFIG);
+  const [activeLayerIdx, setActiveLayerIdx] = useState<number>(0);
   const [keysStatus, setKeysStatus] = useState<KeyStatus[]>([]);
   const [selectedSimKey, setSelectedSimKey] = useState<number>(0);
   const [currentSimTravel, setCurrentSimTravel] = useState<number>(0.0);
   const [hidEnabled, setHidEnabled] = useState<boolean>(false);
+  const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState<boolean>(true);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [commissioning, setCommissioning] = useState({
+    connected: false,
+    calibrated: false,
+    oledChecked: false,
+    saved: false,
+  });
 
   // Right Deck Tab: 'tuning' | 'encoder' | 'console' | 'tools'
   const [deckTab, setDeckTab] = useState<'tuning' | 'encoder' | 'console' | 'tools'>('tuning');
@@ -94,64 +98,13 @@ export const App: React.FC = () => {
   const [screensaverActive, setScreensaverActive] = useState<boolean>(false);
   const [forcedAnim, setForcedAnim] = useState<number>(-1);
 
-  // Modals & Persistence
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'saving'>('synced');
+  // Modals
   const [remapModalOpen, setRemapModalOpen] = useState<boolean>(false);
   const [remapKeyIdx, setRemapKeyIdx] = useState<number>(0);
+  const [remapLayerIdx, setRemapLayerIdx] = useState<number>(0);
   const [hardwareInfoOpen, setHardwareInfoOpen] = useState<boolean>(false);
   const [oledThemeModalOpen, setOledThemeModalOpen] = useState<boolean>(false);
   const [flashModalOpen, setFlashModalOpen] = useState<boolean>(false);
-  const [pixelEditorOpen, setPixelEditorOpen] = useState<boolean>(false);
-  const [calibrationModalOpen, setCalibrationModalOpen] = useState<boolean>(false);
-  const [pinoutModalOpen, setPinoutModalOpen] = useState<boolean>(false);
-
-  // Hardware Pinout Configuration
-  const [pinoutConfig, setPinoutConfig] = useState<PinoutConfig>(() => {
-    try {
-      const saved = localStorage.getItem('driftpad_pinout_config');
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // ignore
-    }
-    return DEFAULT_PINOUT_CONFIG;
-  });
-
-  // Hall Effect Sensor ADC Calibration Table
-  const [calibrationTable, setCalibrationTable] = useState<KeyCalibrationData[]>(() => {
-    try {
-      const saved = localStorage.getItem('driftpad_hall_calibration');
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // ignore
-    }
-    return Array.from({ length: 16 }, (_, idx) => ({
-      idx,
-      restAdc: 1950,
-      bottomAdc: 3420,
-      noiseFloor: 6,
-      isCalibrated: false,
-    }));
-  });
-
-  // Custom OLED Bitmap
-  const [customBitmap, setCustomBitmap] = useState<OledCustomBitmap | null>(() => {
-    try {
-      const saved = localStorage.getItem('driftpad_custom_bitmap');
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // ignore
-    }
-    return null;
-  });
-
-  // Typing & Speedometer Metrics (APM / CPS)
-  const [totalKeystrokes, setTotalKeystrokes] = useState<number>(() => {
-    const saved = localStorage.getItem('driftpad_total_keystrokes');
-    return saved ? parseInt(saved, 10) || 0 : 42;
-  });
-  const [apm, setApm] = useState<number>(128);
-  const [cps, setCps] = useState<number>(2.4);
-  const keyTimestampsRef = useRef<number[]>([]);
 
   // Heatmap Usage Statistics per Profile
   const [heatmapCounts, setHeatmapCounts] = useState<Record<string, Record<number, number>>>(() => {
@@ -208,40 +161,11 @@ export const App: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // APM and CPS live calculation ticker
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      // Keep events within last 12 seconds
-      keyTimestampsRef.current = keyTimestampsRef.current.filter((t) => now - t <= 12000);
-
-      const count12 = keyTimestampsRef.current.length;
-      const count2 = keyTimestampsRef.current.filter((t) => now - t <= 2000).length;
-
-      // APM = (count in 12s / 12) * 60
-      const currentApm = count12 > 0 ? (count12 / 12) * 60 : 0;
-      const currentCps = count2 > 0 ? count2 / 2.0 : 0;
-
-      setApm(Math.round(currentApm));
-      setCps(parseFloat(currentCps.toFixed(1)));
-    }, 600);
-
-    return () => clearInterval(interval);
-  }, []);
-
   const recordKeyPress = useCallback(
     (keyIdx: number) => {
-      keyTimestampsRef.current.push(Date.now());
-      setTotalKeystrokes((prev) => {
-        const next = prev + 1;
-        try {
-          localStorage.setItem('driftpad_total_keystrokes', next.toString());
-        } catch {
-          // ignore
-        }
-        return next;
-      });
-
+      if (audioFeedbackEnabled) {
+        audioService.playKeyClick('down');
+      }
       setHeatmapCounts((prev) => {
         const currentProfileCounts = prev[activeProfileId] || {};
         const newCount = (currentProfileCounts[keyIdx] || 0) + 1;
@@ -260,7 +184,7 @@ export const App: React.FC = () => {
         return next;
       });
     },
-    [activeProfileId]
+    [activeProfileId, audioFeedbackEnabled]
   );
 
   const handleResetHeatmap = useCallback(() => {
@@ -307,12 +231,16 @@ export const App: React.FC = () => {
             active_layer: data.active_layer ?? prev.active_layer,
             layers: data.layers ?? prev.layers,
           }));
+          if (data.active_layer !== undefined) {
+            setActiveLayerIdx(data.active_layer);
+          }
         } else if (data.type === 'status') {
           if (data.keys) {
             setKeysStatus(data.keys);
           }
           if (data.active_layer !== undefined) {
             setDeviceConfig((prev) => ({ ...prev, active_layer: data.active_layer! }));
+            setActiveLayerIdx(data.active_layer!);
           }
         } else if (data.type === 'sim_event') {
           if (data.key !== undefined) {
@@ -391,6 +319,7 @@ export const App: React.FC = () => {
 
     engine.setConfig(initialConfig);
     setDeviceConfig(initialConfig);
+    setActiveLayerIdx(0);
     setKeysStatus(engine.getKeysStatus());
 
     addLog('INFO', `DriftPad Studio loaded: [${initialProfile.name}]`);
@@ -399,77 +328,41 @@ export const App: React.FC = () => {
     serial.setCallbacks({
       onLineReceived: (line) => handleIncomingLine(line),
       onLineSent: () => {},
-      onStatusChange: (mode) => setConnectionMode(mode),
+      onStatusChange: (mode) => {
+        setConnectionMode(mode);
+        setCommissioning((prev) => ({ ...prev, connected: mode === 'hardware' }));
+      },
       onLog: (dir, text) => addLog(dir, text),
     });
 
     return () => {
       serial.disconnect();
+      engine.dispose();
     };
   }, [addLog, handleIncomingLine]);
 
   const saveProfilesToStorage = (updatedProfiles: ProductivityProfile[]) => {
-    setSyncStatus('saving');
     setProfiles(updatedProfiles);
     try {
       localStorage.setItem('driftpad_profiles', JSON.stringify(updatedProfiles));
-    } catch {
-      // ignore
-    }
-    setTimeout(() => {
-      setSyncStatus('synced');
-    }, 350);
-  };
-
-  const handleResetToDefaults = () => {
-    if (window.confirm('Reset all workspaces to factory defaults? Any custom bindings will be replaced with defaults.')) {
-      saveProfilesToStorage(PRODUCTIVITY_PROFILES);
-      handleSelectProfile('number-pad');
-      showToast('Workspaces reset to factory defaults');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      addLog('ERR', `Could not persist profiles: ${message}`);
+      showToast('Profiles changed, but browser storage is unavailable');
     }
   };
 
-  const handleSaveCustomBitmap = (bitmap: OledCustomBitmap) => {
-    setCustomBitmap(bitmap);
-    try {
-      localStorage.setItem('driftpad_custom_bitmap', JSON.stringify(bitmap));
-    } catch {
-      // ignore
-    }
-    showToast(`OLED Graphic updated: "${bitmap.name}"`);
-  };
-
-  const handleSaveCalibration = (table: KeyCalibrationData[]) => {
-    setCalibrationTable(table);
-    try {
-      localStorage.setItem('driftpad_hall_calibration', JSON.stringify(table));
-    } catch {
-      // ignore
-    }
-    showToast('Hall sensor calibration saved & verified');
-    addLog('INFO', 'Calibrated 16 Hall sensors: baselines and magnetic travel locked.');
-  };
-
-  const handleSavePinout = (cfg: PinoutConfig) => {
-    setPinoutConfig(cfg);
-    try {
-      localStorage.setItem('driftpad_pinout_config', JSON.stringify(cfg));
-    } catch {
-      // ignore
-    }
-    showToast(`RP2040 Pinout saved: ADC GP${cfg.adcPin}, S0-S3 GP${cfg.muxS0}..${cfg.muxS3}`);
-    addLog('INFO', `Updated RP2040 GPIO wiring: ADC GP${cfg.adcPin}, OLED GP${cfg.oledSda}/${cfg.oledScl}`);
-  };
-
-  const handleSelectProfile = (profileId: string) => {
-    const target = profiles.find((p) => p.id === profileId);
+  const applyProfile = (target: ProductivityProfile) => {
+    const profileId = target.id;
     if (!target) return;
 
     setActiveProfileId(profileId);
     try {
       localStorage.setItem('driftpad_active_profile_id', profileId);
-    } catch {
-      // ignore
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      addLog('ERR', `Could not persist active profile: ${message}`);
+      showToast('Active profile changed, but browser storage is unavailable');
     }
 
     const nextConfig: DeviceConfig = {
@@ -483,6 +376,7 @@ export const App: React.FC = () => {
     };
 
     setDeviceConfig(nextConfig);
+    setActiveLayerIdx(0);
     if (dspEngineRef.current) {
       dspEngineRef.current.setConfig(nextConfig);
       setKeysStatus(dspEngineRef.current.getKeysStatus());
@@ -495,6 +389,18 @@ export const App: React.FC = () => {
 
     addLog('INFO', `Switched to profile: ${target.name}`);
     showToast(`Loaded profile: ${target.name}`);
+  };
+
+  const handleSelectLayer = (lIdx: number) => {
+    setActiveLayerIdx(lIdx);
+    setDeviceConfig((prev) => ({ ...prev, active_layer: lIdx }));
+    sendSerialCommand(`SET_LAYER ${lIdx}`);
+    showToast(`Active Layer: L${lIdx}`);
+  };
+
+  const handleSelectProfile = (profileId: string, sourceProfiles = profiles) => {
+    const target = sourceProfiles.find((p) => p.id === profileId);
+    if (target) applyProfile(target);
   };
 
   const handleExportProfiles = () => {
@@ -517,25 +423,35 @@ export const App: React.FC = () => {
   };
 
   const handleImportProfiles = (file: File) => {
+    // Limit import size to 500KB to prevent DoS via large JSON payloads
+    if (file.size > 500 * 1024) {
+      alert('File size exceeds maximum allowed limit of 500KB.');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
         const parsed = JSON.parse(text);
-        if (parsed && Array.isArray(parsed.profiles) && parsed.profiles.length > 0) {
-          saveProfilesToStorage(parsed.profiles);
-          if (parsed.active_profile_id) {
-            handleSelectProfile(parsed.active_profile_id);
-          } else {
-            handleSelectProfile(parsed.profiles[0].id);
-          }
-          addLog('INFO', `Imported ${parsed.profiles.length} profiles.`);
-          showToast(`Imported ${parsed.profiles.length} profiles`);
+        const importedProfiles = getValidatedBackupProfiles(parsed);
+        if (importedProfiles) {
+          saveProfilesToStorage(importedProfiles);
+          const requestedId =
+            typeof parsed.active_profile_id === 'string' ? parsed.active_profile_id : '';
+          const selectedId = importedProfiles.some((p) => p.id === requestedId)
+            ? requestedId
+            : importedProfiles[0].id;
+          applyProfile(importedProfiles.find((p) => p.id === selectedId)!);
+          addLog('INFO', `Imported ${importedProfiles.length} validated profiles.`);
+          showToast(`Imported ${importedProfiles.length} profiles`);
         } else {
-          alert('Invalid profile backup file.');
+          addLog('ERR', 'Rejected invalid profile backup file.');
+          showToast('Invalid profile backup: no changes were applied');
         }
       } catch (err) {
-        alert(`Failed to parse JSON: ${String(err)}`);
+        addLog('ERR', `Failed to parse profile backup: ${String(err)}`);
+        showToast('Could not parse profile backup JSON');
       }
     };
     reader.readAsText(file);
@@ -616,6 +532,9 @@ export const App: React.FC = () => {
   };
 
   const handleTriggerEncoderAction = (action: EncoderAction, direction: 'cw' | 'ccw' | 'click') => {
+    if (audioFeedbackEnabled) {
+      audioService.playKeyClick('down');
+    }
     addLog('TX', `ENCODER [${direction.toUpperCase()}]: ${action.label}`);
     showToast(`Encoder: ${action.label}`);
 
@@ -625,10 +544,12 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleSaveRemapKey = (keyIdx: number, updatedKey: LayerKey) => {
+  const handleSaveRemapKey = (keyIdx: number, updatedKey: LayerKey, targetLayerIdx?: number) => {
+    const layerToSave = targetLayerIdx !== undefined ? targetLayerIdx : activeLayerIdx;
+
     setDeviceConfig((prev) => {
       const nextLayers = prev.layers.map((lArr, lIdx) => {
-        if (lIdx !== 0) return lArr;
+        if (lIdx !== layerToSave) return lArr;
         const newKeys = [...lArr];
         newKeys[keyIdx] = updatedKey;
         return newKeys;
@@ -637,14 +558,14 @@ export const App: React.FC = () => {
     });
 
     if (dspEngineRef.current) {
-      dspEngineRef.current.updateKey(0, keyIdx, updatedKey);
+      dspEngineRef.current.updateKey(layerToSave, keyIdx, updatedKey);
       setKeysStatus(dspEngineRef.current.getKeysStatus());
     }
 
     const updatedProfiles = profiles.map((p) => {
       if (p.id === activeProfileId) {
         const newLayers = p.layers.map((lArr, lIdx) => {
-          if (lIdx !== 0) return lArr;
+          if (lIdx !== layerToSave) return lArr;
           const newKeys = [...lArr];
           newKeys[keyIdx] = updatedKey;
           return newKeys;
@@ -655,24 +576,22 @@ export const App: React.FC = () => {
     });
     saveProfilesToStorage(updatedProfiles);
 
-    sendSerialCommand(`SET_KEY 0 ${keyIdx} ${updatedKey.code} ${updatedKey.label}`);
-    addLog('INFO', `Remapped Key #${keyIdx} -> [${updatedKey.label}]`);
-    showToast(`Remapped Key #${keyIdx}: ${updatedKey.label}`);
+    sendSerialCommand(`SET_KEY ${layerToSave} ${keyIdx} ${updatedKey.code} ${updatedKey.label}`);
+    addLog('INFO', `Remapped Key #${keyIdx} on L${layerToSave} -> [${updatedKey.label}]`);
+    showToast(`Remapped Key #${keyIdx} (L${layerToSave}): ${updatedKey.label}`);
+  };
+
+  const handleLayerChange = (layer: number) => {
+    if (layer < 0 || layer > 2) return;
+    setActiveLayerIdx(layer);
+    setDeviceConfig((prev) => ({ ...prev, active_layer: layer }));
+    sendSerialCommand(`SET_LAYER ${layer}`);
+    showToast(`Editing layer ${layer}`);
   };
 
   const handleConnectToggle = async () => {
-    if (connectionMode === 'hardware') {
-      await serialServiceRef.current.disconnect();
-      setConnectionMode('virtual');
-      addLog('INFO', 'Switched to Digital Twin DSP mode.');
-      showToast('Disconnected from hardware USB');
-    } else {
-      const ok = await serialServiceRef.current.connectHardware();
-      if (ok) {
-        setConnectionMode('hardware');
-        showToast('Connected to DriftPad USB');
-      }
-    }
+    await serialServiceRef.current.disconnect();
+    window.location.assign(new URL('configurator/index.html', window.location.href).href);
   };
 
   const handleToggleVirtualMode = () => {
@@ -748,12 +667,20 @@ export const App: React.FC = () => {
     const next = !hidEnabled;
     setHidEnabled(next);
     sendSerialCommand(`SET_HID ${next ? 1 : 0}`);
-    showToast(next ? 'Keyboard HID output enabled' : 'Keyboard HID output disabled');
+    showToast(next ? 'Simulated keyboard output enabled' : 'Simulated keyboard output disabled');
+  };
+
+  const handleToggleAudioFeedback = () => {
+    const next = !audioFeedbackEnabled;
+    setAudioFeedbackEnabled(next);
+    audioService.setEnabled(next);
+    showToast(next ? 'Audio click feedback enabled' : 'Audio click feedback muted');
   };
 
   const handleSaveFlash = () => {
     sendSerialCommand('SAVE');
-    showToast('Committed settings to RP2040 Flash');
+    setCommissioning((prev) => ({ ...prev, saved: true }));
+    showToast('Simulated save. Use Connect USB to save settings on your pad.');
   };
 
   const handleFactoryReset = () => {
@@ -768,7 +695,14 @@ export const App: React.FC = () => {
 
   const handleCalibrate = () => {
     sendSerialCommand('CALIBRATE');
-    showToast('Rest baselines calibrated');
+    setCommissioning((prev) => ({ ...prev, calibrated: true }));
+    showToast('Simulated calibration. Use Connect USB to calibrate your pad.');
+  };
+
+  const handleOledScan = () => {
+    sendSerialCommand('OLED_SCAN');
+    setCommissioning((prev) => ({ ...prev, oledChecked: true }));
+    showToast('OLED scan requested');
   };
 
   const handleScreensaver = () => {
@@ -777,9 +711,7 @@ export const App: React.FC = () => {
   };
 
   const handleBootsel = () => {
-    if (window.confirm('Reboot RP2040 into USB Bootloader for flashing?')) {
-      sendSerialCommand('BOOTSEL');
-    }
+    setFlashModalOpen(true);
   };
 
   // Keyboard shortcut listener for testing
@@ -821,7 +753,6 @@ export const App: React.FC = () => {
         setSelectedSimKey(idx);
         recordKeyPress(idx);
         handleSimTravelChange(idx, 2.5);
-        soundService.playSwitchDown(2.5, true);
       }
     };
 
@@ -830,7 +761,6 @@ export const App: React.FC = () => {
       const idx = keyMapToIdx[e.code];
       if (idx !== undefined) {
         handleSimTravelChange(idx, 0.0);
-        soundService.playSwitchUp();
       }
     };
 
@@ -849,7 +779,7 @@ export const App: React.FC = () => {
     label: '',
   };
 
-  const currentWorkspaceKeys = deviceConfig.layers[0] || [];
+  const currentWorkspaceKeys = deviceConfig.layers[activeLayerIdx] || deviceConfig.layers[0] || [];
   const currentLayerKeyDef = currentWorkspaceKeys[selectedSimKey] || {
     idx: selectedSimKey,
     code: 0,
@@ -872,7 +802,6 @@ export const App: React.FC = () => {
         connectionMode={connectionMode}
         profiles={profiles}
         activeProfileId={activeProfileId}
-        syncStatus={syncStatus}
         onSelectProfile={handleSelectProfile}
         onExportProfiles={handleExportProfiles}
         onImportProfiles={handleImportProfiles}
@@ -881,40 +810,25 @@ export const App: React.FC = () => {
         onConnectToggle={handleConnectToggle}
         onToggleVirtualMode={handleToggleVirtualMode}
         onOpenFlashFirmware={() => setFlashModalOpen(true)}
-        onResetDefaults={handleResetToDefaults}
-        onOpenSerialConsole={() => setDeckTab('console')}
-        onOpenHardwareInfo={() => setHardwareInfoOpen(true)}
-        onOpenCalibration={() => setCalibrationModalOpen(true)}
-        onOpenPinoutConfig={() => setPinoutModalOpen(true)}
       />
 
       {/* Main Studio Grid: 2D Hardware Chassis & Controller Deck */}
+      <p className="text-xs text-[#5a6a72] px-2">
+        Studio previews and profiles stay on this computer. Use <strong>Connect USB</strong> to configure, calibrate, and save settings on your pad.
+      </p>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Left Column (7 cols): The 2D Hardware Macropad Chassis */}
         <div className="lg:col-span-7 flex flex-col gap-3">
-          {/* Physical Pad Hardware Enclosure with Ambient Underglow */}
-          <div className="relative group">
-            {/* Ambient Chassis Underglow Bar */}
-            <div
-              aria-hidden="true"
-              className="absolute -inset-1 rounded-[28px] bg-gradient-to-r from-[#71938c]/20 via-[#9e5b3d]/25 to-[#71938c]/20 blur-md pointer-events-none animate-chassis-glow"
-            />
-
-            <div className="relative bg-gradient-to-b from-[#eee8dc] via-[#e6dfd1] to-[#ded6c7] border-2 border-[#cfc4b2] rounded-3xl p-3.5 sm:p-5 shadow-[0_12px_28px_-6px_rgba(27,41,48,0.09),0_4px_10px_-2px_rgba(27,41,48,0.05)] flex flex-col gap-3.5">
-              {/* Chassis Header Bar */}
-              <div className="flex items-center justify-between text-[11px] font-mono text-[#5a6a72] border-b border-[#ded7ca] pb-2">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                      connectionMode === 'hardware'
-                        ? 'bg-[#15803d] shadow-[0_0_8px_rgba(21,128,61,0.6)]'
-                        : 'bg-[#5b8e85] shadow-[0_0_6px_rgba(91,142,133,0.4)]'
-                    }`}
-                  />
-                  <span className="font-bold tracking-wider text-[#1b2930]">DRIFTPAD · RP2040</span>
-                </div>
-                <span className="text-[#71828a] font-semibold text-[10px]">16-KEY HALL EFFECT CHASSIS</span>
+          {/* Physical Pad Hardware Enclosure */}
+          <div className="bg-[#ebe5d9] border-2 border-[#d3c9b8] rounded-3xl p-3.5 sm:p-5 shadow-sm flex flex-col gap-3.5 relative">
+            {/* Chassis Header Bar */}
+            <div className="flex items-center justify-between text-[11px] font-mono text-[#5a6a72] border-b border-[#ded7ca] pb-2">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${connectionMode === 'hardware' ? 'bg-[#15803d]' : 'bg-[#5b8e85]'}`} />
+                <span className="font-bold tracking-wider text-[#1b2930]">DRIFTPAD · RP2040</span>
               </div>
+              <span className="text-[#71828a] font-semibold text-[10px]">16-KEY HALL EFFECT CHASSIS</span>
+            </div>
 
             {/* Top Deck: OLED Screen on Left, Rotary Dial on Right */}
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-stretch">
@@ -925,20 +839,14 @@ export const App: React.FC = () => {
                   rtEnabled={deviceConfig.rt_enabled}
                   keys={keysStatus}
                   lastActiveKey={selectedSimKey}
-                  lastActiveKeyTime={Date.now()}
                   profileName={activeProfile.name}
                   knobName={deviceConfig.encoder?.name || 'Dial'}
                   theme={activeProfile.oledTheme || DEFAULT_OLED_THEME}
                   isSleeping={isSleeping}
                   screensaverActive={screensaverActive}
                   forcedAnim={forcedAnim}
-                  totalKeystrokes={totalKeystrokes}
-                  apm={apm}
-                  cps={cps}
-                  customBitmap={customBitmap}
                   onSendSerialCommand={sendSerialCommand}
                   onOpenThemeModal={() => setOledThemeModalOpen(true)}
-                  onOpenPixelEditor={() => setPixelEditorOpen(true)}
                 />
               </div>
 
@@ -957,16 +865,42 @@ export const App: React.FC = () => {
             {/* Subtle Hardware Hairline Divider */}
             <div className="border-t border-[#d5ccc0]" />
 
-            {/* Bottom Deck: 4x4 Tactile Key Matrix */}
+            {/* Bottom Deck: 4x4 Tactile Key Matrix with Multi-Layer Navigation */}
             <div className="bg-[#ffffff] border border-[#d5ccc0] rounded-2xl p-3.5 sm:p-4 shadow-xs">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#57676e]">Active key layer</p>
+                  <p className="text-[11px] text-[#84949b]">Remaps and simulations target the selected layer.</p>
+                </div>
+                <div className="flex gap-1 rounded-xl bg-[#f6f3ec] p-1 border border-[#ded7ca]">
+                  {[0, 1, 2].map((layer) => (
+                    <button
+                      key={layer}
+                      type="button"
+                      onClick={() => handleLayerChange(layer)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                        deviceConfig.active_layer === layer
+                          ? 'bg-[#153641] text-white shadow-xs'
+                          : 'text-[#57676e] hover:text-[#1b2930]'
+                      }`}
+                    >
+                      L{layer}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <KeyMatrix
                 keys={currentWorkspaceKeys}
+                allLayers={deviceConfig.layers}
+                activeLayerIdx={activeLayerIdx}
+                onSelectLayerIdx={handleSelectLayer}
                 keysStatus={keysStatus}
                 selectedSimKey={selectedSimKey}
                 workspaceName={activeProfile.name}
                 pressCounts={heatmapCounts[activeProfileId] || {}}
-                onOpenRemap={(idx) => {
+                onOpenRemap={(idx, lIdx) => {
                   setRemapKeyIdx(idx);
+                  setRemapLayerIdx(lIdx !== undefined ? lIdx : activeLayerIdx);
                   setRemapModalOpen(true);
                 }}
                 onSelectSimKey={(idx) => {
@@ -978,7 +912,6 @@ export const App: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
 
         {/* Right Column (5 cols): Inspection Drawer & DSP Tuning Deck */}
         <div className="lg:col-span-5 flex flex-col gap-3.5">
@@ -990,6 +923,7 @@ export const App: React.FC = () => {
             workspaceName={activeProfile.name}
             onOpenRemap={(idx: number) => {
               setRemapKeyIdx(idx);
+              setRemapLayerIdx(activeLayerIdx);
               setRemapModalOpen(true);
             }}
             onSimulatePress={(idx: number) => {
@@ -1082,13 +1016,52 @@ export const App: React.FC = () => {
 
             {deckTab === 'tools' && (
               <div className="flex flex-col gap-3 text-xs">
+                <div className="p-3 bg-[#eef6f3] rounded-xl border border-[#b8d8cf]">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div>
+                      <span className="font-bold text-[#153641]">Simulator checks</span>
+                      <p className="text-[10px] text-[#5a6a72] mt-0.5">
+                        These checks only exercise the Digital Twin. Use Connect USB for your pad.
+                      </p>
+                    </div>
+                    <span className="font-mono text-[10px] text-[#5b8e85]">
+                      {Object.values(commissioning).filter(Boolean).length}/4
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                    {[
+                      ['connected', 'Device connection'],
+                      ['calibrated', 'Calibrate sensors'],
+                      ['oledChecked', 'Scan OLED'],
+                      ['saved', 'Save to flash'],
+                    ].map(([key, label]) => (
+                      <div
+                        key={key}
+                        className={`rounded-lg px-2 py-1.5 border ${
+                          commissioning[key as keyof typeof commissioning]
+                            ? 'bg-white border-[#8fc2b5] text-[#15803d]'
+                            : 'bg-[#ffffff]/60 border-[#cfe4de] text-[#5a6a72]'
+                        }`}
+                      >
+                        {commissioning[key as keyof typeof commissioning] ? '✓' : '○'} {label}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOledScan}
+                    className="mt-2 w-full rounded-lg border border-[#b8d8cf] bg-white px-2 py-1.5 text-[10px] font-semibold text-[#153641] hover:bg-[#f5fbf9]"
+                  >
+                    Run OLED scan
+                  </button>
+                </div>
                 <div className="p-3 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] flex items-center justify-between">
                   <div className="flex flex-col">
                     <span className="font-bold text-[#1b2930] flex items-center gap-1.5">
-                      <Shield className="w-3.5 h-3.5 text-[#153641]" /> Keyboard HID Output
+                      <Shield className="w-3.5 h-3.5 text-[#153641]" /> Simulated Keyboard Output
                     </span>
                     <span className="text-[11px] text-[#5a6a72]">
-                      Send real keystrokes to connected OS
+                      Preview output state in the Digital Twin
                     </span>
                   </div>
                   <button
@@ -1103,13 +1076,34 @@ export const App: React.FC = () => {
                   </button>
                 </div>
 
+                <div className="p-3 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#1b2930] flex items-center gap-1.5">
+                      {audioFeedbackEnabled ? <Volume2 className="w-3.5 h-3.5 text-[#c86443]" /> : <VolumeX className="w-3.5 h-3.5 text-[#5a6a72]" />} Key Click Audio Feedback
+                    </span>
+                    <span className="text-[11px] text-[#5a6a72]">
+                      Synthesize mechanical switch clicks in simulator
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleToggleAudioFeedback}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold font-mono transition-colors border ${
+                      audioFeedbackEnabled
+                        ? 'bg-[#c86443]/15 text-[#c86443] border-[#c86443]/30'
+                        : 'bg-[#ffffff] text-[#5a6a72] border-[#ded7ca]'
+                    }`}
+                  >
+                    {audioFeedbackEnabled ? 'ACTIVE' : 'MUTED'}
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={handleCalibrate}
                     className="p-3 bg-[#faf7f2] hover:bg-[#ede7da] rounded-xl border border-[#ded7ca] text-left transition-colors flex flex-col gap-1 shadow-xs"
                   >
                     <div className="flex items-center gap-1.5 font-bold text-[#1b2930]">
-                      <Check className="w-3.5 h-3.5 text-[#15803d]" /> Calibrate Sensors
+                      <Check className="w-3.5 h-3.5 text-[#15803d]" /> Simulate Calibration
                     </div>
                     <span className="text-[10px] text-[#5a6a72] leading-tight">
                       Re-zero Hall rest baselines
@@ -1133,10 +1127,10 @@ export const App: React.FC = () => {
                     className="p-3 bg-[#faf7f2] hover:bg-[#ede7da] rounded-xl border border-[#ded7ca] text-left transition-colors flex flex-col gap-1 shadow-xs"
                   >
                     <div className="flex items-center gap-1.5 font-bold text-[#1b2930]">
-                      <DownloadCloud className="w-3.5 h-3.5 text-[#5a6a72]" /> USB Bootloader
+                      <DownloadCloud className="w-3.5 h-3.5 text-[#5a6a72]" /> Firmware Setup
                     </div>
                     <span className="text-[10px] text-[#5a6a72] leading-tight">
-                      Reboot RP2040 into UF2 mode
+                      Install the bundled Pico firmware
                     </span>
                   </button>
 
@@ -1155,13 +1149,13 @@ export const App: React.FC = () => {
                   <button
                     onClick={handleSaveFlash}
                     className="p-3 bg-[#faf7f2] hover:bg-[#ede7da] rounded-xl border border-[#ded7ca] text-left transition-colors flex flex-col gap-1 shadow-xs"
-                    title="Commit current configuration to non-volatile RP2040 flash"
+                    title="Simulate saving settings; use Connect USB for your physical pad"
                   >
                     <div className="flex items-center gap-1.5 font-bold text-[#1b2930]">
-                      <Save className="w-3.5 h-3.5 text-[#5b8e85]" /> Commit to Flash
+                      <Save className="w-3.5 h-3.5 text-[#5b8e85]" /> Simulate Save
                     </div>
                     <span className="text-[10px] text-[#5a6a72] leading-tight">
-                      Save active RAM to flash
+                      Preview a save in the Digital Twin
                     </span>
                   </button>
                 </div>
@@ -1197,7 +1191,7 @@ export const App: React.FC = () => {
           currentKey={currentLayerKeyDef}
           workspaceName={activeProfile.name}
           onClose={() => setRemapModalOpen(false)}
-          onSave={handleSaveRemapKey}
+          onSave={(idx, updated) => handleSaveRemapKey(idx, updated, remapLayerIdx)}
         />
       )}
 
@@ -1216,42 +1210,10 @@ export const App: React.FC = () => {
         onSaveTheme={handleSaveOledTheme}
       />
 
-      {/* Automatic Firmware Flashing Modal */}
+      {/* Firmware setup and real bundled UF2 download */}
       <FlashFirmwareModal
         isOpen={flashModalOpen}
         onClose={() => setFlashModalOpen(false)}
-        onFlashComplete={() => {
-          showToast(`Firmware v2.4.1 flashed and verified successfully!`);
-          addLog('INFO', `Flash complete: RP2040 running v2.4.1, workspace "${activeProfile.name}" synced.`);
-        }}
-        activeWorkspaceName={activeProfile.name}
-      />
-
-      {/* OLED Custom Pixel Art & Graphic Editor */}
-      <OledPixelEditorModal
-        isOpen={pixelEditorOpen}
-        onClose={() => setPixelEditorOpen(false)}
-        currentBitmap={customBitmap}
-        onSaveBitmap={handleSaveCustomBitmap}
-      />
-
-      {/* Hall Effect Sensor ADC Calibration Wizard */}
-      <SensorCalibrationModal
-        isOpen={calibrationModalOpen}
-        onClose={() => setCalibrationModalOpen(false)}
-        keys={currentWorkspaceKeys}
-        connectionMode={connectionMode}
-        currentCalibration={calibrationTable}
-        onSaveCalibration={handleSaveCalibration}
-        onSendSerialCommand={sendSerialCommand}
-      />
-
-      {/* RP2040 GPIO Pinout & C++ Dual-Core Firmware Modal */}
-      <PinoutConfigModal
-        isOpen={pinoutModalOpen}
-        onClose={() => setPinoutModalOpen(false)}
-        currentPinout={pinoutConfig}
-        onSavePinout={handleSavePinout}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 #include "hall.h"
 #include "mux.h"
+#include "keyboard_output.h"
 #include <Arduino.h>
-#include <Keyboard.h>
 #include <cmath>
 
 // Static configuration defaults
@@ -12,28 +12,40 @@ bool  HallKey::s_rtEnabled        = true;
 
 HallKey HallManager::s_keys[NUM_KEYS];
 int8_t HallManager::s_lastActiveKey = -1;
+uint16_t HallManager::s_lastRaw[NUM_KEYS];
+uint16_t HallManager::s_routedMask = 0;
+uint16_t HallManager::s_simMask = 0;
+uint32_t HallManager::s_simLastMs[NUM_KEYS];
+uint16_t HallManager::s_faultMask = 0;
+uint8_t HallManager::s_railSamples[NUM_KEYS] = {};
+uint8_t HallManager::s_faultRestSamples[NUM_KEYS] = {};
 
-// SAFETY: Runtime controllable HID output (defaults to false for breadboard safety)
-// Can be toggled on-the-fly via SET_HID 1 / SET_HID 0 serial command.
-static bool s_enableHidOutput = false;
+// Arduino Keyboard codes for the power-up keymap (same values as KEY_* in <Keyboard.h>).
+// configApplyToHardware() replaces them with the stored keymap.
+static constexpr uint8_t CODE_ESC    = 0xB1;
+static constexpr uint8_t CODE_RETURN = 0xB0;
+static constexpr uint8_t CODE_F13    = 0xF0;
+static constexpr uint8_t CODE_F14    = 0xF1;
+static constexpr uint8_t CODE_F15    = 0xF2;
+static constexpr uint8_t CODE_F16    = 0xF3;
 
 static const HallKeyConfig DEFAULT_CONFIGS[NUM_KEYS] = {
-    { 0, KEY_MUX_CHANNELS[0],  KEY_ESC,     "ESC" },
+    { 0, KEY_MUX_CHANNELS[0],  CODE_ESC,    "ESC" },
     { 1, KEY_MUX_CHANNELS[1],  '7',         "7"   },
     { 2, KEY_MUX_CHANNELS[2],  '8',         "8"   },
     { 3, KEY_MUX_CHANNELS[3],  '9',         "9"   },
-    { 4, KEY_MUX_CHANNELS[4],  KEY_F13,     "M1"  },
+    { 4, KEY_MUX_CHANNELS[4],  CODE_F13,    "M1"  },
     { 5, KEY_MUX_CHANNELS[5],  '4',         "4"   },
     { 6, KEY_MUX_CHANNELS[6],  '5',         "5"   },
     { 7, KEY_MUX_CHANNELS[7],  '6',         "6"   },
-    { 8, KEY_MUX_CHANNELS[8],  KEY_F14,     "M2"  },
+    { 8, KEY_MUX_CHANNELS[8],  CODE_F14,    "M2"  },
     { 9, KEY_MUX_CHANNELS[9],  '1',         "1"   },
     {10, KEY_MUX_CHANNELS[10], '2',         "2"   },
     {11, KEY_MUX_CHANNELS[11], '3',         "3"   },
-    {12, KEY_MUX_CHANNELS[12], KEY_F15,     "M3"  },
-    {13, KEY_MUX_CHANNELS[13], KEY_F16,     "M4"  },
+    {12, KEY_MUX_CHANNELS[12], CODE_F15,    "M3"  },
+    {13, KEY_MUX_CHANNELS[13], CODE_F16,    "M4"  },
     {14, KEY_MUX_CHANNELS[14], '0',         "0"   },
-    {15, KEY_MUX_CHANNELS[15], KEY_RETURN,  "ENT" }
+    {15, KEY_MUX_CHANNELS[15], CODE_RETURN, "ENT" }
 };
 
 HallKey::HallKey()
@@ -203,8 +215,8 @@ bool HallKey::update(uint16_t rawAdc) {
 
     // 4. Dynamic Range Calibration
     float dynRange = fabsf(_bottomRaw - _restBaseline);
-    if (dynRange < 600.0f) {
-        dynRange = 600.0f;
+    if (dynRange < (float)calib::RANGE_MIN) {
+        dynRange = (float)calib::RANGE_MIN;
     }
     if (_polarityDetected && mag > dynRange) {
         dynRange = mag;
@@ -284,7 +296,12 @@ bool HallKey::update(uint16_t rawAdc) {
         _pressSamples = 0;
     }
 
-    // 7. Rapid Trigger State Machine
+    return runRapidTrigger();
+}
+
+// 7. Rapid Trigger state machine on the current _travelMm. Shared by real samples and SIM
+// injection so simulated presses behave exactly like physical ones.
+bool HallKey::runRapidTrigger() {
     bool stateChanged = false;
     float countResMm = SWITCH_TOTAL_TRAVEL_MM / _dynamicRange;
     float quantTol = 0.85f * countResMm;
@@ -315,10 +332,11 @@ bool HallKey::update(uint16_t rawAdc) {
             _pressCount++;
             _everActuated = true;
             _peakDepthMm = _travelMm;
+            // Both held counters restart on a transition. update() tests them before it updates
+            // them, so a stale _unpressedSamples would run the comb filter over pre-press history
+            // on the next sample and fake a Rapid Trigger release (TC-18).
             _pressSamples = 0;
-            if (s_enableHidOutput) {
-                Keyboard.press(_hidKeyCode);
-            }
+            _unpressedSamples = 0;
             stateChanged = true;
         } else {
             if (_travelMm < _valleyDepthMm) {
@@ -349,9 +367,7 @@ bool HallKey::update(uint16_t rawAdc) {
             _releaseCount++;
             _valleyDepthMm = _travelMm;
             _unpressedSamples = 0;
-            if (s_enableHidOutput) {
-                Keyboard.release(_hidKeyCode);
-            }
+            _pressSamples = 0;
             stateChanged = true;
         }
     }
@@ -363,75 +379,80 @@ bool HallKey::injectSimulatedTravel(float mm) {
     if (mm < 0.0f) mm = 0.0f;
     if (mm > SWITCH_TOTAL_TRAVEL_MM) mm = SWITCH_TOTAL_TRAVEL_MM;
     _travelMm = mm;
+    return runRapidTrigger();
+}
 
-    bool stateChanged = false;
-    float countResMm = SWITCH_TOTAL_TRAVEL_MM / _dynamicRange;
-    float quantTol = 0.85f * countResMm;
-
-    if (!_isPressed) {
-        bool shouldActuate = false;
-
-        if (!_everActuated) {
-            if (_travelMm >= s_actuationPointMm) {
-                shouldActuate = true;
-            }
-        } else {
-            if (s_rtEnabled) {
-                if ((_travelMm - _valleyDepthMm >= s_rtPressMm - quantTol) && (_travelMm > TOP_DEADZONE_MM)) {
-                    shouldActuate = true;
-                }
-            } else {
-                if (_travelMm >= s_actuationPointMm) {
-                    shouldActuate = true;
-                }
-            }
-        }
-
-        if (shouldActuate) {
-            _isPressed = true;
-            _pressCount++;
-            _everActuated = true;
-            _peakDepthMm = _travelMm;
-            if (s_enableHidOutput) {
-                Keyboard.press(_hidKeyCode);
-            }
-            stateChanged = true;
-        } else {
-            if (_travelMm < _valleyDepthMm) {
-                _valleyDepthMm = _travelMm;
-            }
-            if (_travelMm <= TOP_DEADZONE_MM) {
-                _everActuated = false;
-                _valleyDepthMm = 0.0f;
-            }
-        }
+void HallKey::applyCalibration(const KeyCalibration& cal) {
+    _restBaseline = (float)cal.restRaw;
+    _dynamicRange = (float)cal.rangeCounts;
+    if (cal.polarity != 0) {
+        _polarityDetected = true;
+        _voltageIncreasesOnPress = (cal.polarity > 0);
     } else {
-        if (_travelMm > _peakDepthMm) {
-            _peakDepthMm = _travelMm;
-        }
-
-        bool shouldRelease = false;
-
-        if (_travelMm <= TOP_DEADZONE_MM) {
-            shouldRelease = true;
-        } else if (s_rtEnabled && (_peakDepthMm - _travelMm >= s_rtReleaseMm - quantTol)) {
-            shouldRelease = true;
-        } else if (!s_rtEnabled && (_travelMm < (s_actuationPointMm - 0.20f))) {
-            shouldRelease = true;
-        }
-
-        if (shouldRelease) {
-            _isPressed = false;
-            _releaseCount++;
-            _valleyDepthMm = _travelMm;
-            if (s_enableHidOutput) {
-                Keyboard.release(_hidKeyCode);
-            }
-            stateChanged = true;
-        }
+        _polarityDetected = false;
+        _voltageIncreasesOnPress = true;
     }
+    if (_voltageIncreasesOnPress) {
+        _bottomRaw = _restBaseline + _dynamicRange;
+    } else {
+        _bottomRaw = _restBaseline - _dynamicRange;
+    }
+}
 
-    return stateChanged;
+KeyCalibration HallKey::exportCalibration() const {
+    KeyCalibration cal;
+    cal.restRaw = getRestBaseline();
+    cal.rangeCounts = getRangeCounts();
+    cal.polarity = getPolarity();
+    cal.flags = 0;
+    return cal;
+}
+
+void HallKey::resetCalibration() {
+    _polarityDetected = false;
+    _voltageIncreasesOnPress = true;
+    _dynamicRange = 1000.0f;
+    _bottomRaw = _restBaseline + _dynamicRange;
+}
+
+int8_t HallKey::getPolarity() const {
+    if (!_polarityDetected) return 0;
+    return _voltageIncreasesOnPress ? 1 : -1;
+}
+
+uint16_t HallKey::getRangeCounts() const {
+    return (uint16_t)fminf(4095.0f, fabsf(_bottomRaw - _restBaseline) + 0.5f);
+}
+
+void HallKey::seedFilters(uint16_t raw) {
+    _currentRaw = raw;
+    _filteredRaw = (float)raw;
+    _prevRaw = (float)raw;
+    for (int i = 0; i < HIST_LEN; ++i) {
+        _dHist[i] = 0.0f;
+        _rawHist[i] = (float)raw;
+    }
+    _dIdx = 0;
+    _hIdx = 0;
+    _driftTravel = 0.0f;
+    _baselineErrFilt = 0.0f;
+    _stationaryUnpressedMs = 0;
+    _recoveringBaseline = false;
+    _motionSamples = 0;
+    _humanContact = false;
+}
+
+void HallKey::resetStateMachine() {
+    if (_isPressed) {
+        _releaseCount++;
+    }
+    _isPressed = false;
+    _everActuated = false;
+    _peakDepthMm = 0.0f;
+    _valleyDepthMm = 0.0f;
+    _travelMm = 0.0f;
+    _pressSamples = 0;
+    _unpressedSamples = INITIAL_UNPRESSED_SAMPLES;
 }
 
 void HallManager::init() {
@@ -442,6 +463,16 @@ void HallManager::init() {
             DEFAULT_CONFIGS[i].hidKeyCode,
             DEFAULT_CONFIGS[i].label
         );
+        s_lastRaw[i] = 2048;
+        s_simLastMs[i] = 0;
+    }
+    s_lastActiveKey = -1;
+    s_routedMask = 0;
+    s_simMask = 0;
+    s_faultMask = 0;
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        s_railSamples[i] = 0;
+        s_faultRestSamples[i] = 0;
     }
 }
 
@@ -460,15 +491,86 @@ void HallManager::calibrateAllRestBaselines(uint16_t samplesPerKey) {
     }
 }
 
+void HallManager::measureRest(uint16_t out[NUM_KEYS], uint16_t samples) {
+    if (samples == 0) samples = 1;
+    uint32_t accum[NUM_KEYS] = {0};
+
+    for (uint16_t s = 0; s < samples; ++s) {
+        for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+            accum[i] += muxReadChannel(s_keys[i].getMuxChannel());
+        }
+        delayMicroseconds(50);
+    }
+
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        out[i] = (uint16_t)((accum[i] + samples / 2) / samples);
+    }
+}
+
 void HallManager::updateAll() {
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
-        uint16_t raw = muxReadChannel(s_keys[i].getMuxChannel());
-        if (s_keys[i].update(raw)) {
-            if (s_keys[i].isPressed()) {
+        HallKey& key = s_keys[i];
+        uint16_t bit = (uint16_t)(1u << i);
+        uint16_t raw = muxReadChannel(key.getMuxChannel());
+        s_lastRaw[i] = raw;
+
+        // SIM owns this key's travel: the reading is recorded (RAW capture, calibration) but not fed
+        if (s_simMask & bit) continue;
+
+        // Keep RAW capture truthful, but never treat a rail spike as key movement.
+        if (raw < calib::RAIL_LOW || raw > calib::RAIL_HIGH) {
+            s_faultRestSamples[i] = 0;
+            if (s_railSamples[i] < calib::FAULT_RAIL_SAMPLES) ++s_railSamples[i];
+            if (s_railSamples[i] >= calib::FAULT_RAIL_SAMPLES && !(s_faultMask & bit)) {
+                setFaultMask((uint16_t)(s_faultMask | bit));
+            }
+            continue;
+        }
+        s_railSamples[i] = 0;
+        if (s_faultMask & bit) {
+            // Use the established rest point, not a baseline learned from a broken sensor.
+            int32_t deviation = (int32_t)raw - (int32_t)key.getRestBaseline();
+            const uint16_t proportional = (uint16_t)((uint32_t)key.getRangeCounts() * calib::TOLERANCE_RANGE_PCT / 100);
+            const uint16_t tolerance = proportional > calib::TOLERANCE_MIN_COUNTS ? proportional : calib::TOLERANCE_MIN_COUNTS;
+            if (deviation >= -(int32_t)tolerance && deviation <= (int32_t)tolerance) {
+                if (s_faultRestSamples[i] < calib::FAULT_REST_SAMPLES) ++s_faultRestSamples[i];
+            } else {
+                s_faultRestSamples[i] = 0;
+            }
+            if (s_faultRestSamples[i] < calib::FAULT_REST_SAMPLES) continue;
+            key.seedFilters(raw);
+            key.resetStateMachine();
+            KeyboardOutput::suppressUntilRelease(i, true);
+            setFaultMask((uint16_t)(s_faultMask & ~bit));
+        }
+
+        if (key.update(raw)) {
+            if (key.isPressed()) {
                 s_lastActiveKey = (int8_t)i;
             }
         }
+
+        if (s_faultMask & bit) continue;
+
+        // Route by level rather than by update()'s edge flag, so a state machine reset elsewhere
+        // (calibration apply, SIM exit) is reconciled here: a key reset while KeyboardOutput held
+        // it pressed gets its release on the next scan unless it pressed again in this update.
+        bool pressed = key.isPressed();
+        if (pressed && !(s_routedMask & bit)) {
+            s_routedMask |= bit;
+            KeyboardOutput::onPress(i, key.getHidKeyCode());
+        } else if (!pressed && (s_routedMask & bit)) {
+            s_routedMask &= (uint16_t)~bit;
+            KeyboardOutput::onRelease(i);
+        }
+        if ((KeyboardOutput::suppressedKeysMask() & bit) && key.isAtRest()) {
+            KeyboardOutput::onAtRest(i);
+        }
     }
+}
+
+const uint16_t* HallManager::lastRaw() {
+    return s_lastRaw;
 }
 
 uint8_t HallManager::getPressedCount() {
@@ -483,13 +585,77 @@ int8_t HallManager::getLastActiveKey() {
     return s_lastActiveKey;
 }
 
-void HallManager::setHidEnabled(bool en) {
-    s_enableHidOutput = en;
-    if (!en) {
-        Keyboard.releaseAll();
+uint16_t HallManager::pressedMask() {
+    uint16_t mask = 0;
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        if (s_keys[i].isPressed()) mask |= (uint16_t)(1u << i);
+    }
+    return mask;
+}
+
+bool HallManager::simSet(uint8_t key, float mm, uint32_t nowMs) {
+    if (key >= NUM_KEYS) return false;
+    uint16_t bit = (uint16_t)(1u << key);
+    if (!(s_simMask & bit)) {
+        s_simMask |= bit;
+        if (s_routedMask & bit) {
+            s_routedMask &= (uint16_t)~bit;
+            KeyboardOutput::onRelease(key);
+        }
+    }
+    s_simLastMs[key] = nowMs;
+    s_keys[key].injectSimulatedTravel(mm);
+    return true;
+}
+
+void HallManager::simClear(uint8_t key) {
+    if (key >= NUM_KEYS) return;
+    uint16_t bit = (uint16_t)(1u << key);
+    if (!(s_simMask & bit)) return;
+    s_simMask &= (uint16_t)~bit;
+    HallKey& k = s_keys[key];
+    k.seedFilters(s_lastRaw[key]);
+    k.resetStateMachine();
+    KeyboardOutput::suppressUntilRelease(key, true);
+}
+
+void HallManager::simClearAll() {
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        simClear(i);
     }
 }
 
-bool HallManager::isHidEnabled() {
-    return s_enableHidOutput;
+void HallManager::simService(uint32_t nowMs) {
+    if (s_simMask == 0) return;
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        if ((s_simMask & (1u << i)) && (uint32_t)(nowMs - s_simLastMs[i]) >= SIM_TIMEOUT_MS) {
+            simClear(i);
+        }
+    }
+}
+
+uint16_t HallManager::simMask() {
+    return s_simMask;
+}
+
+void HallManager::setFaultMask(uint16_t mask) {
+    uint16_t changed = (uint16_t)(mask ^ s_faultMask);
+    uint16_t newlyFaulted = (uint16_t)(mask & ~s_faultMask);
+    s_faultMask = mask;
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        if (changed & (1u << i)) {
+            s_railSamples[i] = 0;
+            s_faultRestSamples[i] = 0;
+        }
+        if (newlyFaulted & (1u << i)) {
+            s_routedMask &= (uint16_t)~(1u << i);
+            KeyboardOutput::onRelease(i);
+            s_keys[i].resetStateMachine();
+            KeyboardOutput::suppressUntilRelease(i, true);
+        }
+    }
+}
+
+uint16_t HallManager::faultMask() {
+    return s_faultMask;
 }

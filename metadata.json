@@ -1,8 +1,0 @@
-{
-  "name": "DriftPad Configurator & Simulator",
-  "description": "Hall-effect 16-key macropad configurator, rapid trigger DSP engine, and OLED cockpit visualizer for the RP2040.",
-  "permissions": [],
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

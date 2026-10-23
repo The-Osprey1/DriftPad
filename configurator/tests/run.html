@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DriftPad configurator tests</title>
+<style>body { font-family: monospace; white-space: pre-wrap; }</style>
+</head>
+<body>
+<p>Runs the configurator modules against the fake DriftPad. Open from the file system in Chrome, or run
+<code>tests/test_configurator_js.py</code>. Results appear below as JSON.</p>
+<!-- The real modules, in the order index.html loads them -->
+<script src="../js/contract.js"></script>
+<script src="../js/keycodes.js"></script>
+<script src="../js/protocol.js"></script>
+<script src="../js/transport.js"></script>
+<script src="../js/device.js"></script>
+<script src="../js/draft.js"></script>
+<script src="../js/backup.js"></script>
+<script src="../js/fake_device.js"></script>
+<!-- Harness and tests -->
+<script src="harness.js"></script>
+<script src="unit_tests.js"></script>
+<script src="session_tests.js"></script>
+<script>window.addEventListener("load", () => runTests());</script>
+</body>
+</html>

@@ -1,164 +1,180 @@
-# DriftPad Studio · RP2040 Hall-Effect Macropad Suite
+# DriftPad
 
-<div align="center">
+A browser configurator and simulator for a 16-key Hall-effect macropad built on
+the Raspberry Pi Pico (RP2040). The repository includes the React app, firmware,
+hardware reference, and OLED design studies.
 
-![DriftPad Banner](docs/images/driftpad_oled_showcase.png)
+## Start the app
 
-[![Hardware](https://img.shields.io/badge/Microcontroller-Raspberry_Pi_Pico_(RP2040)-c51a4a?style=flat-square&logo=raspberrypi&logoColor=white)](https://www.raspberrypi.com/documentation/microcontrollers/rp2040.html)
-[![Sensors](https://img.shields.io/badge/Sensors-16x_Linear_Hall_Effect-15803d?style=flat-square)](docs/hardware.md)
-[![Display](https://img.shields.io/badge/Display-0.96%22_128x64_Monochrome_OLED-04070a?style=flat-square)](src/components/OledCanvas.tsx)
-[![Frontend](https://img.shields.io/badge/Frontend-React_19_+_Vite_+_Tailwind-38bdf8?style=flat-square&logo=react&logoColor=white)](package.json)
-[![Language](https://img.shields.io/badge/Firmware-Dual--Core_C%2B%2B_/_Arduino-00599c?style=flat-square&logo=c%2B%2B&logoColor=white)](firmware/)
-[![Protocol](https://img.shields.io/badge/Connection-WebSerial_@_115200_8N1-c86443?style=flat-square)](src/services/serialService.ts)
+### Windows desktop app
 
-**A high-precision analog macropad configurator, DSP simulator, and dual-core firmware suite for the 16-key Raspberry Pi Pico Hall-effect macropad.**
+Download **Setup.exe** from a published [release](https://github.com/The-Osprey1/DriftPad/releases),
+install it, and open DriftPad from your desktop. No terminal, Node.js, or separate
+browser is needed. The portable executable runs without installation.
 
-[Features](#features) • [Hardware Pinout](#hardware-pinout) • [OLED Widgets](#monochrome-oled-widgets) • [Calibration](#hall-effect-calibration) • [Quickstart](#quickstart) • [Serial Protocol](#serial-protocol)
+Until the first desktop release is published, download the **DriftPad-Windows-x64**
+artifact from a successful [desktop build](https://github.com/The-Osprey1/DriftPad/actions/workflows/desktop.yml).
+Both versions include Digital Twin, USB configuration, and Pico firmware. Open
+**Set Up Pad** to install the bundled firmware directly onto the Pico's BOOTSEL drive;
+no developer tools are needed.
+See [desktop setup](docs/desktop.md) for details.
 
-</div>
+### Browser development setup
 
----
+Use **Node.js 24 or newer**, npm, and a Chromium-based browser such as Chrome or
+Edge for WebSerial. The recommended Node version is recorded in [`.nvmrc`](.nvmrc).
 
-## 2D Chassis Architecture
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        DRIFTPAD · RP2040                               │
-│                   16-KEY HALL EFFECT CHASSIS                           │
-├──────────────────────────────────────┬─────────────────────────────────┤
-│    0.96" 128×64 MONOCHROME OLED      │     KNURLED ROTARY DIAL         │
-│  ┌────────────────────────────────┐  │            ╭─────╮              │
-│  │ COCKPIT · APM · 4×4 MAP · ART  │  │         ╭──╯  ▲  ╰──╮           │
-│  │ 2.45mm [██████████░░░] ACTUATED│  │        │   ( 120° )  │  24 Steps│
-│  │ ACT: 1.20mm  RT: 0.20mm (ON)   │  │         ╰──╮  ▼  ╭──╯  Push-SW │
-│  └────────────────────────────────┘  │            ╰─────╯              │
-├──────────────────────────────────────┴─────────────────────────────────┤
-│                    4×4 TACTILE KEY MATRIX                              │
-│       ┌─────────┐      ┌─────────┐      ┌─────────┐      ┌─────────┐   │
-│       │ Key #0  │      │ Key #1  │      │ Key #2  │      │ Key #3  │   │
-│       │  [ESC]  │      │   [7]   │      │   [8]   │      │   [9]   │   │
-│       │  0.00mm │      │  0.00mm │      │  0.00mm │      │  0.00mm │   │
-│       ├─────────┤      ├─────────┤      ├─────────┤      ├─────────┤   │
-│       │ Key #4  │      │ Key #5  │      │ Key #6  │      │ Key #7  │   │
-│       │  [TAB]  │      │   [4]   │      │   [5]·  │      │   [6]   │   │
-│       │  0.00mm │      │  0.00mm │      │  0.00mm │      │  0.00mm │   │
-│       ├─────────┤      ├─────────┤      ├─────────┤      ├─────────┤   │
-│       │ Key #8  │      │ Key #9  │      │ Key #10 │      │ Key #11 │   │
-│       │ [BKSP]  │      │   [1]   │      │   [2]   │      │   [3]   │   │
-│       │  0.00mm │      │  0.00mm │      │  0.00mm │      │  0.00mm │   │
-│       ├─────────┤      ├─────────┤      ├─────────┤      ├─────────┤   │
-│       │ Key #12 │      │ Key #13 │      │ Key #14 │      │ Key #15 │   │
-│       │  [SPC]  │      │   [.]   │      │   [0]   │      │  [ENT]  │   │
-│       │  0.00mm │      │  0.00mm │      │  0.00mm │      │  0.00mm │   │
-│       └─────────┘      └─────────┘      └─────────┘      └─────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Features
-
-### 1. Hall-Effect Analog Sensing & Rapid Trigger DSP
-- **Continuous 0.00mm–4.00mm Travel Tracking**: Eliminates conventional mechanical contact debounce.
-- **Velocity-Adaptive IIR Low-Pass Filter**: Filters resting magnet thermal jitter at rest; bypasses filtering dynamically during rapid key strokes.
-- **Dynamic Rapid Trigger**: Keys reset immediately when ascending by the sensitivity threshold (e.g. `0.15mm`), enabling lightning-fast double taps and stutter-free inputs.
-- **Per-Key Safety Actuation Overrides**: Configure destructive keys (e.g., Delete, Kill Server) to require deep intentional strokes (e.g. `3.50mm`) while keeping navigation switches hair-trigger light.
-
-### 2. Monochrome White 0.96" OLED Suite (SSD1306)
-- **Monochrome Hardware Fidelity**: High-contrast pure white pixels on deep black (`#04070a`) matching physical 1-color SSD1306 displays.
-- **Modular Widgets**:
-  - **Cockpit**: Real-time travel meter, active keycode, rotary mode, and actuation gate line.
-  - **APM Speedometer**: Live Actions-Per-Minute gauge, Clicks-Per-Second indicator, and total session keystroke counter.
-  - **4×4 Sensor Map**: Miniature matrix visualizer displaying simultaneous analog travel depth across all 16 keys.
-  - **Focus Timer**: High-contrast Pomodoro clock with live progress tracking.
-  - **Screensavers**: 3D Starfield, Matrix Rain, DVD Bounce, Sine Wave, and 128×64 checkerboard diagnostic.
-- **Integrated Pixel Art Editor**: 32×32 drawing canvas with Pencil, Eraser, Invert, Clear tools, and one-click **C Byte Array Export** (`const uint8_t PROGMEM ...`) for Arduino and Pico SDK.
-
-### 3. Automated Hall-Sensor ADC Calibration Wizard
-- **Phase 1 (Zero-Point Baseline)**: Multi-sample resting baseline detection to eliminate magnet height tolerances.
-- **Phase 2 (Bottom-Out Sweep)**: Live 4×4 key matrix visual sweep measuring maximum magnetic flux per switch.
-- **Phase 3 (Deadzone & Verification)**: $0.05\,\text{mm}$ safety deadzone padding and resolution metrics (counts/mm) with automatic hardware EEPROM sync.
-
-### 4. Interactive GPIO Pinout Configurator
-- Visual pin assignment and conflict detection for Raspberry Pi Pico GPIOs.
-- Custom wiring support for MUX ADC input, 4-bit channel addresses, OLED I2C bus pins, and rotary encoder channels.
-- Instant `#define pinout_config.h` header generation and full dual-core `.ino` firmware generator.
-
----
-
-## Hardware Pinout
-
-| Component | RP2040 Pin | Function | Notes |
-| :--- | :--- | :--- | :--- |
-| **Multiplexer Signal** | `GP26` (ADC0) | Analog Input | 12-bit ADC (0–4095 counts), 0–3.3V |
-| **Multiplexer S0** | `GP14` | Address Bit 0 | CD74HC4067 channel selector |
-| **Multiplexer S1** | `GP15` | Address Bit 1 | CD74HC4067 channel selector |
-| **Multiplexer S2** | `GP16` | Address Bit 2 | CD74HC4067 channel selector |
-| **Multiplexer S3** | `GP17` | Address Bit 3 | CD74HC4067 channel selector |
-| **OLED SDA** | `GP0` | I2C0 SDA | Fast-mode I2C @ 400kHz |
-| **OLED SCL** | `GP1` | I2C0 SCL | Fast-mode I2C @ 400kHz |
-| **Encoder Channel A**| `GP20` | Rotary Phase A | Quadrature input with internal pull-up |
-| **Encoder Channel B**| `GP21` | Rotary Phase B | Quadrature input with internal pull-up |
-| **Encoder Push SW**  | `GP2` | Tactile Switch | Active LOW push-to-click |
-
----
-
-## Dual-Core Firmware Architecture
-
-```
-                    ┌──────────────────────────────────────┐
-                    │       Raspberry Pi Pico (RP2040)     │
-                    └──────────────────┬───────────────────┘
-                                       │
-            ┌──────────────────────────┴──────────────────────────┐
-            ▼                                                     ▼
-┌──────────────────────────────┐              ┌──────────────────────────────┐
-│            CORE 0            │              │            CORE 1            │
-│  - 1,000Hz MUX ADC Scan      │              │  - 30 FPS Lock-Free Loop     │
-│  - Velocity-Adaptive IIR DSP │──[FIFO Msg]─▶│  - SSD1306 128×64 Monochrome │
-│  - Continuous Rapid Trigger  │              │  - 400kHz Fast-mode I2C      │
-│  - USB Keyboard HID Report   │              │  - Screensaver / Widgets     │
-└──────────────────────────────┘              └──────────────────────────────┘
-```
-
----
-
-## Quickstart
-
-### Prerequisites
-- Node.js 18+
-- Modern Chromium browser (Chrome, Edge, Opera) for WebSerial USB communication.
-
-### Run Studio Configurator
 ```bash
-git clone https://github.com/The-Osprey1/DriftPad.git
-cd DriftPad
-npm install
+npm ci
 npm run dev
 ```
 
-Navigate to `http://localhost:3000` to access the live macropad configurator.
+Open `http://localhost:3000`. Leave the connection mode in **Digital Twin** to
+explore profiles, layers, key travel, Rapid Trigger, and the OLED preview without
+hardware.
 
----
+## Studio and your pad
 
-## Serial Protocol Reference
+**Connect USB** opens the device interface, then **Connect DriftPad** asks you to
+select the pad. This interface identifies firmware version and protocol, shows
+confirmed device settings, guides calibration, and waits for save acknowledgments.
+It runs offline in the Windows app and is also available at
+`/configurator/index.html` in the development server. **Back to Studio** returns to
+the simulator.
 
-The DriftPad firmware communicates over USB Serial at **115200 baud (8N1)**:
+Studio profiles, modifier combinations, encoder remaps, per-key actuation, and OLED
+themes are previews stored on this computer. They are not automatically written to
+the physical pad. Use the device interface for supported key mappings, global
+sensitivity, calibration, output, and display controls.
 
-| Command | Arguments | Description | Example |
-| :--- | :--- | :--- | :--- |
-| `GET_CONFIG` | None | Returns full JSON config packet | `GET_CONFIG` |
-| `SET_ACTUATION` | `<mm>` | Sets global actuation threshold | `SET_ACTUATION 1.20` |
-| `SET_RT_SENS` | `<mm>` | Sets Rapid Trigger sensitivity | `SET_RT_SENS 0.20` |
-| `SET_RT` | `0` or `1` | Enables or disables Rapid Trigger | `SET_RT 1` |
-| `CAL_SAMPLE_REST` | None | Triggers zero-point baseline scan | `CAL_SAMPLE_REST` |
-| `CAL_SET` | `<idx> <rest> <max>` | Sets calibration values for a key | `CAL_SET 5 1945 3420` |
-| `CAL_COMMIT` | None | Flashes calibration table to EEPROM | `CAL_COMMIT` |
-| `OLED_TEST` | None | Displays 128×64 checkerboard test | `OLED_TEST` |
-| `SLEEP` / `WAKE` | None | Controls OLED low-power sleep | `SLEEP` |
+## What's included
 
----
+- A 4×4 key matrix with three mapping layers and productivity profile presets.
+- Actuation and Rapid Trigger controls, including per-key actuation overrides.
+- Profile backup import/export, a usage heatmap, and rotary encoder controls.
+- A 128×64 OLED preview with six screensavers and adjustable display themes.
+- USB WebSerial communication and a browser-side DSP simulator.
+- RP2040 firmware for Hall sensors, a multiplexer, an encoder, and an OLED display.
+
+The Digital Twin is a software model. Simulator tests and successful firmware
+builds do not establish physical sensor accuracy, USB timing, or hardware acceptance.
+PCB and enclosure directories currently contain placeholders.
+
+## Development commands
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Start the development server on port 3000 |
+| `npm test` | Run the Digital Twin and profile validation tests |
+| `npm run typecheck` | Check app and Vite configuration types |
+| `npm run lint` | Alias for type checking; no separate style linter is configured |
+| `npm run build` | Check types and build the app into `dist/` |
+| `npm run check` | Run tests and the production build |
+| `npm run preview` | Serve the production build on port 3000 |
+| `npm run benchmark:life` | Compare the Game of Life implementations |
+
+Use npm and commit `package-lock.json` when changing dependencies. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
+
+## Repository guide
+
+| Path | Contents |
+|---|---|
+| [`src/`](src) | React UI, browser services, DSP model, tests, and benchmark |
+| [`firmware/`](firmware) | PlatformIO project for the Raspberry Pi Pico |
+| [`docs/hardware.md`](docs/hardware.md) | Pinout, mux channel map, and default keymaps |
+| [`docs/serial-protocol.md`](docs/serial-protocol.md) | USB serial commands |
+| [`docs/testing.md`](docs/testing.md) | Automated checks and manual verification |
+| [`docs/design/`](docs/design) | Historical interface design plan |
+| [`docs/oled_concepts/`](docs/oled_concepts) | OLED visual studies and previews |
+| [`hardware/`](hardware) | Placeholder locations for PCB and enclosure sources |
+
+## Hardware
+
+### Hardware setup
+
+The firmware is a PlatformIO Arduino project for a Raspberry Pi Pico/RP2040. Install
+PlatformIO in VS Code or install the PlatformIO CLI, then build and upload from the
+`firmware` directory:
+
+```bash
+cd firmware
+pio run
+pio run --target upload
+```
+
+Hold **BOOTSEL** while connecting the Pico if it is not detected. A specific port can
+be supplied with `--upload-port COM5`.
+
+The documented DriftPad V2 wiring is:
+
+| Function | RP2040 pin |
+|---|---:|
+| OLED SDA / SCL | GP0 / GP1 |
+| Encoder push switch | GP4 |
+| Multiplexer S0-S3 | GP14-GP17 |
+| Encoder A / B | GP20 / GP21 |
+| Multiplexer common / ADC | GP26 / ADC0 |
+
+The OLED uses I2C address `0x3C`. Hall sensors connect through the CD74HC4067, using
+the non-sequential channel map in [`docs/hardware.md`](docs/hardware.md). Check power,
+ground, sensor orientation, and the multiplexer wiring before applying USB power.
+
+SSD1306 is enabled by default. For an SH1106 display, set
+`-DUSE_SH1106=1` in `firmware/platformio.ini` and upload again.
+
+> **Hardware availability:** `hardware/kicad/` and `hardware/mechanical/` currently
+> contain placeholders rather than a complete published PCB/enclosure. You may need
+> a fabricated board or custom wiring and mounting solution.
+
+### First connection and safe commissioning
+
+1. Install the bundled firmware with **Set Up Pad** if needed.
+2. Click **Connect USB**, then **Connect DriftPad**, and select the pad.
+3. In **Device**, check the firmware identity and keep keyboard output off.
+4. Open **Calibration**, release every key, and choose **Start**. After the rest
+   phase, press every key fully and release it. When all 16 are done, choose
+   **Finish** and **Save**.
+5. Test all 16 keys and the OLED; configure mappings and sensitivity, then save.
+6. Reconnect and verify calibration and saved settings before enabling keyboard
+   output. Standalone output at boot is a separate deliberate setting.
+
+`CALIBRATE` only re-zeros an already calibrated pad. Initial calibration uses
+`CAL START` and `CAL FINISH`; see [calibration](docs/calibration.md).
+Viewing a layer does not change the active layer on the pad. Use the explicit
+**Make this the active layer on the pad** button when that is intended.
+
+### Troubleshooting
+
+- **No serial port:** use a data-capable USB cable and Chrome, Edge, or Opera.
+- **Upload failure:** hold BOOTSEL while plugging in the Pico, then retry PlatformIO.
+- **Wrong key travel:** use guided calibration for missing or invalid calibration; use `CALIBRATE` only to re-zero a valid calibration.
+- **Blank OLED:** check GP0/GP1, power, ground, address `0x3C`, and run `OLED_SCAN`.
+- **Unexpected typing:** disable HID with `SET_HID 0` before further testing.
+- **Settings not retained:** use `SAVE` for device flash and export profile JSON for
+  browser-side profile backups.
+
+See [`docs/hardware.md`](docs/hardware.md), [`docs/serial-protocol.md`](docs/serial-protocol.md),
+and [`docs/testing.md`](docs/testing.md) for the authoritative pinout, command reference,
+and validation procedures.
+
+
+
+## Engineering guides
+
+- [firmware integration](docs/firmware-integration.md)
+- [beta checklist](docs/beta-checklist.md)
+- [bring up](docs/bring-up.md)
+- [calibration](docs/calibration.md)
+- [configurator](docs/configurator.md)
+- [desktop](docs/desktop.md)
+- [flash layout](docs/flash-layout.md)
+- [hardware acceptance](docs/hardware-acceptance.md)
+- [hardware](docs/hardware.md)
+- [scheduling](docs/scheduling.md)
+- [serial protocol](docs/serial-protocol.md)
+- [testing](docs/testing.md)
 
 ## License
 
-MIT © [Devyn Fidel](https://github.com/The-Osprey1) & DriftPad Contributors.
+See [LICENSE](LICENSE).

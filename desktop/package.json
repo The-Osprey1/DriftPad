@@ -1,0 +1,69 @@
+{
+  "name": "driftpad-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DriftPad macropad configurator and simulator",
+  "author": "The-Osprey1",
+  "license": "GPL-3.0-only",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "io.github.theosprey1.driftpad",
+    "productName": "DriftPad",
+    "asar": true,
+    "directories": {
+      "output": "../release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "*.cjs",
+      "!*.test.cjs",
+      "renderer/**/*",
+      "assets/icon.png",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.txt"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "artifactName": "DriftPad-${version}-Setup-${arch}.${ext}",
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "DriftPad",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "DriftPad-${version}-Portable-${arch}.${ext}"
+    }
+  }
+}
