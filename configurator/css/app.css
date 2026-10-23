@@ -166,6 +166,8 @@
             transform: rotate(var(--knob-angle, 0deg));
             transition: transform 80ms linear;
         }
+        /* Wrap to the pad's width instead of widening the auto-sized layout column */
+        .knob-note { width: 0; min-width: 100%; }
         .knob.pressed .knob-dial { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25) inset; }
         .knob-dial::after {
             content: ""; position: absolute; top: 4px; left: 50%; width: 3px; height: 12px;
