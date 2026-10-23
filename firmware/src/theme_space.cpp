@@ -56,14 +56,19 @@ void ellipsePoint(float cx, float cy, float rx, float ry, float tilt, float a, f
 // half crosses the planet, with a dark line each side so it stands out against the lit surface.
 void drawRingHalf(Adafruit_GFX& g, float cx, float cy, float r, float rx, float ry, float tilt, bool nearHalf, bool dotted) {
     const int16_t n = (int16_t)(rx * 7.0f);
+    const float c = cosf(tilt), s = sinf(tilt);
+    // Walk round the ellipse by turning (cos a, sin a) one step at a time: no trigonometry per point
+    const float dc = cosf(TAU / n), ds = sinf(TAU / n);
     for (uint8_t pass = nearHalf ? 0 : 1; pass < 2; ++pass) {
+        float ca = 1.0f, sa = 0.0f;
         for (int16_t i = 0; i < n; ++i) {
-            if (dotted && (i % 3) == 1) continue;
-            const float a = i * TAU / n;
-            if ((sinf(a) > 0.0f) != nearHalf) continue;
-            float x, y;
-            ellipsePoint(cx, cy, rx, ry, tilt, a, &x, &y);
-            const int16_t px = (int16_t)lroundf(x), py = (int16_t)lroundf(y);
+            const float ex = rx * ca, ey = ry * sa;
+            const bool skip = (dotted && (i % 3) == 1) || ((sa > 0.0f) != nearHalf);
+            const float next = ca * dc - sa * ds;
+            sa = sa * dc + ca * ds;
+            ca = next;
+            if (skip) continue;
+            const int16_t px = (int16_t)lroundf(cx + ex * c - ey * s), py = (int16_t)lroundf(cy + ex * s + ey * c);
             const bool overPlanet = insideDisc(px, py, cx, cy, r + 0.5f);
             if (pass == 0) {
                 if (overPlanet) {
