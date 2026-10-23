@@ -219,5 +219,69 @@ class ScreensaverOperations(unittest.TestCase):
         self.assertEqual(self.lib.oled_panel_powered_on(), 1)
 
 
+class IdleScreensaverStart(unittest.TestCase):
+    """The stored choices (settings saver_idle / saver_anim) start the screensaver by itself."""
+    MODE_SCREEN, MODE_SAVER = 0, 1
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = oh.load()
+        cls.lib.oled_clock_set_ms.argtypes = [ctypes.c_uint32]
+
+    def setUp(self):
+        self.lib.oled_panel_present(1)
+        self.lib.oled_clock_set_ms(100000)
+        self.lib.oled_idle_reset()
+        self.lib.oled_auto_saver_step(0, 0, -1, 1, 0, 0)
+
+    def tearDown(self):
+        self.lib.oled_auto_saver_step(0, 0, -1, 1, 0, 0)    # leaves the menu flag cleared
+
+    def idle(self, ms, idle_min=1, anim=3, trusted=1, menu=0, chunk=1000):
+        while ms > 0:
+            step = min(chunk, ms)
+            self.lib.oled_auto_saver_step(step, idle_min, anim, trusted, 0, menu)
+            ms -= step
+
+    def mode(self):
+        return self.lib.oled_display_state(0)
+
+    def test_starts_after_the_idle_minutes_with_the_stored_animation(self):
+        self.idle(59_900)
+        self.assertEqual(self.mode(), self.MODE_SCREEN, "one minute has not passed")
+        self.idle(300, chunk=50)
+        self.assertEqual(self.mode(), self.MODE_SAVER)
+        self.assertEqual((self.lib.oled_display_state(1), self.lib.oled_display_state(3)), (3, 0),
+                         "fixed animation 3, not shuffled")
+
+    def test_shuffle_when_no_animation_is_chosen(self):
+        self.idle(61_000, anim=-1)
+        self.assertEqual(self.mode(), self.MODE_SAVER)
+        self.assertEqual(self.lib.oled_display_state(3), 1)
+
+    def test_a_key_press_restarts_the_idle_time_and_ends_the_screensaver(self):
+        self.idle(50_000)
+        self.lib.oled_auto_saver_step(33, 1, 3, 1, 1, 0)       # a trusted press
+        self.lib.oled_auto_saver_step(33, 1, 3, 1, 0, 0)
+        self.idle(55_000)
+        self.assertEqual(self.mode(), self.MODE_SCREEN, "counted from the press, not from the start")
+        self.idle(6_000)
+        self.assertEqual(self.mode(), self.MODE_SAVER)
+        self.lib.oled_auto_saver_step(33, 1, 3, 1, 1, 0)
+        self.assertEqual(self.mode(), self.MODE_SCREEN, "a press wakes it")
+
+    def test_never_with_zero_minutes_untrusted_keys_or_the_menu_open(self):
+        for kwargs in ({"idle_min": 0}, {"trusted": 0}, {"menu": 1}):
+            with self.subTest(**kwargs):
+                self.lib.oled_idle_reset()
+                self.idle(3_700_000, chunk=10_000, **kwargs)      # over an hour
+                self.assertEqual(self.mode(), self.MODE_SCREEN)
+
+    def test_a_display_turned_off_stays_off(self):
+        self.lib.oled_idle_sleep()
+        self.idle(120_000)
+        self.assertEqual(self.mode(), 2, "sleep is not replaced by the screensaver")
+
+
 if __name__ == "__main__":
     unittest.main()

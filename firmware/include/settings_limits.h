@@ -41,6 +41,16 @@ constexpr uint8_t CODE_MAX      = 255;
 // Extra modifiers held with a key (Ctrl+C): HID left-modifier bits, 1 Ctrl, 2 Shift, 4 Alt, 8 Win
 constexpr uint8_t MODIFIERS_MASK = 0x0F;
 
+// Screensaver: starts by itself after this many idle minutes (0 = never). The configurator offers
+// 0, 1, 2, 5, 10 and 30; any value up to the maximum is accepted.
+constexpr uint8_t SAVER_IDLE_MAX_MIN     = 60;
+constexpr uint8_t SAVER_IDLE_DEFAULT_MIN = 2;
+// Built-in screensaver animations (OLED_ANIM_COUNT in oled.h); -1 shuffles them. A stored
+// animation this firmware does not have plays as shuffle.
+constexpr uint8_t SAVER_ANIM_COUNT = 6;
+// Screen themes (0 = Drift). A stored theme this firmware does not have draws as Drift.
+constexpr uint8_t THEME_COUNT = 1;
+
 // Serial protocol bounds
 constexpr uint8_t  PROTOCOL_VERSION   = 2;
 constexpr uint16_t LINE_MAX_LEN       = 160;   // bytes, excluding the terminator

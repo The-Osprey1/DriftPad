@@ -13,6 +13,7 @@ button in place of Back to Studio (`scripts/build-site.cjs`). `keymap.html` only
 | Keys | The pad as it sits on the desk, with a live knob line under it (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), tick Ctrl, Shift, Alt or Win to hold them with it (Ctrl + C), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
 | Sensitivity | Actuation and Rapid Trigger sensitivity (limits come from the pad's `INFO`), Rapid Trigger on/off, live key travel |
 | Device | Firmware version and build, keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
+| Screen | **Screensaver**: when it starts by itself (Never, 1, 2, 5, 10 or 30 minutes idle) and which animation it plays, with Play now and Save. **Screen Lab** (a preview; nothing is sent to the pad): load a GIF or picture, convert it to the 128 × 64 black-and-white screen and see it in three possible places. See below |
 
 ## What it promises
 
@@ -54,8 +55,10 @@ only the browser selection; **Play screensaver** sends the request. **Stop scree
 to the selected screen. **Display off** turns the OLED off. None of these commands changes keymaps,
 calibration, keyboard output, or saved sensitivity settings.
 
-Idle leaves the selected screen in place. Screensaver playback starts only when explicitly
-requested; Shuffle all changes animations during that requested playback. A fixed selection keeps
+After the idle time chosen on the **Screen** tab (factory: 2 minutes, Shuffle all) the pad starts its
+screensaver by itself; **Never** turns that off. Those two choices are stored settings, applied at once
+and kept by **Save to the pad**, and included in backups. The selection here only chooses what
+**Play screensaver** plays now. Shuffle all changes animations during playback. A fixed selection keeps
 its animation. Turn or press the knob to wake the display. In the settings menu the first input only wakes it, so it
 does not also adjust a setting or advance a page; outside the menu, volume and mute still apply.
 
@@ -67,6 +70,34 @@ including after a physical key or rotary has woken it. Reports describe firmware
 prove what is physically visible on the OLED. Older protocol-2 firmware still accepts the controls,
 but the page labels its reply as a request acknowledgment and cannot confirm playback or its order.
 Disconnecting clears the previous report and operation feedback; reconnecting reads the device again.
+
+## Screen Lab
+
+The **Screen** tab tries your own GIF (or a PNG, JPEG or WebP picture) on the pad's screen before
+the pad can store one. Drop a file on it or click to choose one. Nothing leaves the browser.
+
+- **Shape:** Fit (the whole picture, with black bars), Fill (crop the edges) or Stretch. A picture
+  smaller than the screen is enlarged with whole pixels, so pixel art stays crisp.
+- **Shading:**
+  - **Pattern** (the default) uses the same 4 × 4 ordered pattern as the pad's own animations. It
+    stays steady from frame to frame and packs small.
+  - **Smooth** (Floyd–Steinberg error diffusion) shows the finest detail in a still picture, but
+    its speckle changes every frame, so a moving GIF shimmers and needs up to ten times the memory.
+  - **Sharp** is black or white only, for logos and pixel art.
+- **Brightness**, **Contrast**, **Invert**, **Speed** (0.5× to 2×) and **Frames** (keep only part
+  of the GIF).
+- **Size:** what the clip would take of the pad's planned 1 MB for animations. It is computed with
+  the packing the pad will use (`configurator/js/anim_codec.js`): frame 0 is stored whole and every
+  later frame as its difference from the frame before, then run-length packed. Clips take whole
+  4 KB flash sectors.
+- **On the pad:** the GIF plays in three mockups, drawn pixel for pixel with the pad's 5 × 7 font:
+  as a **screensaver**, as an idle **home screen** under the layer strip, and as a small **layer
+  picture** in place of the key map.
+
+Decoding uses the browser's own `ImageDecoder`, and conversion runs in a Web Worker
+(`js/gif_worker.js`), so a long GIF never stalls the page or the serial link. A progress bar shows
+the frame being converted, with **Cancel**. When no worker can start, the same code runs on the page,
+yielding between frames. At most 1,000 frames are read.
 
 ## Under the hood
 

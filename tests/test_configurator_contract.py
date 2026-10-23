@@ -46,6 +46,10 @@ SCRIPT = [
     "SET_KEY 0 5 99 COPY 1", "GET_CONFIG", "SET_KEY 0 5 99 C 15", "SET_KEY 0 5 99 C 16", "SET_KEY 0 5 99 C x",
     "SET_KEY 0 5 99 C -1", "SET_KEY 0 5 99 C 1 2", "SET_KEY 0 5 0 CS 3", "SET_KEY 0 5 99 C", "SET_KEY 0 5 1 C 1",
     "SET_BOOT_OUTPUT 1", "SET_BOOT_OUTPUT 0", "SET_BOOT_OUTPUT x",
+    # screensaver idle start and animation (stored settings)
+    "SET_SAVER_IDLE 5", "SET_SAVER_IDLE 0", "SET_SAVER_IDLE 60", "SET_SAVER_IDLE 61", "SET_SAVER_IDLE x",
+    "SET_SAVER_IDLE", "SET_SAVER_ANIM 3", "SET_SAVER_ANIM shuffle", "SET_SAVER_ANIM SHUFFLE", "SET_SAVER_ANIM 6",
+    "SET_SAVER_ANIM -1", "SET_SAVER_ANIM 2", "GET_CONFIG",
     # output gating
     "SET_HID 1", "SET_HID 1 FORCE", "HID 0", "SET_HID 1 NOPE", "OUTPUT 0",
     # persistence
@@ -163,7 +167,7 @@ class TestFakeDeviceMatchesFirmware(unittest.TestCase):
         seen_cmds = {r[0].get("cmd") for r in self.firmware if r}
         table = {"PING", "INFO", "GET_CONFIG", "STATUS", "STREAM", "SET_ACTUATION", "SET_RT_SENS", "SET_RT_ENABLE",
                  "SET_LAYER", "SET_KEY", "SET_HID", "SAVE", "REVERT", "RESET", "CALIBRATE", "CAL", "SET_BOOT_OUTPUT",
-                 "SIM", "SCAN_RATE", "TIMING", "RAW", "FULLSCREEN", "SCREENSAVER", "ANIM", "WAKE",
+                 "SET_SAVER_IDLE", "SET_SAVER_ANIM", "SIM", "SCAN_RATE", "TIMING", "RAW", "FULLSCREEN", "SCREENSAVER", "ANIM", "WAKE",
                  "OLED_TEST", "OLED_SCAN"}
         self.assertEqual(table - seen_cmds, set())
         codes = {r[0].get("code") for r in self.firmware if r and r[0].get("status") == "error"}

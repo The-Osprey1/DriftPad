@@ -52,7 +52,7 @@ held, and in `--release` any skip, import error, missing tool, dirty tree or sta
 | `test_timing` | compiled firmware on host | Scan statistics and the `TIMING` counters |
 | `test_config_schema` | test validator self-check + compiled firmware on host | Profile schema, adversarial profiles, protocol vectors against the firmware |
 | `test_configurator_contract` | headless browser + compiled firmware on host | `fake_device.js` answers exactly as the firmware does |
-| `test_configurator_js` | headless browser | The configurator's module tests (`configurator/tests/unit_tests.js`, `session_tests.js`), page-level tests (`app_tests.js`), and reproductions of the old page's defects |
+| `test_configurator_js` | headless browser | The configurator's module tests (`configurator/tests/unit_tests.js`, `session_tests.js`), page-level tests (`app_tests.js`), the Screen Lab (`screen_tests.js` in `screen.html`, `screen_app_tests.js` on the page), and reproductions of the old page's defects. Most pages run on Chrome's simulated clock (`--virtual-time-budget`), so long waits are instant. The Screen Lab pages run on the real clock (`chrome_host.run_page_realtime`, which reads the results over the DevTools protocol), because GIF decoding and the conversion worker run off the page's thread, where the simulated clock does not wait for them |
 | `test_contract_consistency` | source inspection | Limits, error codes, factory keymaps, label rules, offline pages and these documents agree with the code |
 | `test_chrome_host` | host tooling with fakes | Browser path discovery, explicit sandbox opt-in and non-zero browser process handling |
 | `test_flash_tool` | host tooling with fakes | `tools/flash.py` and the UF2/ELF/manifest checks |

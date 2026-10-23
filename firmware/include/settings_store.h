@@ -18,7 +18,7 @@
  *     0  u32 magic           'D' 'P' 'S' '2'  (RECORD_MAGIC)
  *     4  u8  header_version  HEADER_VERSION (1)
  *     5  u8  reserved        0
- *     6  u16 schema_version  payload schema (SCHEMA_V2 = 2)
+ *     6  u16 schema_version  payload schema (SCHEMA_CURRENT)
  *     8  u32 sequence        +1 per save; the higher valid sequence is the current record
  *    12  u16 payload_len
  *    14  u16 reserved        0
@@ -75,14 +75,23 @@ constexpr uint16_t PAYLOAD_LIMIT  = (uint16_t)(FlashIo::SECTOR_SIZE - HEADER_SIZ
 //    396 u8 modifiers[3][16], layer-major (limits::MODIFIERS_MASK bits held with each key)
 //    444 end
 //
-// Migration table (decode()): schema 2 (no modifiers) and schema 3 -> current RAM model. The legacy v1 EEPROM image is not
+// Schema 4 payload (PAYLOAD_V4_SIZE bytes): the schema 3 payload unchanged, then the display block
+//    444 u8 saver_idle_min (0 = never)      446 u8 theme (0 = Drift)
+//    445 i8 saver_anim (-1 = shuffle)       447 u8 screen_speed (0 = fast, 1 = safe)
+//    448 u8[4] reserved 0 (ignored when read)
+//    452 end
+//
+// Migration table (decode()): schemas 2 (no modifiers), 3 (no display block) and 4 -> current
+// RAM model; older records get the factory display choices. The legacy v1 EEPROM image is not
 // an A/B record; config.cpp migrates it separately (legacy_settings_v1.h). A new schema adds an
 // encoder, bumps SCHEMA_CURRENT and keeps a decoder row for every older schema.
 constexpr uint16_t SCHEMA_V2       = 2;
 constexpr uint16_t SCHEMA_V3       = 3;
-constexpr uint16_t SCHEMA_CURRENT  = SCHEMA_V3;
+constexpr uint16_t SCHEMA_V4       = 4;
+constexpr uint16_t SCHEMA_CURRENT  = SCHEMA_V4;
 constexpr uint16_t PAYLOAD_V2_SIZE = 396;
 constexpr uint16_t PAYLOAD_V3_SIZE = PAYLOAD_V2_SIZE + 3 * 16;
+constexpr uint16_t PAYLOAD_V4_SIZE = PAYLOAD_V3_SIZE + 8;
 constexpr uint16_t PAYLOAD_MAX     = 512;   // largest supported-schema payload this firmware buffers
 
 // Encodes `s` with SCHEMA_CURRENT. Returns the payload length, or 0 if `cap` is too small.

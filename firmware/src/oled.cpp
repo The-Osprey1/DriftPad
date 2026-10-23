@@ -8,6 +8,8 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+
+static_assert(OLED_ANIM_COUNT == limits::SAVER_ANIM_COUNT, "the stored screensaver choice indexes these animations");
 #include <Adafruit_GFX.h>
 #include <Fonts/FreeSansBold9pt7b.h>
 #include <Fonts/FreeSansBold12pt7b.h>
@@ -2627,6 +2629,14 @@ void loop1() {
     if (keysShowActivity()) {
         s_lastActivityTime = now;
         if (s_displaySleeping || s_screensaverActive || s_isDimmed) wakeDisplay(now);
+    }
+
+    // Idle: the screensaver chosen in the settings starts by itself (saverIdleMin 0 = never). Not over
+    // the tuning menu, and not while keys cannot be trusted (calibration missing or running), when
+    // the screen's calibration hint matters more and key presses do not count as activity.
+    if (s_view.saverIdleMin != 0 && !s_screensaverActive && !s_displaySleeping && !s_menuRequested &&
+        s_view.keyInputValid && now - s_lastActivityTime >= (uint32_t)s_view.saverIdleMin * 60000u) {
+        startScreensaver(now, s_view.saverAnim);
     }
 
     // The screensaver dims after it has been on for a while (any input wakes it to full brightness)

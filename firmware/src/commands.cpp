@@ -239,7 +239,7 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     static const char* const FEATURES[] = { "keymap", "layers", "rapid_trigger", "telemetry", "timing",
                                             "raw", "sim", "display", "guided_calibration", "boot_output",
                                             "settings_ab", "display_status", "encoder_status",
-                                            "key_modifiers" };
+                                            "key_modifiers", "screensaver_idle" };
     for (const char* f : FEATURES) w.str(f);
     w.endArray();
     w.key("limits").beginObject();
@@ -252,6 +252,8 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     w.key("code_max").u32(limits::CODE_MAX);
     w.key("line_max").u32(limits::LINE_MAX_LEN);
     w.key("stream_hz_max").u32(limits::STREAM_HZ_MAX);
+    w.key("saver_idle_max").u32(limits::SAVER_IDLE_MAX_MIN);
+    w.key("saver_anims").u32(limits::SAVER_ANIM_COUNT);
     w.endObject();
     writeCalibration(w);
     writeOutput(w);
@@ -270,6 +272,8 @@ HandlerResult cmdGetConfig(const Args&, Reply& r, void*) {
     w.key("rt_enabled").boolean(c.rtEnabled);
     w.key("active_layer").u32(c.activeLayer);
     w.key("boot_output").boolean(c.bootOutput);
+    w.key("saver_idle").u32(c.saverIdleMin);
+    w.key("saver_anim").i32(c.saverAnim);
     w.key("dirty").boolean(configIsDirty());
     w.key("settings_seq").u32(configSettingsSeq());
     w.key("layers").beginArray();
@@ -664,6 +668,36 @@ HandlerResult cmdSetBootOutput(const Args& a, Reply& r, void*) {
     return HandlerResult::Done;
 }
 
+HandlerResult cmdSetSaverIdle(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    uint32_t minutes;
+    ParseResult pr = proto::parseUint(a[0], 0, limits::SAVER_IDLE_MAX_MIN, minutes);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "minutes must be 0 (never) to 60");
+    ConfigStatus st = configSetSaverIdle((uint8_t)minutes);
+    if (st != ConfigStatus::Ok) return configError(r, st, "idle time rejected");
+    JsonWriter& w = r.ok();
+    w.key("saver_idle").u32(configGet().saverIdleMin);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetSaverAnim(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    int32_t anim = -1;
+    if (!proto::keywordIs(a[0], "shuffle")) {
+        uint32_t v;
+        ParseResult pr = proto::parseUint(a[0], 0, limits::SAVER_ANIM_COUNT - 1, v);
+        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 5, or SHUFFLE");
+        anim = (int32_t)v;
+    }
+    ConfigStatus st = configSetSaverAnim((int8_t)anim);
+    if (st != ConfigStatus::Ok) return configError(r, st, "animation rejected");
+    JsonWriter& w = r.ok();
+    w.key("saver_anim").i32(configGet().saverAnim);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
 // ---- diagnostics -----------------------------------------------------------------------------
 
 HandlerResult cmdSim(const Args& a, Reply& r, void*) {
@@ -832,6 +866,8 @@ const proto::CommandDef TABLE[] = {
     { "CALIBRATE",     nullptr,   0, 0, cmdCalibrate },
     { "CAL",           nullptr,   1, 1, cmdCal },
     { "SET_BOOT_OUTPUT", nullptr, 1, 1, cmdSetBootOutput },
+    { "SET_SAVER_IDLE", nullptr,  1, 1, cmdSetSaverIdle },
+    { "SET_SAVER_ANIM", nullptr,  1, 1, cmdSetSaverAnim },
     { "SIM",           nullptr,   1, 2, cmdSim },
     { "SCAN_RATE",     nullptr,   0, 0, cmdScanRate },
     { "TIMING",        nullptr,   0, 1, cmdTiming },

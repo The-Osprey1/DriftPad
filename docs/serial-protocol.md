@@ -6,7 +6,8 @@ DriftPad speaks a line-based text protocol over its USB serial port (CDC, 115200
 [`firmware/src/commands.cpp`](../firmware/src/commands.cpp); `tests/test_contract_consistency.py`
 fails when this document and the table disagree. Detect capabilities with `INFO`: `protocol` is 2 and
 `features[]` lists what this firmware has (`keymap layers rapid_trigger telemetry timing raw sim
-display guided_calibration boot_output settings_ab display_status encoder_status key_modifiers`). Firmware before 2.1.0 spoke protocol 1
+display guided_calibration boot_output settings_ab display_status encoder_status key_modifiers
+screensaver_idle`). Firmware before 2.1.0 spoke protocol 1
 (replies without `cmd` or `id`); the configurator refuses it and says so.
 
 ## Limits
@@ -18,6 +19,7 @@ display guided_calibration boot_output settings_ab display_status encoder_status
 | Layers / keys | 3 (0-2) | 16 (0-15) | |
 | Key code | 0 | 255 | |
 | Line length | | 160 bytes | |
+| Screensaver idle start (`SET_SAVER_IDLE`) | 0 minutes (never) | 60 minutes | 2 minutes |
 | Request id | | 12 characters | |
 | Stream rate | | 60 Hz | 30 Hz |
 
@@ -70,8 +72,8 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 | Command | Reply fields (besides status/cmd/id) |
 |---|---|
 | `PING` | `type:"pong"` |
-| `INFO` (alias `HELLO`) | `type:"info", device:"DriftPad", hw, fw, protocol:2, build, build_date, features[], limits{actuation{min,max,default,step}, rt_sens{...}, layers, keys, label_max, label_chars, code_max, line_max, stream_hz_max}, calibration{state}, output{enabled, reason, active_keys[], suppressed_keys[], overflow, delivery}, settings{dirty, source, seq, load_errors[]}, uptime_ms`, plus optional `display{available, mode, animation, shuffle, dimmed}` when `display_status` is advertised |
-| `GET_CONFIG` | `type:"config", actuation, rt_sens, rt_enabled, active_layer, boot_output, dirty, settings_seq, layers[3][16]{idx, code, label, mods}` (`mods` with feature `key_modifiers`) |
+| `INFO` (alias `HELLO`) | `type:"info", device:"DriftPad", hw, fw, protocol:2, build, build_date, features[], limits{actuation{min,max,default,step}, rt_sens{...}, layers, keys, label_max, label_chars, code_max, line_max, stream_hz_max, saver_idle_max, saver_anims}, calibration{state}, output{enabled, reason, active_keys[], suppressed_keys[], overflow, delivery}, settings{dirty, source, seq, load_errors[]}, uptime_ms`, plus optional `display{available, mode, animation, shuffle, dimmed}` when `display_status` is advertised |
+| `GET_CONFIG` | `type:"config", actuation, rt_sens, rt_enabled, active_layer, boot_output, saver_idle, saver_anim, dirty, settings_seq, layers[3][16]{idx, code, label, mods}` (`mods` with feature `key_modifiers`; `saver_idle` and `saver_anim` with `screensaver_idle`) |
 | `STATUS` | `type:"status", active_layer, last_key, keys[16]{idx, pressed, travel, label}, output{...}, calibration{state}, sim_mask, dirty`, plus optional `display{...}` when `display_status` is advertised |
 | `STREAM <0|1> [hz]` | `streaming, hz`; then `{"type":"telemetry","seq","t","layer","pressed"(bitmask),"active"(bitmask),"sim"(bitmask),"travel"[16 × cmm ints],"knob"{a,b,sw,steps,presses},"dirty"}` at `hz` (default 30, max 60). `knob` (feature `encoder_status`) gives the raw encoder pin levels (1 = HIGH, contact open) and the quadrature steps and debounced presses counted since boot, for wiring checks. Streaming stops when the host closes the port. |
 | `SET_ACTUATION <mm>` | `actuation` + applied/persisted/dirty |
@@ -79,6 +81,8 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 | `SET_RT_ENABLE <bool>` | `rt_enabled` + applied/persisted/dirty |
 | `SET_LAYER <0-2>` | `active_layer` + applied/persisted/dirty |
 | `SET_KEY <layer> <key> <code> [label] [mods]` | `layer, key, code, label` (normalised), `mods` + applied/persisted/dirty. `mods` (feature `key_modifiers`, 0 to 15) are modifiers held with the key: 1 Ctrl, 2 Shift, 4 Alt, 8 Win, so `SET_KEY 0 3 99 COPY 1` makes key 3 send Ctrl+C. Omitted means 0, a plain key; `mods` needs `label` before it. With code 0 the key sends only the modifiers |
+| `SET_SAVER_IDLE <minutes>` | `saver_idle` + applied/persisted/dirty. Feature `screensaver_idle`: the screensaver starts by itself after this many idle minutes, 0 to 60; 0 = never (see below) |
+| `SET_SAVER_ANIM <0-5\|SHUFFLE>` | `saver_anim` (`-1` for shuffle) + applied/persisted/dirty. The animation the idle screensaver plays, numbered as for `ANIM` |
 | `SET_HID <bool> [FORCE]` (aliases `HID`, `OUTPUT`) | `hid_output, output{...}` (runtime only, never saved) |
 | `SAVE` | `persisted:true, dirty:false, duration_ms`, or error `flash_error`/`flash_verify_failed` with `persisted:false` |
 | `REVERT` | `applied, persisted, dirty` — reloads the saved settings; `not_allowed` when nothing is saved |
@@ -143,7 +147,12 @@ three-minute dim timer. After three minutes of uninterrupted playback the panel 
 trusted key/rotary activity restores full brightness and returns to the selected screen. The first
 menu input from the knob while hidden only wakes the display, preserving the selected menu and settings;
 volume and mute (the knob outside the menu, while keyboard output is on) still apply.
-Idle never starts a screensaver, puts the display to sleep, or changes the selected standby page.
+Idle never puts the display to sleep or changes the selected standby page. With `screensaver_idle`,
+it starts the screensaver: after `saver_idle` minutes without trusted key activity, a knob input or a
+mutating command, the display core starts a session with `saver_anim` (stored settings, factory 2
+minutes and shuffle; `SET_SAVER_IDLE 0` turns it off). It does not start over the tuning menu, while
+the display is off, or while key input cannot be trusted (calibration missing, invalid or running).
+Without `screensaver_idle`, idle never starts a screensaver.
 Wake, sleep, screensaver and test-pattern requests are applied in posting order: a later `WAKE`,
 `SLEEP` or `SCREENSAVER` cancels an older test pattern, whether it was active or still queued.
 If `SLEEP` is applied while the OLED is unavailable, successful initialization later preserves

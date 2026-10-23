@@ -38,6 +38,7 @@
     <button role="tab" id="tab-keys" aria-controls="panel-keys" aria-selected="true" class="tab" data-view="keys">Keys</button>
     <button role="tab" id="tab-sensitivity" aria-controls="panel-sensitivity" aria-selected="false" class="tab" data-view="sensitivity" tabindex="-1">Sensitivity</button>
     <button role="tab" id="tab-device" aria-controls="panel-device" aria-selected="false" class="tab" data-view="device" tabindex="-1">Device</button>
+    <button role="tab" id="tab-screen" aria-controls="panel-screen" aria-selected="false" class="tab" data-view="screen" tabindex="-1">Screen</button>
 </nav>
 
 <!-- ============================== KEYS ============================== -->
@@ -289,6 +290,111 @@
     </details>
 </section>
 
+<!-- ============================== SCREEN ============================== -->
+<section id="panel-screen" role="tabpanel" aria-labelledby="tab-screen" class="panel" hidden>
+    <div class="card saver-card">
+        <div class="card-header">
+            <h2 class="card-title">Screensaver</h2>
+            <span id="saverBadge" class="badge">Not connected</span>
+        </div>
+        <div class="saver-row">
+            <label for="saverIdle">Start by itself after</label>
+            <select id="saverIdle" disabled aria-describedby="saverHint">
+                <option value="0">Never</option><option value="1">1 minute</option><option value="2">2 minutes</option>
+                <option value="5">5 minutes</option><option value="10">10 minutes</option><option value="30">30 minutes</option>
+            </select>
+            <label for="saverAnim">Animation</label>
+            <select id="saverAnim" disabled aria-describedby="saverHint">
+                <option value="-1">Shuffle all</option><option value="0">Starfield</option><option value="1">Plasma</option>
+                <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option>
+            </select>
+            <button id="saverPlayBtn" class="btn btn-sm" type="button" disabled>Play now</button>
+            <button id="saverSaveBtn" class="btn btn-sm btn-primary" type="button" disabled>Save to the pad</button>
+        </div>
+        <p id="saverHint" class="hint">Idle means no key press and no knob turn. Any key or the knob brings the key screen back. Changes apply at once; save to keep them after unplugging.</p>
+        <p id="saverState" class="state-line" role="status" aria-live="polite"></p>
+    </div>
+
+    <div class="lab-grid">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Screen Lab</h2>
+                <span class="badge">Preview only</span>
+            </div>
+            <p class="hint">Try a GIF or picture on the pad's 128 × 64 black-and-white screen. Nothing is sent to the pad yet: this preview is for choosing where your own animations should appear.</p>
+            <label class="lab-drop" id="labDrop" for="labFile">
+                <strong>Drop a GIF here</strong> or click to choose a file
+                <span class="hint">GIF, PNG, JPEG or WebP</span>
+            </label>
+            <input type="file" id="labFile" class="sr-only" accept="image/gif,image/png,image/jpeg,image/webp">
+            <p id="labSource" class="state-line" role="status" aria-live="polite"></p>
+            <div id="labWork" class="lab-work" hidden>
+                <progress id="labProgress" max="1" value="0" aria-describedby="labProgressText"></progress>
+                <span id="labProgressText" class="muted"></span>
+                <button id="labCancel" class="btn btn-sm" type="button">Cancel</button>
+            </div>
+            <fieldset class="lab-controls" id="labControls" disabled>
+                <legend class="sr-only">Conversion settings</legend>
+                <label for="labFit">Shape</label>
+                <select id="labFit">
+                    <option value="fit">Fit (whole picture, black bars)</option>
+                    <option value="fill">Fill (crop the edges)</option>
+                    <option value="stretch">Stretch</option>
+                </select>
+                <label for="labDither">Shading</label>
+                <select id="labDither" aria-describedby="labDitherHint">
+                    <option value="pattern">Pattern (steady, small: best for animations)</option>
+                    <option value="diffuse">Smooth (finest detail: best for still pictures)</option>
+                    <option value="threshold">Sharp (black or white only: logos, pixel art)</option>
+                </select>
+                <span></span>
+                <span id="labDitherHint" class="hint">Smooth shading changes speckle from frame to frame, so a moving GIF shimmers and needs up to ten times the memory.</span>
+                <label for="labBright">Brightness</label>
+                <span class="lab-slider"><input type="range" id="labBright" min="-100" max="100" step="5" value="0"><output id="labBrightVal" for="labBright">0</output></span>
+                <label for="labContrast">Contrast</label>
+                <span class="lab-slider"><input type="range" id="labContrast" min="-100" max="100" step="5" value="0"><output id="labContrastVal" for="labContrast">0</output></span>
+                <label for="labSpeed">Speed</label>
+                <select id="labSpeed">
+                    <option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option>
+                    <option value="1.5">1.5×</option><option value="2">2×</option>
+                </select>
+                <span>Frames</span>
+                <span class="lab-trim">
+                    <label for="labFirst" class="sr-only">First frame</label><input type="number" id="labFirst" min="1" value="1" inputmode="numeric">
+                    <span aria-hidden="true">to</span>
+                    <label for="labLast" class="sr-only">Last frame</label><input type="number" id="labLast" min="1" value="1" inputmode="numeric">
+                </span>
+                <span></span>
+                <label class="lab-check"><input type="checkbox" id="labInvert"> Invert (light becomes dark)</label>
+            </fieldset>
+            <p id="labSize" class="state-line"></p>
+            <meter id="labMeter" class="lab-meter" min="0" max="1" low="0.5" high="0.85" optimum="0" value="0" aria-label="Share of the pad's animation memory"></meter>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">On the pad</h2>
+                <button id="labPlay" class="btn btn-sm" type="button" disabled>Pause</button>
+            </div>
+            <p id="labFrame" class="muted">Load a GIF to see it in three possible places.</p>
+            <div class="lab-mockups">
+                <figure>
+                    <canvas id="labSaver" class="lab-screen" width="128" height="64" role="img" aria-label="Preview: your GIF as a screensaver"></canvas>
+                    <figcaption><strong>Screensaver</strong> Joins the built-in animations when the pad has been idle a while.</figcaption>
+                </figure>
+                <figure>
+                    <canvas id="labHome" class="lab-screen" width="128" height="64" role="img" aria-label="Preview: your GIF as the home screen"></canvas>
+                    <figcaption><strong>Home screen</strong> Replaces the key screen while no key is touched; any key brings the keys back.</figcaption>
+                </figure>
+                <figure>
+                    <canvas id="labLayer" class="lab-screen" width="128" height="64" role="img" aria-label="Preview: your GIF as a small layer picture"></canvas>
+                    <figcaption><strong>Layer picture</strong> A small picture for each layer beside the key card, in place of the key map.</figcaption>
+                </figure>
+            </div>
+        </div>
+    </div>
+</section>
+
 <dialog id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
     <h2 id="confirmTitle">Are you sure?</h2>
     <p id="confirmBody"></p>
@@ -306,6 +412,9 @@
 <script src="js/draft.js"></script>
 <script src="js/backup.js"></script>
 <script src="js/fake_device.js"></script>
+<script src="js/anim_codec.js"></script>
+<script src="js/gif_convert.js"></script>
 <script src="js/app.js"></script>
+<script src="js/screen_lab.js"></script>
 </body>
 </html>

@@ -92,6 +92,10 @@ void setDefaults(DeviceSettings& s) {
     s.rtEnabled    = true;
     s.activeLayer  = 0;
     s.bootOutput   = false;
+    s.saverIdleMin = limits::SAVER_IDLE_DEFAULT_MIN;
+    s.saverAnim    = -1;
+    s.theme        = 0;
+    s.screenSpeed  = 0;
     for (uint8_t l = 0; l < NUM_LAYERS; ++l) {
         memcpy(s.keymaps[l], kDefaultLayers[l], sizeof(s.keymaps[l]));
     }
@@ -113,7 +117,8 @@ bool sameKeymaps(const DeviceSettings& a, const DeviceSettings& b) {
 // Field by field, only what the persistence backend stores
 bool sameStored(const DeviceSettings& a, const DeviceSettings& b) {
     if (a.actuationCmm != b.actuationCmm || a.rtSensCmm != b.rtSensCmm || a.rtEnabled != b.rtEnabled ||
-        a.activeLayer != b.activeLayer || !sameKeymaps(a, b)) {
+        a.activeLayer != b.activeLayer || !sameKeymaps(a, b) || a.saverIdleMin != b.saverIdleMin ||
+        a.saverAnim != b.saverAnim || a.theme != b.theme || a.screenSpeed != b.screenSpeed) {
         return false;
     }
     if (persistStoresBootOutput() && a.bootOutput != b.bootOutput) return false;
@@ -282,6 +287,20 @@ ConfigStatus configSetKey(uint8_t layer, uint8_t key, uint8_t code, const char* 
 void configSetBootOutput(bool enabled) {
     s_settings.bootOutput = enabled;
     updateDirty();
+}
+
+ConfigStatus configSetSaverIdle(uint8_t minutes) {
+    if (minutes > limits::SAVER_IDLE_MAX_MIN) return ConfigStatus::OutOfRange;
+    s_settings.saverIdleMin = minutes;
+    updateDirty();
+    return ConfigStatus::Ok;
+}
+
+ConfigStatus configSetSaverAnim(int8_t anim) {
+    if (anim < -1 || anim >= (int8_t)limits::SAVER_ANIM_COUNT) return ConfigStatus::OutOfRange;
+    s_settings.saverAnim = anim;
+    updateDirty();
+    return ConfigStatus::Ok;
 }
 
 ConfigStatus configSetCalibration(const CalibrationData& data) {

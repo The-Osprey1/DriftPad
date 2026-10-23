@@ -28,6 +28,10 @@ struct DeviceSettings {
     bool            rtEnabled;
     uint8_t         activeLayer;
     bool            bootOutput;            // enable keyboard output at power-up when calibration is valid
+    uint8_t         saverIdleMin;          // start the screensaver after this many idle minutes, 0 = never
+    int8_t          saverAnim;             // the animation it plays: 0..limits::SAVER_ANIM_COUNT - 1, -1 shuffles
+    uint8_t         theme;                 // screen theme, 0..limits::THEME_COUNT - 1 (0 = Drift)
+    uint8_t         screenSpeed;           // display link speed, 0 = fast when the panel keeps up, 1 = safe (stored, not used yet)
     LayerKey        keymaps[NUM_LAYERS][NUM_KEYS];
     CalibrationData calibration;
 };
@@ -93,6 +97,8 @@ ConfigStatus configSetActiveLayer(uint8_t layer);
 // modifiers: limits::MODIFIERS_MASK bits held with the key; 0 makes it a plain key.
 ConfigStatus configSetKey(uint8_t layer, uint8_t key, uint8_t code, const char* label, uint8_t modifiers = 0);
 void         configSetBootOutput(bool enabled);
+ConfigStatus configSetSaverIdle(uint8_t minutes);   // OutOfRange above limits::SAVER_IDLE_MAX_MIN
+ConfigStatus configSetSaverAnim(int8_t anim);       // -1 shuffles; OutOfRange outside -1..SAVER_ANIM_COUNT - 1
 ConfigStatus configSetCalibration(const CalibrationData& data);  // must evaluate Valid (or be Missing)
 
 void configResetUser();   // factory keymaps/actuation/RT/layer/boot output, calibration kept

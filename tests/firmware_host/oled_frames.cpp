@@ -194,6 +194,21 @@ int oled_idle_travel_step(uint32_t dt_ms, float travel, int pressed) {
 int oled_idle_step(uint32_t dt_ms, int touch) {
     return oled_idle_travel_step(dt_ms, touch ? 2.0f : 0.0f, touch);
 }
+// One display-core pass with the stored screensaver choices in the snapshot (idle start)
+void oled_auto_saver_step(uint32_t dt_ms, int idle_min, int anim, int trusted, int touch, int menu) {
+    display_link::Snapshot s;
+    memset(&s, 0, sizeof s);
+    s.keyInputValid = trusted != 0;
+    s.lastActiveKey = -1;
+    s.saverIdleMin = (uint8_t)idle_min;
+    s.saverAnim = (int8_t)anim;
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) s.keys[i].travelMm = touch ? 2.0f : 0.0f;
+    s.keys[0].pressed = touch != 0;
+    s_menuRequested = menu != 0;
+    display_link::publish(s);
+    host_clock_advance_us((uint64_t)dt_ms * 1000);
+    loop1();
+}
 void oled_idle_start_screensaver() { startScreensaver(millis(), -1); }
 int oled_idle_hidden() { return s_screensaverActive || s_displaySleeping ? 1 : 0; }
 int oled_uncalibrated_intro_step(uint32_t dt_ms, int output) {

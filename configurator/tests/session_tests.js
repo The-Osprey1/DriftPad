@@ -490,7 +490,7 @@
         assertEq(res.failed.map(f => f.what), ["layer 1 key 4"]);
         assertEq(res.mismatched.map(m => m.what).sort(), ["layer 0 key 0"]);
         assertEq(res.mismatched[0].actual, key(98, "BQ"), "mismatches show what the pad holds");
-        assertEq(res.applied.length, 5 + 48 - 1, "every other step was accepted (5 settings, 48 keys)");
+        assertEq(res.applied.length, 7 + 48 - 1, "every other step was accepted (7 settings, 48 keys)");
     });
 
     test("backup: invalid files are refused with a reason", () => {
@@ -513,6 +513,8 @@
             "bad label": variant(d => { d.layers[0][0].label = "a b"; }),
             "unassignable code": variant(d => { d.layers[1][1].code = 137; }),
             "short layer": variant(d => { d.layers[2].pop(); }),
+            "idle too long": variant(d => { d.settings.saver_idle = 61; }),
+            "unknown animation": variant(d => { d.settings.saver_anim = 6; }),
         };
         for (const [name, text] of Object.entries(cases)) {
             const r = DP.backup.parse(text, lim);
@@ -752,5 +754,37 @@
         const res = await DP.backup.restore(b.session, DP.backup.parse(JSON.stringify(file), b.session.limits));
         assertEq([res.failed, res.mismatched], [[], []]);
         assertEq(b.device.state.layers[1][5], key(116, "TAB", 3));
+    });
+
+    // ------------------------------------------------------------------ screensaver idle start
+    test("screensaver: idle minutes and animation are read, applied and saved like other settings", async () => {
+        const { session, device } = await rig();
+        assertEq([session.confirmed.saver_idle, session.confirmed.saver_anim], [2, -1], "factory: 2 minutes, shuffle");
+        assertEq(await session.setSetting("saver_idle", 10), 10);
+        assertEq(await session.setSetting("saver_anim", 4), 4);
+        const sent = n => device.received.slice(-n).map(l => l.replace(/^@\S+ /, ""));
+        assertEq(sent(2), ["SET_SAVER_IDLE 10", "SET_SAVER_ANIM 4"]);
+        assertEq(session.dirty, true, "applied, not saved");
+        assertEq(await session.setSetting("saver_anim", -1), -1);
+        assertEq(sent(1), ["SET_SAVER_ANIM SHUFFLE"]);
+        await session.save();
+        const cfg = await session.refreshConfig();
+        assertEq([cfg.saver_idle, cfg.saver_anim, cfg.dirty], [10, -1, false]);
+        assertEq([session.limits.saver_idle_max, session.limits.saver_anims], [60, 6]);
+    });
+
+    test("screensaver: firmware without screensaver_idle reports no choices and backups skip them", async () => {
+        const { session, device } = await rig({ before: dev => { dev.features = dev.features.filter(f => f !== "screensaver_idle"); } });
+        assertEq([session.confirmed.saver_idle, session.confirmed.saver_anim], [null, null]);
+        const backup = DP.backup.create(session);
+        assert(!("saver_idle" in backup.settings), "nothing to back up");
+        const withSaver = JSON.parse(JSON.stringify(backup));
+        withSaver.settings.saver_idle = 5;
+        withSaver.settings.saver_anim = 2;
+        const parsed = DP.backup.parse(JSON.stringify(withSaver), session.limits);
+        assertEq(parsed.problems, []);
+        const res = await DP.backup.restore(session, parsed);
+        assertEq(res.failed, []);
+        assert(!device.received.some(l => /^SET_SAVER_/.test(l)), "no command the firmware would reject");
     });
 })(window);
