@@ -99,6 +99,7 @@ def prefix_device() -> ctypes.CDLL:
 
 CURRENT_FIRMWARE = [
     "main.cpp", "commands.cpp", "config.cpp", "config_persist_ab.cpp", "settings_store.cpp", "hall.cpp", "encoder.cpp",
+    "media_keys.cpp",
     "encoder_menu.cpp", "keycodes.cpp", "keyboard_output.cpp", "keyboard_output_hal_device.cpp",
     "calibration.cpp", "protocol.cpp", "line_reader.cpp", "json_writer.cpp", "tx_queue.cpp", "timing.cpp",
     "display_link.cpp", "display_publish.cpp",
@@ -135,7 +136,7 @@ def _whole_image(key: str, main_source: Path, extra_flags=()) -> ctypes.CDLL:
         "vd_engine_actuation": ([], f), "vd_engine_rt_sens": ([], f), "vd_engine_rt_enabled": ([], i),
         "vd_active_layer": ([], i), "vd_engine_code": ([i], i), "vd_engine_rest": ([i], i), "vd_dirty": ([], i),
         "vd_output_enabled": ([], i), "vd_is_pressed": ([i], i), "vd_encoder_apply": ([i, i], i),
-        "oled_stub_wakes": ([], ctypes.c_uint32), "oled_stub_page": ([], i), "oled_stub_stall": ([i], None),
+        "oled_stub_wakes": ([], ctypes.c_uint32), "oled_stub_page": ([], i), "oled_stub_menu_open": ([], i), "oled_stub_stall": ([i], None),
         "vd_display_snapshot": ([ctypes.c_void_p, ctypes.c_uint32], i),
         "vd_display_snapshot_size": ([], ctypes.c_uint32), "vd_display_stats": ([ctypes.c_void_p], None),
         "vd_fault_mask": ([], i),
@@ -143,6 +144,7 @@ def _whole_image(key: str, main_source: Path, extra_flags=()) -> ctypes.CDLL:
         "vd_normalize_label": ([ctypes.c_char_p, ctypes.c_char_p], i),
         "vd_cal_key_plausible": ([i, i, i], i),
         "usbfake_host_state": ([ctypes.POINTER(ctypes.c_uint8)], None),
+        "usbfake_media_log_len": ([], i), "usbfake_media_log_entry": ([i], i), "usbfake_media_held": ([], i),
         "ff_reset": ([], None), "ff_power_on": ([], None), "ff_cut_after_program_bytes": ([ctypes.c_int32], None),
         "ff_cut_during_next_erase": ([ctypes.c_int32], None), "ff_fail_program": ([ctypes.c_int32, ctypes.c_int32], None),
         "ff_read_flip": ([i, i, i], None), "ff_flip_bits": ([i, i, i], None),

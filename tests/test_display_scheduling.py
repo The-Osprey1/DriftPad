@@ -31,7 +31,7 @@ import device_host as dh
 
 MAIN_BEFORE = "21834a8"      # last commit whose main.cpp saved encoder edits regardless of typing
 LOOPS_PER_MS = 10            # vd_loop: one loop() per 100 us of fake time
-ENCODER_A_PIN, ENCODER_B_PIN = 20, 21   # firmware/include/pins.h
+ENCODER_A_PIN, ENCODER_B_PIN, ENCODER_SW_PIN = 20, 21, 2   # firmware/include/pins.h
 
 
 class KeyView(ctypes.Structure):
@@ -52,6 +52,7 @@ def fresh(lib) -> dh.Device:
         lib.set_travel(k, 0.0)
     lib.pin_fake_set(ENCODER_A_PIN, 1)
     lib.pin_fake_set(ENCODER_B_PIN, 1)
+    lib.pin_fake_set(ENCODER_SW_PIN, 1)
     lib.oled_stub_stall(0)
     return dh.Device(lib)
 
@@ -68,6 +69,18 @@ def turn_encoder(d: dh.Device, detents: int = 1) -> None:
 
 def run_ms(d: dh.Device, ms: int) -> None:
     d.run(ms * LOOPS_PER_MS)
+
+
+def hold_button(d: dh.Device, ms: int) -> None:
+    d.lib.pin_fake_set(ENCODER_SW_PIN, 0)
+    run_ms(d, ms)
+    d.lib.pin_fake_set(ENCODER_SW_PIN, 1)
+    run_ms(d, 50)   # past the 25 ms debounce
+
+
+def open_menu(d: dh.Device) -> None:
+    """Outside the settings menu the knob is volume; holding it for a second opens the menu."""
+    hold_button(d, 1100)
 
 
 class TestSnapshot(unittest.TestCase):
@@ -246,6 +259,8 @@ class TestEncoderSave(unittest.TestCase):
 
     def setUp(self):
         self.d = fresh(self.lib)
+        open_menu(self.d)
+        self.assertEqual(self.lib.oled_stub_menu_open(), 1)
 
     def rt_sens(self):
         return self.d.config()["rt_sens"]

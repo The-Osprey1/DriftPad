@@ -19,6 +19,13 @@ bool s_clicked = false;
 uint32_t s_lastBtnDebounceTime = 0;
 constexpr uint32_t DEBOUNCE_DELAY_MS = 25;
 
+// Short press fires on release; holding this long fires a long press instead (once, while held)
+constexpr uint32_t LONG_PRESS_MS = 1000;
+uint32_t s_pressStartMs = 0;
+bool s_longFired = false;
+bool s_shortPress = false;
+bool s_longPress = false;
+
 // The reworked DriftPad V2 knob delivers A and B in the opposite order to the table below, so a
 // clockwise turn would count down. Set to false for a knob that counts up when turned clockwise.
 constexpr bool REVERSE_DIRECTION = true;
@@ -48,6 +55,10 @@ void encoderInit() {
     s_lastBtnState = (sw == LOW);
     s_rawLevels = (uint8_t)((a ? 0x01 : 0) | (b ? 0x02 : 0) | (sw ? 0x04 : 0));
     s_pressCount = 0;
+    // Held at power-up: that press is not the user's, so it fires nothing
+    s_longFired = s_lastBtnState;
+    s_shortPress = false;
+    s_longPress = false;
 }
 
 void encoderUpdate() {
@@ -74,8 +85,16 @@ void encoderUpdate() {
             if (s_lastBtnState) {
                 s_clicked = true;
                 s_pressCount++;
+                s_pressStartMs = millis();
+                s_longFired = false;
+            } else if (!s_longFired) {
+                s_shortPress = true;
             }
         }
+    }
+    if (s_lastBtnState && !s_longFired && (millis() - s_pressStartMs) >= LONG_PRESS_MS) {
+        s_longFired = true;
+        s_longPress = true;
     }
 }
 
@@ -93,6 +112,18 @@ int32_t encoderGetDelta() {
 
 bool encoderIsPressed() {
     return s_lastBtnState;
+}
+
+bool encoderTakeShortPress() {
+    bool fired = s_shortPress;
+    s_shortPress = false;
+    return fired;
+}
+
+bool encoderTakeLongPress() {
+    bool fired = s_longPress;
+    s_longPress = false;
+    return fired;
 }
 
 uint8_t encoderRawLevels() {

@@ -40,6 +40,10 @@ bool     s_hostPolls = true;
 uint32_t s_pollIntervalUs = 1000;
 bool     s_busy = false;
 uint8_t  s_inflight[8];     // modifiers, reserved, keys[6]
+bool     s_inflightMedia = false;   // the in-flight report is a media (consumer) report
+uint16_t s_inflightUsage = 0;
+uint16_t s_hostMedia = 0;           // media usage the host sees held (0 = none)
+std::vector<uint16_t> s_mediaLog;   // media reports the host collected, in order (0 = release)
 uint64_t s_deliverAtUs = 0;
 uint8_t  s_hostMods = 0;
 uint8_t  s_hostKeys[6];
@@ -61,6 +65,7 @@ void logEvent(uint8_t kind, const uint8_t* report8) {
 }
 
 void hostForget() {
+    s_hostMedia = 0;
     s_hostMods = 0;
     memset(s_hostKeys, 0, sizeof(s_hostKeys));
     logEvent(4, nullptr);
@@ -75,9 +80,17 @@ void deliverIfDue() {
     if (!s_busy || !tud_ready() || !s_hostPolls) return;
     if (host_clock_now_us() < s_deliverAtUs) return;
     s_busy = false;
+    s_delivered++;
+    if (s_inflightMedia) {
+        s_inflightMedia = false;
+        s_hostMedia = s_inflightUsage;
+        s_mediaLog.push_back(s_inflightUsage);
+        uint8_t report[2] = { (uint8_t)(s_inflightUsage & 0xFF), (uint8_t)(s_inflightUsage >> 8) };
+        tud_hid_report_complete_cb(0, report, 2);
+        return;
+    }
     s_hostMods = s_inflight[0];
     memcpy(s_hostKeys, s_inflight + 2, 6);
-    s_delivered++;
     logEvent(2, s_inflight);
     tud_hid_report_complete_cb(0, s_inflight, 8);
 }
@@ -108,7 +121,22 @@ bool tud_hid_keyboard_report(uint8_t, uint8_t modifier, const uint8_t keycode[6]
     return true;
 }
 
-bool tud_hid_report(uint8_t, const void*, uint16_t) { return true; }   // consumer reports: unused
+// Media (consumer) reports: 2-byte usage, same endpoint as the keyboard
+bool tud_hid_report(uint8_t, const void* data, uint16_t len) {
+    if (!tud_hid_ready()) {
+        s_refused++;
+        logEvent(5, nullptr);
+        return false;
+    }
+    uint16_t usage = 0;
+    if (len >= 2) memcpy(&usage, data, 2);
+    s_inflightMedia = true;
+    s_inflightUsage = usage;
+    s_busy = true;
+    s_deliverAtUs = nextPollAfter(host_clock_now_us());
+    s_queued++;
+    return true;
+}
 
 // ---- USBClass surface ------------------------------------------------------------------------
 
@@ -149,6 +177,10 @@ void usbfake_reset() {
     s_deliverAtUs = 0;
     s_hostMods = 0;
     memset(s_hostKeys, 0, sizeof(s_hostKeys));
+    s_inflightMedia = false;
+    s_inflightUsage = 0;
+    s_hostMedia = 0;
+    s_mediaLog.clear();
     s_queued = s_delivered = s_lost = s_refused = 0;
     s_blockedUs = 0;
     s_log.clear();
@@ -172,6 +204,7 @@ void usbfake_resume() { s_suspended = false; }
 void usbfake_unmount() {
     if (s_busy) {
         s_busy = false;
+        s_inflightMedia = false;
         s_lost++;
         logEvent(3, s_inflight);
     }
@@ -185,6 +218,7 @@ void usbfake_mount() { s_mounted = true; }
 void usbfake_fail_inflight() {
     if (!s_busy) return;
     s_busy = false;
+    s_inflightMedia = false;
     s_lost++;
     logEvent(3, s_inflight);
     tud_hid_report_failed_cb(0, HID_REPORT_TYPE_INPUT, s_inflight, 0);
@@ -218,5 +252,10 @@ void usbfake_log_entry(int i, uint8_t* out8) {
 }
 
 void usbfake_clear_log() { s_log.clear(); }
+
+// Media reports the host collected (0 = release), and the usage it currently sees held
+int usbfake_media_log_len() { return (int)s_mediaLog.size(); }
+int usbfake_media_log_entry(int i) { return (int)s_mediaLog[(size_t)i]; }
+int usbfake_media_held() { return (int)s_hostMedia; }
 
 }

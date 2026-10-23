@@ -8,6 +8,7 @@
 #include "display_publish.h"
 #include "config.h"
 #include "keyboard_output.h"
+#include "media_keys.h"
 #include "commands.h"
 #include "calibration.h"
 #include "protocol.h"
@@ -88,6 +89,7 @@ void setup() {
 
     // Keyboard output starts disabled (prototype safety) and empty
     KeyboardOutput::init();
+    MediaKeys::init();
 
     muxInit();
     encoderInit();
@@ -148,6 +150,7 @@ void loop() {
     }
 
     KeyboardOutput::service();
+    MediaKeys::service();
     HallManager::simService(nowMs);
     serviceHostConnection();
 
@@ -163,15 +166,29 @@ void loop() {
         s_tx.drain(s_sink);
     }
 
-    // Rotary encoder: the menu applies changes through the config mutators
+    // Rotary encoder. Normally: turn = volume, press = mute, hold 1 s = open the settings menu.
+    // In the menu: turn adjusts (through the config mutators), press = next page, hold = close.
     encoderUpdate();
     int32_t delta = encoderGetDelta();
-    if (delta != 0 && oledAdjustCurrentSetting(delta)) {
-        s_encoderSavePending = true;
-        s_lastEncoderEdit = nowMs;
-    }
-    if (encoderWasClicked()) {
-        oledCycleMenu();
+    const bool shortPress = encoderTakeShortPress();
+    const bool longPress = encoderTakeLongPress();
+    if (oledMenuOpen()) {
+        if (delta != 0 && oledAdjustCurrentSetting(delta)) {
+            s_encoderSavePending = true;
+            s_lastEncoderEdit = nowMs;
+        }
+        if (shortPress) oledCycleMenu();
+        if (longPress) oledCloseMenu();
+    } else {
+        if (delta != 0) {
+            const uint32_t clicks = (uint32_t)(delta > 0 ? delta : -delta);
+            MediaKeys::tap(delta > 0 ? MediaKeys::VOLUME_UP : MediaKeys::VOLUME_DOWN,
+                           (uint8_t)(clicks > 255 ? 255 : clicks));
+        }
+        if (shortPress) MediaKeys::tap(MediaKeys::MUTE);
+        // Knob input wakes a hidden display; unlike menu input, volume and mute still apply
+        if (delta != 0 || shortPress) oledWake();
+        if (longPress) oledCycleMenu();   // opens the first page
     }
     if (s_encoderSavePending && (nowMs - s_lastEncoderEdit) >= ENCODER_SAVE_DELAY_MS &&
         (nowMs - s_lastKeyChange) >= KEYS_QUIET_MS) {

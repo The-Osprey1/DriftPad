@@ -141,7 +141,8 @@ shuffle mode; sending `ANIM -1` is not valid syntax.
 power-up default is shuffle. Restarting playback restores full panel levels and starts a new
 three-minute dim timer. After three minutes of uninterrupted playback the panel dims; `WAKE` or
 trusted key/rotary activity restores full brightness and returns to the selected screen. The first
-rotary input while hidden only wakes the display, preserving the selected menu and settings.
+menu input from the knob while hidden only wakes the display, preserving the selected menu and settings;
+volume and mute (the knob outside the menu, while keyboard output is on) still apply.
 Idle never starts a screensaver, puts the display to sleep, or changes the selected standby page.
 Wake, sleep, screensaver and test-pattern requests are applied in posting order: a later `WAKE`,
 `SLEEP` or `SCREENSAVER` cancels an older test pattern, whether it was active or still queued.
