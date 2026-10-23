@@ -186,7 +186,7 @@
     // to hiding the control instead of sending a command it would reject.
     const FEATURES = Object.freeze([
         "keymap", "layers", "rapid_trigger", "telemetry", "timing", "raw", "sim", "display",
-        "guided_calibration", "boot_output", "settings_ab", "display_status",
+        "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status",
     ]);
 
     // Simulated travel accepted by SIM <key> <mm> (firmware: 0.00 .. 4.00 mm).

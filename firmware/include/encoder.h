@@ -54,4 +54,26 @@ bool encoderIsPressed();
  */
 bool encoderWasClicked();
 
+/**
+ * @brief Raw pin levels from the last update, for wiring checks.
+ *
+ * @return Bit 0 = A, bit 1 = B, bit 2 = switch; a set bit means the pin reads HIGH
+ *         (contact open, since the inputs use pull-ups).
+ */
+uint8_t encoderRawLevels();
+
+/**
+ * @brief Quadrature steps counted since boot, 4 per detent on a standard encoder.
+ *
+ * @return Signed step count; unlike encoderGetPosition() it shows every edge, even part of a detent.
+ */
+int32_t encoderStepCount();
+
+/**
+ * @brief Debounced presses of the push switch since boot.
+ *
+ * @return Press count.
+ */
+uint32_t encoderPressCount();
+
 #endif // ENCODER_H

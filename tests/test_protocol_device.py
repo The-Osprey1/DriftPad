@@ -449,6 +449,37 @@ class TestProtocolDevice(unittest.TestCase):
         frames = [j for j in self.d.json_lines(self.d.drain()) if j.get("type") == "telemetry"]
         self.assertEqual(frames, [], "telemetry kept streaming into a closed session")
 
+    def test_telemetry_reports_the_knob_pins_and_counts(self):
+        A, B, SW = 20, 21, 2   # firmware/include/pins.h
+        for pin in (A, B, SW):
+            self.lib.pin_fake_set(pin, 1)
+        self.assertIn("encoder_status", self.one("INFO")["features"])
+        self.one("STREAM 1 60")
+
+        def knob() -> dict:
+            self.d.drain()
+            self.d.run(400)
+            frames = [j for j in self.d.json_lines(self.d.drain()) if j.get("type") == "telemetry"]
+            self.assertTrue(frames, "no telemetry frame")
+            return frames[-1]["knob"]
+
+        rest = knob()
+        self.assertEqual((rest["a"], rest["b"], rest["sw"]), (1, 1, 1), "pulled-up pins read HIGH at rest")
+        for a, b in [(0, 1), (0, 0), (1, 0), (1, 1)]:   # one detent clockwise
+            self.lib.pin_fake_set(A, a)
+            self.lib.pin_fake_set(B, b)
+            self.d.run(20)
+        turned = knob()
+        self.assertEqual(turned["steps"] - rest["steps"], 4, "one detent is four quadrature steps")
+
+        self.lib.pin_fake_set(SW, 0)
+        held = knob()   # 40 ms of fake time, past the 25 ms debounce
+        self.assertEqual(held["sw"], 0)
+        self.lib.pin_fake_set(SW, 1)
+        released = knob()
+        self.assertEqual((released["sw"], released["presses"] - rest["presses"]), (1, 1))
+        self.one("STREAM 0")
+
     def test_raw_capture_arrives_in_bounded_chunks(self):
         r = self.one("RAW 3")
         self.assertEqual(r["samples"], 1000)

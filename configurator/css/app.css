@@ -163,7 +163,10 @@
             background: radial-gradient(circle at 35% 35%, #4a5268, #1b1f2c 70%);
             border: 2px solid #4a5268;
             position: relative;
+            transform: rotate(var(--knob-angle, 0deg));
+            transition: transform 80ms linear;
         }
+        .knob.pressed .knob-dial { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25) inset; }
         .knob-dial::after {
             content: ""; position: absolute; top: 4px; left: 50%; width: 3px; height: 12px;
             margin-left: -1.5px; border-radius: 2px; background: var(--accent);
