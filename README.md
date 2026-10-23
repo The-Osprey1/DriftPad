@@ -111,7 +111,7 @@ The documented DriftPad V2 wiring is:
 | Function | RP2040 pin |
 |---|---:|
 | OLED SDA / SCL | GP0 / GP1 |
-| Encoder push switch | GP4 |
+| Encoder push switch | GP2 |
 | Multiplexer S0-S3 | GP14-GP17 |
 | Encoder A / B | GP20 / GP21 |
 | Multiplexer common / ADC | GP26 / ADC0 |
