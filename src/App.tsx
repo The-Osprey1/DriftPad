@@ -278,6 +278,11 @@ export const App: React.FC = () => {
     [selectedSimKey, recordKeyPress]
   );
 
+  // The engine and serial callbacks are created once; they call the latest handler through this ref,
+  // so selecting a key or switching profile does not tear them down and reset the layer
+  const handleIncomingLineRef = useRef(handleIncomingLine);
+  handleIncomingLineRef.current = handleIncomingLine;
+
   const sendSerialCommand = useCallback(
     (cmd: string) => {
       const trimmed = cmd.trim();
@@ -302,7 +307,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const engine = new DriftPadDspEngine((line) => {
       addLog('RX', line);
-      handleIncomingLine(line);
+      handleIncomingLineRef.current(line);
     });
     dspEngineRef.current = engine;
 
@@ -326,7 +331,7 @@ export const App: React.FC = () => {
 
     const serial = serialServiceRef.current;
     serial.setCallbacks({
-      onLineReceived: (line) => handleIncomingLine(line),
+      onLineReceived: (line) => handleIncomingLineRef.current(line),
       onLineSent: () => {},
       onStatusChange: (mode) => {
         setConnectionMode(mode);
@@ -339,7 +344,7 @@ export const App: React.FC = () => {
       serial.disconnect();
       engine.dispose();
     };
-  }, [addLog, handleIncomingLine]);
+  }, [addLog]);
 
   const saveProfilesToStorage = (updatedProfiles: ProductivityProfile[]) => {
     setProfiles(updatedProfiles);
