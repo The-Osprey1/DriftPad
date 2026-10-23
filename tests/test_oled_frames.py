@@ -670,7 +670,7 @@ class CherryBlossomTheme(unittest.TestCase):
             self.assertGreater(self.lit(fb, 64, 0, 128, 30), 40)
 
     def sakura_cycle(self):
-        """The branch base (x, y, scale, angle) and moon centre (x, y) every 33 ms over 40 s"""
+        """The branch base (x, y, scale, angle) and moon centre (x, y) every 33 ms over one 34 s cycle"""
         import ctypes
         self.lib.oled_animation_reset.argtypes = [ctypes.c_uint32]
         self.lib.oled_animation_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
@@ -678,36 +678,32 @@ class CherryBlossomTheme(unittest.TestCase):
         buf = ctypes.create_string_buffer(1024)
         out = (ctypes.c_float * 6)()
         layers = []
-        for _ in range(int(40000 / 33)):             # a whole cycle of four views is 36 s
+        for _ in range(int(34000 / 33)):
             self.lib.oled_animation_step(6, 33, buf)
             self.lib.oled_sakura_view(out)
             layers.append(tuple(out))
         return layers
 
-    def test_sakura_camera_zooms_and_glides_without_jumps(self):
+    def test_sakura_camera_starts_far_pushes_in_then_pulls_back(self):
         layers = self.sakura_cycle()
         scales = [v[2] for v in layers]
-        self.assertGreaterEqual(max(scales), 1.5, "never comes close")
-        self.assertLessEqual(min(scales), 0.85, "never pulls back")
+        self.assertAlmostEqual(scales[0], 0.75, places=3, msg="does not start far off")
+        top = scales.index(max(scales))
+        self.assertAlmostEqual(max(scales), 1.7, places=3, msg="never comes close")
+        self.assertTrue(all(b >= a for a, b in zip(scales[:top], scales[1:top + 1])), "the push-in wavers")
+        self.assertTrue(all(b <= a for a, b in zip(scales[top:], scales[top + 1:])), "the pull-back wavers")
+        self.assertLess(scales[-1], 0.8, "does not return to far")
         for a, b in zip(layers, layers[1:]):
             self.assertLess(abs(b[0] - a[0]) + abs(b[1] - a[1]), 2.0, "the branch jumped")
-            self.assertLess(abs(b[2] - a[2]), 0.02)
+        self.assertEqual({v[3] for v in layers}, {0.0}, "the camera tilts")
         self.assertGreaterEqual(min(v[0] for v in layers), 128, "the branch's cut end came on screen")
 
-    def test_sakura_branch_moves_against_a_still_moon(self):
+    def test_sakura_branch_grows_against_a_still_moon(self):
         layers = self.sakura_cycle()
         span = lambda i: max(v[i] for v in layers) - min(v[i] for v in layers)
-        branch_dx, branch_dy, moon_dx, moon_dy = span(0), span(1), span(4), span(5)
-        self.assertGreater(branch_dy, 20, "the branch hardly moves up and down")
-        self.assertGreater(branch_dx, 20, "the branch hardly moves across")
-        # the moon is the fixed point the eye measures the camera against
-        self.assertEqual((moon_dx, moon_dy), (0, 0), "the moon moves")
-        # always moving: never more than a second without the camera moving at all
-        still, longest = 1, 1
-        for a, b in zip(layers, layers[1:]):
-            still = still + 1 if a == b else 1
-            longest = max(longest, still)
-        self.assertLess(longest * 33, 1000)
+        self.assertGreater(span(0), 20, "the branch hardly moves as the camera zooms")
+        # the moon is the fixed point the eye measures the zoom against
+        self.assertEqual((span(4), span(5)), (0, 0), "the moon moves")
 
 
 if __name__ == "__main__":

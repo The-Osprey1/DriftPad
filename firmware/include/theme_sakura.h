@@ -26,12 +26,11 @@ void drawBlossom(Adafruit_GFX& g, int16_t cx, int16_t cy, float open, uint8_t ra
 
 // How the screensaver's camera sees its scene. Everything is placed in scene pixels (the 128 x 64
 // screen at rest, y down), each layer at a depth from 0 (infinitely far: never moves) to 1 (the
-// branch and its petals: moves fully). The camera's pan, zoom and tilt apply to a layer in proportion
-// to its depth, so when the camera moves, near things slide past far ones: that is the parallax.
+// branch and its petals: moves fully). The camera only zooms, towards a focus point that stays where
+// it is on screen; a layer gets the zoom in proportion to its depth.
 struct Camera {
-    float panX, panY;   // how far the camera has moved, in scene pixels (positive: right, down)
-    float zoom;         // 1 = at rest; larger is closer
-    float tilt;         // radians; positive turns the view clockwise
+    float zoom;             // 1 = at rest; larger is closer
+    float focusX, focusY;   // the point it zooms towards, in scene pixels
     float zoomAt(float depth) const { return 1.0f + (zoom - 1.0f) * depth; }
     void project(float x, float y, float depth, float* sx, float* sy) const;
 };
@@ -100,17 +99,18 @@ void drawShoji(Adafruit_GFX& g, uint32_t elapsed, uint32_t total, uint8_t layer,
 void drawIntro(Adafruit_GFX& g, uint32_t t, const char* status);
 
 // The Sakura screensaver: a crescent moon with wisps of cloud and a few stars, distant hills, and a
-// branch reaching in from the right with petals on gusts of wind. The camera glides between four
-// views (at rest, close on the blossoms, pulled back and lower, tilted), pausing VIEW_HOLD_MS at
-// each and easing to the next over VIEW_MOVE_MS, and it floats a little all the time, so the layers
-// keep sliding past one another.
+// branch reaching in from the right with petals on gusts of wind. The camera starts far off, rests
+// HOLD_MS, pushes in on the blossoms over ZOOM_MS, rests close, pulls back out the same way, and
+// starts again. The moon and stars stay still, so the zoom is easy to see against them.
 class Scene {
 public:
-    static constexpr uint8_t VIEWS = 4;
-    static constexpr uint32_t VIEW_HOLD_MS = 2500;
-    static constexpr uint32_t VIEW_MOVE_MS = 6500;
+    static constexpr float ZOOM_FAR = 0.75f, ZOOM_CLOSE = 1.7f;
+    static constexpr uint32_t HOLD_MS = 3000;
+    static constexpr uint32_t ZOOM_MS = 14000;
+    static constexpr uint32_t CYCLE_MS = 2 * (HOLD_MS + ZOOM_MS);
+    static constexpr float FOCUS_X = 100.0f, FOCUS_Y = 14.0f;      // among the blossoms
     // Where things are in the scene, and how far away
-    static constexpr float BRANCH_X = 142.0f, BRANCH_Y = 10.0f;   // the base, off the right edge
+    static constexpr float BRANCH_X = 140.0f, BRANCH_Y = 10.0f;   // the base, off the right edge
     static constexpr float MOON_X = 28.0f, MOON_Y = 26.0f;
     // The moon and stars are infinitely far, as in life: they never move, so they show the eye what
     // the camera is doing to everything nearer
@@ -128,7 +128,6 @@ private:
     float frand();
     Petals m_petals;             // in scene pixels, at the branch's depth
     uint32_t m_t = 0;
-    uint32_t m_viewStart = 0;    // where in the cycle of views this session began
     uint32_t m_rng = 1;
     uint32_t m_dropAcc = 0;
     uint32_t m_nextGust = 0;

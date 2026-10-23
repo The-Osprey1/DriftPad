@@ -201,11 +201,9 @@ void Petals::draw(Adafruit_GFX& g, const Camera& cam, float depth) const {
 }
 
 void Camera::project(float x, float y, float depth, float* sx, float* sy) const {
-    const float a = tilt * depth, z = zoomAt(depth);
-    const float rx = x - 64.0f - panX * depth, ry = y - 32.0f - panY * depth;
-    const float c = cosf(a), s = sinf(a);
-    *sx = 64.0f + (rx * c - ry * s) * z;
-    *sy = 32.0f + (rx * s + ry * c) * z;
+    const float z = zoomAt(depth);
+    *sx = focusX + (x - focusX) * z;
+    *sy = focusY + (y - focusY) * z;
 }
 
 uint8_t Petals::live() const {
@@ -420,15 +418,6 @@ float Scene::frand() {
 
 namespace {
 
-// The camera's views, in order (then back to the first). The branch's base stays off the right edge
-// in every one, so the branch always reaches in from outside the screen.
-const Camera kViews[Scene::VIEWS] = {
-    {10.0f, 0.0f, 1.00f, 0.00f},     // at rest: the branch across the top right, the moon on the left
-    {20.0f, -20.0f, 1.60f, 0.06f},   // close on the blossoms, the camera raised
-    {-6.0f, 18.0f, 0.82f, -0.05f},   // pulled back and lowered: the branch high, the hills rising
-    {16.0f, -6.0f, 1.25f, 0.20f},    // tilted, the tips hanging down
-};
-
 float smooth(float p) { return p * p * (3.0f - 2.0f * p); }
 
 // A drifting shape's x in the scene: comes in from the right, leaves on the left, comes round again.
@@ -457,29 +446,28 @@ void drawWisp(Adafruit_GFX& g, float x, float y, float z) {
 } // namespace
 
 Camera Scene::camera() const {
-    constexpr uint32_t STEP = VIEW_HOLD_MS + VIEW_MOVE_MS;
-    const uint32_t phase = (m_t + m_viewStart) % (STEP * VIEWS);
-    const uint8_t k = (uint8_t)(phase / STEP);
-    const uint32_t within = phase % STEP;
-    const Camera& a = kViews[k];
-    const Camera& b = kViews[(k + 1) % VIEWS];
-    const float p = within < VIEW_HOLD_MS ? 0.0f : smooth((float)(within - VIEW_HOLD_MS) / VIEW_MOVE_MS);
-    Camera c{a.panX + (b.panX - a.panX) * p, a.panY + (b.panY - a.panY) * p,
-             a.zoom + (b.zoom - a.zoom) * p, a.tilt + (b.tilt - a.tilt) * p};
-    // A slow float on top, so the camera is never quite still
-    const float t = m_t / 1000.0f;
-    c.panX += 2.0f * sinf(t * TAU / 8.3f);
-    c.panY += 4.0f * sinf(t * TAU / 6.1f + 1.0f);
-    return c;
+    // Far, push in, close, pull back, then again
+    const uint32_t phase = m_t % CYCLE_MS;
+    float zoom;
+    if (phase < HOLD_MS) {
+        zoom = ZOOM_FAR;
+    } else if (phase < HOLD_MS + ZOOM_MS) {
+        zoom = ZOOM_FAR + (ZOOM_CLOSE - ZOOM_FAR) * smooth((float)(phase - HOLD_MS) / ZOOM_MS);
+    } else if (phase < 2 * HOLD_MS + ZOOM_MS) {
+        zoom = ZOOM_CLOSE;
+    } else {
+        zoom = ZOOM_CLOSE + (ZOOM_FAR - ZOOM_CLOSE) * smooth((float)(phase - 2 * HOLD_MS - ZOOM_MS) / ZOOM_MS);
+    }
+    return Camera{zoom, FOCUS_X, FOCUS_Y};
 }
 
 View Scene::branchView() const {
     // The branch is rigid, so the camera's view of it is again a placement: where its base lands,
-    // scaled by the zoom and turned by the tilt (turning the other way, since it is mirrored)
+    // scaled by the zoom
     const Camera c = camera();
     float x, y;
     c.project(BRANCH_X, BRANCH_Y, DEPTH_BRANCH, &x, &y);
-    return View{x, y, c.zoomAt(DEPTH_BRANCH), -c.tilt * DEPTH_BRANCH, true};
+    return View{x, y, c.zoomAt(DEPTH_BRANCH), 0.0f, true};
 }
 
 void Scene::reset(uint32_t seed) {
@@ -488,8 +476,6 @@ void Scene::reset(uint32_t seed) {
     m_petals.seed(seed ^ 0x9e3779b9u);
     m_petals.setBounds(-60.0f, 200.0f, 120.0f);   // the scene is wider than the screen
     m_t = 0;
-    // Each session opens on one of the views, so the screensaver does not always start the same way
-    m_viewStart = (uint32_t)(frand() * VIEWS) * (VIEW_HOLD_MS + VIEW_MOVE_MS);
     m_dropAcc = 0;
     m_wind = -2.0f;
     for (SkyStar& s : m_stars) {
