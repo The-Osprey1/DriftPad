@@ -46,9 +46,11 @@
     // INFO.features of the current firmware (firmware/src/commands.cpp, cmdInfo).
     const FEATURES = ["keymap", "layers", "rapid_trigger", "telemetry", "timing", "raw", "sim", "display",
                       "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status",
-                      "key_modifiers", "screensaver_idle"];
+                      "key_modifiers", "screensaver_idle", "themes"];
     const SAVER_IDLE = { max: 60, def: 2 };   // firmware limits::SAVER_IDLE_MAX_MIN, SAVER_IDLE_DEFAULT_MIN
-    const SAVER_ANIMS = 6;                    // firmware limits::SAVER_ANIM_COUNT
+    const SAVER_ANIMS = 7;                    // firmware limits::SAVER_ANIM_COUNT
+    const THEMES = 2;                         // firmware limits::THEME_COUNT
+    const THEME_SAVER = [-1, 6];              // firmware configThemeScreensaver(): Drift shuffles, Cherry blossom plays Sakura
     const TIMING_OPS = ["command", "telemetry", "save", "calibration", "publish", "display_request", "tx_drain"];
     const GAP_LIMITS_US = [1100, 1500, 2000, 5000, 10000, 50000];
 
@@ -173,6 +175,7 @@
         ["SLEEP", [], 0, 0], ["WAKE", [], 0, 0], ["OLED_TEST", [], 0, 0], ["OLED_SCAN", [], 0, 0], ["BOOTSEL", [], 0, 0],
         ["SET_BOOT_OUTPUT", [], 1, 1, "boot_output"], ["CAL", [], 1, 1, "guided_calibration"],
         ["SET_SAVER_IDLE", [], 1, 1, "screensaver_idle"], ["SET_SAVER_ANIM", [], 1, 1, "screensaver_idle"],
+        ["SET_THEME", [], 1, 1, "themes"],
     ];
 
     function maskList(mask) {
@@ -259,7 +262,7 @@
         _factory() {
             return {
                 actuationCmm: ACT.def, rtSensCmm: RT.def, rtEnabled: true, activeLayer: 0, bootOutput: false,
-                saverIdle: SAVER_IDLE.def, saverAnim: -1,
+                saverIdle: SAVER_IDLE.def, saverAnim: -1, theme: 0,
                 layers: DEFAULT_ROWS.map(l => l.map(([code, label]) => ({ code, label, mods: 0 }))),
             };
         }
@@ -269,6 +272,7 @@
             const s = { a: state.actuationCmm, r: state.rtSensCmm, e: state.rtEnabled, l: state.activeLayer, k: state.layers };
             if (this.has("settings_ab")) { s.b = state.bootOutput; s.c = calibration; }
             if (this.has("screensaver_idle")) { s.si = state.saverIdle; s.sa = state.saverAnim; }
+            if (this.has("themes")) s.th = state.theme;
             return JSON.stringify(s);
         }
 
@@ -556,10 +560,16 @@
                         s.saverAnim = -1;
                     } else {
                         p = parseUint(a[0], 0, SAVER_ANIMS - 1);
-                        if (p.err) return { error: p.err, msg: "animation must be 0 to 5, or SHUFFLE" };
+                        if (p.err) return { error: p.err, msg: "animation must be 0 to 6, or SHUFFLE" };
                         s.saverAnim = p.value;
                     }
                     return this._applied({ saver_anim: s.saverAnim });
+                case "SET_THEME":
+                    p = parseUint(a[0], 0, THEMES - 1);
+                    if (p.err) return { error: p.err, msg: "theme must be 0 (Drift) or 1 (Cherry blossom)" };
+                    s.theme = p.value;
+                    s.saverAnim = THEME_SAVER[p.value];
+                    return this._applied({ theme: s.theme, saver_anim: s.saverAnim });
                 case "SET_HID": {
                     p = parseBool(a[0]);
                     if (p.err) return { error: p.err, msg: "SET_HID takes 0 or 1" };
@@ -673,8 +683,8 @@
                 case "ANIM": {
                     let idx = -1;
                     if (a.length === 1) {
-                        p = parseUint(a[0], 0, 5);
-                        if (p.err) return { error: p.err, msg: "animation must be 0 to 5 (omit it to cycle)" };
+                        p = parseUint(a[0], 0, SAVER_ANIMS - 1);
+                        if (p.err) return { error: p.err, msg: "animation must be 0 to 6 (omit it to shuffle)" };
                         idx = p.value;
                     }
                     this.displaySelection = idx;
@@ -720,6 +730,7 @@
                     layers: NUM_LAYERS, keys: NUM_KEYS, label_max: 4, label_chars: "printable ASCII except \" \\ @",
                     code_max: 255, line_max: LINE_MAX, stream_hz_max: STREAM_HZ_MAX,
                     ...(this.has("screensaver_idle") ? { saver_idle_max: SAVER_IDLE.max, saver_anims: SAVER_ANIMS } : {}),
+                    ...(this.has("themes") ? { themes: THEMES } : {}),
                 },
                 calibration: cal,
                 output: this._outputObj(),
@@ -737,6 +748,7 @@
                 type: "config", actuation: mm(s.actuationCmm), rt_sens: mm(s.rtSensCmm), rt_enabled: s.rtEnabled,
                 active_layer: s.activeLayer, boot_output: s.bootOutput,
                 ...(this.has("screensaver_idle") ? { saver_idle: s.saverIdle, saver_anim: s.saverAnim } : {}),
+                ...(this.has("themes") ? { theme: s.theme } : {}),
                 dirty: this.dirty, settings_seq: this.flash ? this.seq : 0,
                 layers: s.layers.map(l => l.map((k, i) => ({ idx: i, code: k.code, label: k.label,
                     ...(this.has("key_modifiers") ? { mods: k.mods || 0 } : {}) }))),

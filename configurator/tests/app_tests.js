@@ -354,7 +354,7 @@
         await connected();
         app().setView("device", false);
         const options = [...$("animSelect").options].map(o => o.textContent);
-        assertEq(options, ["Shuffle all", "Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp"]);
+        assertEq(options, ["Shuffle all", "Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura"]);
         const before = countVerb("ANIM");
         $("animSelect").value = "2";
         $("animSelect").dispatchEvent(new Event("change", { bubbles: true }));
@@ -470,6 +470,16 @@
         assert(/plays only when you start it/.test(text("saverState")), text("saverState"));
         $("saverPlayBtn").click();
         assert(await waitUntil(() => countVerb("ANIM") > 0), "Play now starts it");
+        // The theme: Cherry blossom also selects its Sakura screensaver
+        assertEq($("themeSelect").value, "0");
+        const theme = $("themeSelect");
+        theme.value = "1";
+        theme.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.theme === 1), "theme sent");
+        assert(await waitUntil(() => $("saverAnim").value === "6"), `screensaver follows: ${$("saverAnim").value}`);
+        theme.value = "0";
+        theme.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.theme === 0));
         app().setView("keys", false);
     });
 
@@ -509,7 +519,7 @@
 
     test("app: controls that need a device are disabled without one", async () => {
         await disconnected();
-        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn"]) {
+        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn", "themeSelect"]) {
             assert($(id).disabled, `#${id} must be disabled while disconnected`);
         }
         assert(!$("captureBtn").disabled, "the draft stays editable offline");

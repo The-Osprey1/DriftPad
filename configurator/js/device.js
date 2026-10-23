@@ -74,6 +74,7 @@
             stream_hz_max: isInt(l.stream_hz_max) ? l.stream_hz_max : C.FALLBACK_LIMITS.stream_hz_max,
             saver_idle_max: isInt(l.saver_idle_max) ? l.saver_idle_max : C.FALLBACK_LIMITS.saver_idle_max,
             saver_anims: isInt(l.saver_anims) ? l.saver_anims : C.FALLBACK_LIMITS.saver_anims,
+            themes: isInt(l.themes) ? l.themes : C.FALLBACK_LIMITS.themes,
         };
     }
 
@@ -108,6 +109,7 @@
             // Screensaver idle start (minutes, 0 = never) and animation (-1 = shuffle); null without screensaver_idle
             saver_idle: isInt(r.saver_idle) ? r.saver_idle : null,
             saver_anim: isInt(r.saver_anim) ? r.saver_anim : null,
+            theme: isInt(r.theme) ? r.theme : null,   // 0 Drift, 1 Cherry blossom; null without themes
             layers: r.layers.map(layer => layer.map(k => ({ code: k.code, label: k.label, mods: isInt(k.mods) ? k.mods : 0 }))),
             dirty: typeof r.dirty === "boolean" ? r.dirty : null,
             settings_seq: isInt(r.settings_seq) ? r.settings_seq : null,
@@ -535,7 +537,8 @@
         }
 
         // Applies one setting ("actuation" | "rt_sens" | "rt_enabled" | "active_layer" | "boot_output"
-        // | "saver_idle" (minutes, 0 = never) | "saver_anim" (0..5, -1 = shuffle)).
+        // | "saver_idle" (minutes, 0 = never) | "saver_anim" (0..6, -1 = shuffle) | "theme" (0 Drift,
+        // 1 Cherry blossom; the pad also switches its screensaver to the theme's own)).
         // Resolves with the device's normalised value from the reply.
         async setSetting(field, value) {
             const spec = {
@@ -546,11 +549,15 @@
                 boot_output: ["SET_BOOT_OUTPUT", () => (value ? "1" : "0"), v => typeof v === "boolean"],
                 saver_idle: ["SET_SAVER_IDLE", () => String(value), isInt],
                 saver_anim: ["SET_SAVER_ANIM", () => (value < 0 ? "SHUFFLE" : String(value)), isInt],
+                theme: ["SET_THEME", () => String(value), isInt],
             }[field];
             if (!spec) throw new Error(`Unknown setting ${field}`);
             const [verb, arg, check] = spec;
             const r = await this.request(verb, [arg()], { validate: rep => (check(rep[field]) ? null : `${field} missing from the reply`) });
-            if (this.confirmed) this.confirmed[field] = r[field];
+            if (this.confirmed) {
+                this.confirmed[field] = r[field];
+                if (field === "theme" && isInt(r.saver_anim)) this.confirmed.saver_anim = r.saver_anim;
+            }
             this._noteDirty(r);
             this._changed();
             return r[field];

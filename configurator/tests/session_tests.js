@@ -490,7 +490,7 @@
         assertEq(res.failed.map(f => f.what), ["layer 1 key 4"]);
         assertEq(res.mismatched.map(m => m.what).sort(), ["layer 0 key 0"]);
         assertEq(res.mismatched[0].actual, key(98, "BQ"), "mismatches show what the pad holds");
-        assertEq(res.applied.length, 7 + 48 - 1, "every other step was accepted (7 settings, 48 keys)");
+        assertEq(res.applied.length, 8 + 48 - 1, "every other step was accepted (8 settings, 48 keys)");
     });
 
     test("backup: invalid files are refused with a reason", () => {
@@ -514,7 +514,8 @@
             "unassignable code": variant(d => { d.layers[1][1].code = 137; }),
             "short layer": variant(d => { d.layers[2].pop(); }),
             "idle too long": variant(d => { d.settings.saver_idle = 61; }),
-            "unknown animation": variant(d => { d.settings.saver_anim = 6; }),
+            "unknown animation": variant(d => { d.settings.saver_anim = 7; }),
+            "unknown theme": variant(d => { d.settings.theme = 2; }),
         };
         for (const [name, text] of Object.entries(cases)) {
             const r = DP.backup.parse(text, lim);
@@ -770,7 +771,7 @@
         await session.save();
         const cfg = await session.refreshConfig();
         assertEq([cfg.saver_idle, cfg.saver_anim, cfg.dirty], [10, -1, false]);
-        assertEq([session.limits.saver_idle_max, session.limits.saver_anims], [60, 6]);
+        assertEq([session.limits.saver_idle_max, session.limits.saver_anims], [60, 7]);
     });
 
     test("screensaver: firmware without screensaver_idle reports no choices and backups skip them", async () => {
@@ -786,5 +787,23 @@
         const res = await DP.backup.restore(session, parsed);
         assertEq(res.failed, []);
         assert(!device.received.some(l => /^SET_SAVER_/.test(l)), "no command the firmware would reject");
+    });
+
+    test("themes: choosing a theme also picks its screensaver, and backups keep both", async () => {
+        const { session, device } = await rig();
+        assertEq(session.confirmed.theme, 0, "factory: Drift");
+        assertEq(session.limits.themes, 2);
+        assertEq(await session.setSetting("theme", 1), 1);
+        assertEq(session.confirmed.saver_anim, 6, "Cherry blossom brings Sakura");
+        assertEq(await session.setSetting("saver_anim", 3), 3);
+        const backup = DP.backup.create(session);
+        assertEq([backup.settings.theme, backup.settings.saver_anim], [1, 3]);
+        await session.setSetting("theme", 0);
+        assertEq(session.confirmed.saver_anim, -1, "Drift shuffles");
+        const res = await DP.backup.restore(session, DP.backup.parse(JSON.stringify(backup), session.limits));
+        assertEq([res.failed, res.mismatched], [[], []]);
+        const cfg = await session.refreshConfig();
+        assertEq([cfg.theme, cfg.saver_anim], [1, 3], "the backup's own animation wins over the theme's");
+        assertEq(device.state.theme, 1);
     });
 })(window);

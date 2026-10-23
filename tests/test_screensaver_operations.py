@@ -96,7 +96,7 @@ class ScreensaverOperations(unittest.TestCase):
         self.assertEqual(self.lib.oled_manual_step(0, 10000), 1)
 
     def test_drawing_again_without_time_does_not_move_any_animation(self):
-        for anim in range(6):
+        for anim in range(oh.ANIM_COUNT):
             with self.subTest(anim=anim):
                 self.lib.oled_animation_reset(123)
                 first = self.frame(self.lib.oled_animation_step, anim, 3300)
@@ -104,7 +104,7 @@ class ScreensaverOperations(unittest.TestCase):
                 self.assertEqual(self.frame(self.lib.oled_animation_step, anim, 0), first)
 
     def test_same_elapsed_time_with_different_draw_rates_gives_same_motion(self):
-        for anim in range(6):
+        for anim in range(oh.ANIM_COUNT):
             self.lib.oled_animation_reset(123)
             for _ in range(10):
                 first = self.frame(self.lib.oled_animation_step, anim, 33)
@@ -113,8 +113,8 @@ class ScreensaverOperations(unittest.TestCase):
                 second = self.frame(self.lib.oled_animation_step, anim, 66)
             self.assertEqual(first, second, f"animation {anim} depends on draw count")
 
-    def test_explicit_reset_repeats_all_six_animations_including_random_particles(self):
-        for anim in range(6):
+    def test_explicit_reset_repeats_every_animation_including_random_particles(self):
+        for anim in range(oh.ANIM_COUNT):
             def render():
                 self.lib.oled_animation_reset(42)
                 for _ in range(45):
@@ -123,7 +123,7 @@ class ScreensaverOperations(unittest.TestCase):
             self.assertEqual(render(), render(), f"animation {anim} retains old state")
 
     def test_long_stalls_use_bounded_animation_catch_up(self):
-        for anim in range(6):
+        for anim in range(oh.ANIM_COUNT):
             self.lib.oled_animation_reset(42)
             stalled = self.frame(self.lib.oled_animation_step, anim, 33000)
             self.lib.oled_animation_reset(42)
@@ -133,13 +133,14 @@ class ScreensaverOperations(unittest.TestCase):
     def test_renderer_playlist_reports_every_animation_and_no_boundary_repeat(self):
         self.lib.oled_saver_start(-1, 42)
         order = [self.lib.oled_saver_state(0)]
-        for _ in range(17):
+        n = oh.ANIM_COUNT
+        for _ in range(3 * n - 1):
             self.frame(self.lib.oled_saver_step, 20000)
             self.assertGreaterEqual(self.lib.oled_saver_state(1), 0)
             self.frame(self.lib.oled_saver_step, 1500)
             order.append(self.lib.oled_saver_state(0))
-        for i in range(0, 18, 6):
-            self.assertEqual(set(order[i:i + 6]), set(range(6)))
+        for i in range(0, 3 * n, n):
+            self.assertEqual(set(order[i:i + n]), set(range(n)))
         self.assertTrue(all(a != b for a, b in zip(order, order[1:])))
         self.assertEqual(self.lib.oled_display_state(3), 1)
 

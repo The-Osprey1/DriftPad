@@ -5,6 +5,7 @@
 #include "encoder_menu.h"
 #include "build_info.h"
 #include "screensaver_player.h"
+#include "theme_sakura.h"
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -191,6 +192,21 @@ const char* const LAYER_NAMES[] = {"NUMPAD", "NAV", "GAMING"};
 const char* layerName(uint8_t layer) {
     return layer < 3 ? LAYER_NAMES[layer] : "?";
 }
+
+// The theme in the settings (0 Drift, 1 Cherry blossom); Drift until core 0 has published one.
+// A theme this firmware does not have draws as Drift.
+constexpr uint8_t THEME_DRIFT = 0;
+constexpr uint8_t THEME_SAKURA = 1;
+uint8_t activeTheme() {
+    return s_haveView && s_view.theme < limits::THEME_COUNT ? s_view.theme : THEME_DRIFT;
+}
+bool sakuraTheme() { return activeTheme() == THEME_SAKURA; }
+
+// Cherry blossom: petals thrown up by key presses and dropped by the standby sprig
+sakura::Petals s_keyPetals;
+sakura::Scene s_sakuraScene;    // the Sakura screensaver (animation 6)
+uint32_t s_keyPetalsAt = 0;
+uint32_t s_sprigDropAt = 0;
 
 // Width in pixels of a string in the built-in 6x8 font (no trailing gap)
 int16_t textWidth(const char* text, uint8_t size = 1) {
@@ -578,7 +594,9 @@ void printTracked(const char* text, int16_t x, int16_t y, int16_t pitch) {
     }
 }
 
-const char* const MENU_TITLES[] = {"Sensitivity", "Actuation point", "Rapid Trigger", "Active layer"};
+const char* const MENU_TITLES[] = {"Sensitivity", "Actuation point", "Rapid Trigger", "Active layer", "Screen theme"};
+const char* const THEME_NAMES[] = {"Drift", "Sakura"};
+const char* const THEME_CAPTIONS[] = {"The original look", "Cherry blossom"};
 
 // A big value in italic slit lettering, with its unit in small capitals sharing the baseline; the
 // pair is centred. Values are size 3 (18 x 24 px cells), which needs a 28 row region.
@@ -727,6 +745,36 @@ void renderMenuOverlay() {
             s_display.setTextColor(OLED_COLOR_WHITE);
             break;
         }
+        case MenuMode::THEME: {
+            const uint8_t cur = s_view.theme < limits::THEME_COUNT ? s_view.theme : 0;
+            const char* name = THEME_NAMES[cur];
+            const int16_t w = textWidth(name, 2);
+            if (cur == THEME_SAKURA) {
+                sakura::drawSeal(s_display, 64 - (w + 6 + sakura::SEAL_SIZE) / 2, 18);
+                s_display.setTextColor(OLED_COLOR_WHITE);
+                s_display.setTextSize(2);
+                s_display.setCursor(64 - (w + 6 + sakura::SEAL_SIZE) / 2 + sakura::SEAL_SIZE + 6, 21);
+                s_display.print(name);
+                s_display.setTextSize(1);
+            } else {
+                drawStyledText(64 - w / 2 - 2, 19, (uint16_t)w + 12, 24, OLED_COLOR_WHITE, 0.22f, [&] {
+                    s_display.setTextColor(OLED_COLOR_WHITE);
+                    s_display.setTextSize(2);
+                    s_display.setCursor(64 - w / 2, 22);
+                    s_display.print(name);
+                    s_display.setTextSize(1);
+                });
+            }
+            const char* caption = THEME_CAPTIONS[cur];
+            printCentered(caption, 64, 43);
+            // One dot per theme, the current one solid
+            for (uint8_t i = 0; i < limits::THEME_COUNT; ++i) {
+                const int16_t bx = 64 - (limits::THEME_COUNT * 8 - 3) / 2 + i * 8;
+                if (i == cur) s_display.fillRect(bx, 54, 5, 5, OLED_COLOR_WHITE);
+                else s_display.drawRect(bx, 54, 5, 5, OLED_COLOR_WHITE);
+            }
+            break;
+        }
         default:
             break;
     }
@@ -833,6 +881,19 @@ void drawPanelValue(const char* value, const char* unit, int16_t top) {
     const int16_t unitW = unit ? 5 + fontWidth(unit, unitFont) : 0;
     const int16_t left = PANEL_CENTER_X - ((int16_t)w + unitW) / 2 - x1;
     const int16_t baseline = top - y1;
+    if (sakuraTheme()) {   // plain upright lettering; the slit italic is Drift's
+        s_display.setTextColor(OLED_COLOR_WHITE);
+        s_display.setFont(valueFont);
+        s_display.setCursor(left, baseline);
+        s_display.print(value);
+        if (unit) {
+            s_display.setFont(unitFont);
+            s_display.setCursor(left + x1 + (int16_t)w + 5, baseline);
+            s_display.print(unit);
+        }
+        s_display.setFont(nullptr);
+        return;
+    }
     drawStyledText(KEY_BOX_X, top - 2, KEY_BOX_W, (uint16_t)h + 6, OLED_COLOR_WHITE, 0.22f, [&] {
         s_display.setTextColor(OLED_COLOR_WHITE);
         s_display.setFont(valueFont);
@@ -908,7 +969,9 @@ void drawKeyBox(const char* label, bool actuated, uint8_t punch) {
         }
     }
 
-    const bool usePlain = isPunctuationOrSmall(label, w, h);
+    // Cherry blossom draws every label plainly inside a seal-like card; the slit lettering is Drift's
+    const bool sakuraCard = sakuraTheme();
+    const bool usePlain = sakuraCard || isPunctuationOrSmall(label, w, h);
 
     int16_t tx = KEY_BOX_X + (KEY_BOX_W - (int16_t)w + 1) / 2 - x1;
     int16_t ty;
@@ -924,7 +987,9 @@ void drawKeyBox(const char* label, bool actuated, uint8_t punch) {
         ty = KEY_BOX_Y + (KEY_BOX_H - (int16_t)capH + 1) / 2 + (int16_t)capH;
     }
 
-    if (actuated) {
+    if (sakuraCard) {
+        sakura::drawCardFrame(s_display, KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, actuated);
+    } else if (actuated) {
         s_display.fillRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
         if (punch > 0) {
             // The press flourish: a dark bevel just inside the card edge that steps inward over the
@@ -1006,7 +1071,14 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus, bool legends) {
         int16_t x = MAP_X + (i % 4) * (MAP_CELL + MAP_GAP);
         int16_t y = MAP_Y + (i / 4) * (MAP_CELL + MAP_GAP);
         if (actuated[i]) {
-            if (!s_prevActuated[i]) s_keyFlash[i] = FLASH_FRAMES;
+            if (!s_prevActuated[i]) {
+                s_keyFlash[i] = FLASH_FRAMES;
+                // Cherry blossom: a press throws a few petals up from its cell instead of the ring
+                if (sakuraTheme()) {
+                    s_keyPetals.burst(x + MAP_CELL / 2.0f, y + 1.0f, 6);
+                    s_keyFlash[i] = 0;
+                }
+            }
             s_prevActuated[i] = true;
             s_display.fillRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
             if (s_keyFlash[i] > 0) {
@@ -1126,6 +1198,10 @@ void drawLayerFlash(uint32_t now, uint8_t layer) {
     if (!s_layerFlashActive) return;
     const uint32_t elapsed = now - s_layerFlashAt;
     if (elapsed >= LAYER_FLASH_MS) { s_layerFlashActive = false; return; }
+    if (sakuraTheme()) {   // paper doors slide shut on the new layer and open again
+        sakura::drawShoji(s_display, elapsed, LAYER_FLASH_MS, layer, layerName(layer));
+        return;
+    }
     const int32_t age = (int32_t)elapsed;
     const int32_t remaining = (int32_t)LAYER_FLASH_MS - age;
     const int32_t edge = age < remaining ? age : remaining;              // ms from the nearer end
@@ -1274,7 +1350,16 @@ void renderKeysFrame(uint32_t now) {
         }
         printCentered(cap, PANEL_CENTER_X, 20);
         drawPanelValue(value, unit, 31);
-        drawTravelScale(0.0f);
+        if (sakuraTheme()) {
+            // A sprig in place of the empty scale; now and then it lets a petal go
+            sakura::drawSprig(s_display, 6, 58, 68, now);
+            if (now - s_sprigDropAt >= 2600) {
+                s_sprigDropAt = now;
+                s_keyPetals.drop(6 + 68 * (0.18f + 0.32f * (float)((now / 2600) % 3)), 55.0f);
+            }
+        } else {
+            drawTravelScale(0.0f);
+        }
     }
 
     // Left-panel wipe: everything right of a front that sweeps across is held back for a few frames
@@ -1286,6 +1371,14 @@ void renderKeysFrame(uint32_t now) {
     }
 
     drawKeypadMap(actuated, focus, focus < 0);
+
+    if (sakuraTheme()) {
+        s_keyPetals.step(now - s_keyPetalsAt, -1.5f);
+        s_keyPetals.draw(s_display);
+    } else {
+        s_keyPetals.clear();
+    }
+    s_keyPetalsAt = now;
 
     drawSettingsState(now);
 
@@ -1826,6 +1919,9 @@ void resetScreensaverAnimation(uint8_t anim) {
                     (uint8_t)(1 + animationRandom(2))};
             }
             break;
+        case 6:
+            s_sakuraScene.reset(animationRandom(0xFFFFFFFFUL) | 1u);
+            break;
     }
     s_animationInitialized[anim] = true;
 }
@@ -1921,8 +2017,15 @@ void advanceScreensaverAnimation(uint8_t anim, uint32_t elapsedMs) {
                     }
                 }
                 break;
+            case 6:
+                s_sakuraScene.advance(RENDER_INTERVAL_MS);
+                break;
         }
     }
+}
+
+void renderAnimSakura() {
+    s_sakuraScene.render(s_display);
 }
 
 struct ScreensaverAnim {
@@ -1937,6 +2040,7 @@ const ScreensaverAnim kScreensaverAnims[NUM_SCREENSAVER_ANIMS] = {
     {renderAnimSynthGrid,    "DRIFT GRID"},
     {renderAnimRipples,      "MAG PULSE"},
     {renderAnimLava,         "LAVA LAMP"},
+    {renderAnimSakura,       "SAKURA"},
 };
 
 // Blends two frames with a dithered diagonal wipe sweeping from top-left to bottom-right.
@@ -2019,6 +2123,17 @@ constexpr uint32_t INTRO_MS = 5400;        // the intro proper
 constexpr uint32_t INTRO_WIPE_MS = 700;    // then a dithered wipe into the key screen
 uint32_t s_introStart = 0;
 bool s_introDone = false;
+int8_t s_introTheme = -1;   // the theme the title started in: it never changes style halfway
+
+// The pad's state, as the title's last line says it
+const char* introStatus() {
+    switch (s_view.outputStatus) {
+        case display_link::OUTPUT_ON:          return "Ready to type";
+        case display_link::OUTPUT_NEEDS_CAL:   return "Calibrate keys";
+        case display_link::OUTPUT_CALIBRATING: return "Calibrating keys";
+        default:                               return "Output off";
+    }
+}
 
 // 0 before `a`, 1 after `b`, linear between (times in ms)
 float introSpan(uint32_t t, uint32_t a, uint32_t b) {
@@ -2226,6 +2341,11 @@ void drawIntroFrame(uint32_t t) {
 
 void renderIntroFrame(uint32_t t) {
     s_display.clearDisplay();
+    if (s_introTheme < 0 && s_haveView) s_introTheme = (int8_t)activeTheme();
+    if (s_introTheme == THEME_SAKURA) {
+        sakura::drawIntro(s_display, t, introStatus());
+        return;
+    }
 
     drawIntroWordmark(t);
     drawIntroGlint(t, 1900, 2500);
@@ -2253,13 +2373,7 @@ void renderIntroFrame(uint32_t t) {
         if (typing) s_display.fillRect(left + shown * pitch, 46, 5, 7, OLED_COLOR_WHITE);   // cursor
 
         if (t >= 3700) {
-            const char* status;
-            switch (s_view.outputStatus) {
-                case display_link::OUTPUT_ON:        status = "Ready to type"; break;
-                case display_link::OUTPUT_NEEDS_CAL: status = "Calibrate keys"; break;
-                case display_link::OUTPUT_CALIBRATING: status = "Calibrating keys"; break;
-                default:                             status = "Output off"; break;
-            }
+            const char* status = introStatus();
             const int16_t len = (int16_t)strlen(status);
             int16_t typed = (int16_t)((t - 3700) / 45);
             if (typed > len) typed = len;

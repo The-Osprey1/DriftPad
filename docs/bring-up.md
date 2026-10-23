@@ -35,7 +35,7 @@ the actual screen confirms rendering. See [hardware.md](hardware.md) for firmwar
 Standby stays on the layer/key screen. There the knob is a volume control: turning sends volume
 up or down and a press sends mute, both only while keyboard output is on. Holding the knob for one
 second opens the settings menu: a press then selects Rapid Trigger sensitivity, actuation, Rapid
-Trigger on/off, layer, then the key screen again, turning adjusts the selected setting, and
+Trigger on/off, layer, screen theme, then the key screen again, turning adjusts the selected setting, and
 holding again closes the menu. Selected settings screens stay visible;
 they do not time out or cycle automatically.
 After 2 minutes without a key press or knob input, the screensaver starts by itself (any key or

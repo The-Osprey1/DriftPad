@@ -25,6 +25,7 @@ enum class MenuMode {
     ADJUST_ACTUATION,
     TOGGLE_RT,
     CYCLE_LAYER,
+    THEME,
     COUNT
 };
 
@@ -43,8 +44,8 @@ bool oledIsScreensaverActive();
 void oledWake();
 void oledSleep();
 bool oledIsSleeping();
-void oledSetScreensaverAnim(int8_t animIdx);   // -1 shuffles all six; 0..5 selects one
-constexpr int8_t OLED_ANIM_COUNT = 6;
+void oledSetScreensaverAnim(int8_t animIdx);   // -1 shuffles all seven; 0..6 selects one
+constexpr int8_t OLED_ANIM_COUNT = 7;
 
 // Requests with a result, served by core 1
 enum class OledRequest : uint8_t { TestPattern, BusScan };
