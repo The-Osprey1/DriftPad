@@ -666,8 +666,29 @@ class CherryBlossomTheme(unittest.TestCase):
         self.assertEqual(len(set(frames)), 4, "the scene stands still")
         # the moon (left) and the branch (top right) are always there
         for fb in frames:
-            self.assertGreater(self.lit(fb, 13, 15, 40, 42), 150)
+            self.assertGreater(self.lit(fb, 13, 12, 44, 42), 60)
             self.assertGreater(self.lit(fb, 64, 0, 128, 30), 40)
+
+    def test_each_night_sky_draws_its_own_sky(self):
+        import ctypes
+        self.lib.oled_sakura_sky.argtypes = [ctypes.c_int]
+        self.lib.oled_animation_reset.argtypes = [ctypes.c_uint32]
+        self.lib.oled_animation_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
+        skies = []
+        try:
+            for sky in range(3):                       # crescent, ink moon, stars
+                self.lib.oled_sakura_sky(sky)
+                self.lib.oled_animation_reset(5)
+                buf = ctypes.create_string_buffer(1024)
+                self.lib.oled_animation_step(6, 2000, buf)
+                skies.append(bytes(buf.raw))
+        finally:
+            self.lib.oled_sakura_sky(0)
+        self.assertEqual(len(set(skies)), 3, "two skies look the same")
+        moon = lambda fb: self.lit(fb, 10, 8, 46, 44)
+        self.assertGreater(moon(skies[0]), 60, "no crescent")
+        self.assertGreater(moon(skies[1]), 60, "no ink moon")
+        self.assertLess(moon(skies[2]), moon(skies[0]), "the starry sky has a moon")
 
     def test_sakura_viewpoint_drifts_between_views_without_jumps(self):
         import ctypes

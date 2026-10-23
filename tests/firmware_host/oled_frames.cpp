@@ -42,6 +42,7 @@ void oled_scene_theme(int theme) {
     s_keyPetals.clear();
 }
 int oled_key_petals() { return s_keyPetals.live(); }
+void oled_sakura_sky(int sky) { s_sakuraScene.setSky((sakura::Scene::Sky)sky); }
 // The Sakura screensaver's viewpoint now: x, y, scale, angle
 void oled_sakura_view(float* out) {
     const sakura::View v = s_sakuraScene.view();

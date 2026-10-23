@@ -17,7 +17,6 @@ const uint16_t kSakuraGlyph[16] = {
     0x5044, 0x91FF, 0x1028, 0x1010, 0x1028, 0x1044, 0x1082, 0x1101,
 };
 
-const uint8_t kBayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
 
 float span(uint32_t t, uint32_t a, uint32_t b) {
     if (t <= a) return 0.0f;
@@ -438,6 +437,16 @@ void Scene::reset(uint32_t seed) {
     m_viewStart = (uint32_t)(frand() * VIEWS) * (VIEW_HOLD_MS + VIEW_MOVE_MS);
     m_dropAcc = 0;
     m_wind = -2.0f;
+    for (SkyStar& s : m_stars) {
+        s.x = (uint8_t)(frand() * 127.0f);
+        s.y = (uint8_t)(2.0f + frand() * 40.0f);
+        s.periodMs = (uint16_t)(1600 + frand() * 2400);
+        s.phaseMs = (uint16_t)(frand() * s.periodMs);
+        s.bright = frand() < 0.25f;
+    }
+    m_nextShoot = 5000 + (uint32_t)(frand() * 6000);
+    m_shootX = (uint8_t)(50 + frand() * 70);
+    m_shootY = (uint8_t)(2 + frand() * 14);
     m_nextGust = 4000 + (uint32_t)(frand() * 4000);
     m_gustEnd = 0;
     // Start with petals already in the air, as if the scene had been going for a while
@@ -477,24 +486,114 @@ void Scene::advance(uint32_t dtMs) {
         }
     }
     m_petals.step(dtMs, m_wind);
+    // A shooting star crosses for 700 ms every 10 to 18 s (drawn only by the starry sky)
+    if (m_t >= m_nextShoot + 700) {
+        m_nextShoot = m_t + 10000 + (uint32_t)(frand() * 8000);
+        m_shootX = (uint8_t)(50 + frand() * 70);
+        m_shootY = (uint8_t)(2 + frand() * 14);
+    }
+}
+
+namespace {
+
+// A drifting shape's x: enters from the right, leaves on the left, then comes round again
+float drift(uint32_t tMs, float speedPxPerS, float width, float offset) {
+    const float span = 128.0f + width;
+    float x = fmodf(offset - tMs / 1000.0f * speedPxPerS, span);
+    if (x < 0) x += span;
+    return x - width;
+}
+
+// A wisp of cloud: three thin strokes, stepped like a brush drawn sideways. The dark around each
+// stroke hides whatever is behind it, so the moon disappears behind the wisp
+void drawWisp(Adafruit_GFX& g, int16_t x, int16_t y) {
+    static const int8_t kStroke[3][2] = {{0, 26}, {6, 16}, {2, 9}};   // x offset, length
+    for (uint8_t i = 0; i < 3; ++i) {
+        const int16_t sx = x + kStroke[i][0], sy = y + i * 2, len = kStroke[i][1];
+        g.fillRect(sx - 1, sy - 1, len + 2, 3, BLACK);
+    }
+    for (uint8_t i = 0; i < 3; ++i) g.drawFastHLine(x + kStroke[i][0], y + i * 2, kStroke[i][1], WHITE);
+}
+
+// A band of cloud in the woodblock style: a rounded bar, dark inside, outlined
+void drawBand(Adafruit_GFX& g, int16_t x, int16_t y, int16_t w) {
+    g.fillRoundRect(x, y, w, 6, 3, BLACK);
+    g.drawRoundRect(x, y, w, 6, 3, WHITE);
+}
+
+} // namespace
+
+void Scene::drawSky(Adafruit_GFX& g, float dx, float dy, float scale) const {
+    // Far things follow the viewpoint a little: the moon by a fifth, the stars by a tenth
+    const int16_t mx = 28 + (int16_t)lroundf(dx * 0.2f), my = 26 + (int16_t)lroundf(dy * 0.2f);
+    const float grow = 0.9f + 0.1f * scale;
+    auto stars = [&](uint8_t count) {
+        for (uint8_t i = 0; i < count && i < STARS; ++i) {
+            const SkyStar& s = m_stars[i];
+            const int16_t x = (int16_t)lroundf(s.x + dx * 0.1f), y = (int16_t)lroundf(s.y + dy * 0.1f);
+            const uint32_t p = (m_t + s.phaseMs) % s.periodMs;
+            const bool on = p < s.periodMs * 3 / 4;   // dims out for a quarter of its period
+            if (!on) continue;
+            g.drawPixel(x, y, WHITE);
+            if (s.bright && p < s.periodMs / 3) {      // the bright ones flare into a small cross
+                g.drawPixel(x - 1, y, WHITE); g.drawPixel(x + 1, y, WHITE);
+                g.drawPixel(x, y - 1, WHITE); g.drawPixel(x, y + 1, WHITE);
+            }
+        }
+    };
+    switch (m_sky) {
+        case Sky::Crescent: {
+            stars(8);
+            // A crescent: the outer disc minus a second one pushed up and to the right
+            const int16_t r = (int16_t)lroundf(11.0f * grow), cut = r - 1;
+            const int16_t cx = mx + r / 2 + 1, cy = my - r / 4;
+            for (int16_t y = -r; y <= r; ++y) {
+                for (int16_t x = -r; x <= r; ++x) {
+                    if (x * x + y * y > r * r) continue;
+                    const int16_t ix = mx + x - cx, iy = my + y - cy;
+                    if (ix * ix + iy * iy <= cut * cut) continue;
+                    g.drawPixel(mx + x, my + y, WHITE);
+                }
+            }
+            // The dark rest of the moon, only hinted at by a dotted edge
+            for (uint8_t i = 0; i < 48; i += 3) {
+                const float a = i * TAU / 48;
+                const int16_t x = mx + (int16_t)lroundf(cosf(a) * r), y = my + (int16_t)lroundf(sinf(a) * r);
+                const int16_t ix = x - cx, iy = y - cy;
+                if (ix * ix + iy * iy <= cut * cut) g.drawPixel(x, y, WHITE);
+            }
+            drawWisp(g, (int16_t)drift(m_t, 2.0f, 40, 30), my + 4);
+            drawWisp(g, (int16_t)drift(m_t, 3.2f, 40, 100), 40);
+            break;
+        }
+        case Sky::InkMoon: {
+            const int16_t r = (int16_t)lroundf(14.0f * grow);
+            g.drawCircle(mx, my, r, WHITE);
+            g.drawCircle(mx, my, r - 2, WHITE);   // a second, inner line, like a brushed rim
+            drawBand(g, (int16_t)drift(m_t, 1.5f, 38, 20), my - 3, 38);
+            drawBand(g, (int16_t)drift(m_t, 2.4f, 28, 70), my + 8, 28);
+            drawBand(g, (int16_t)drift(m_t, 1.1f, 46, 120), 44, 46);
+            break;
+        }
+        default: {   // Sky::Stars
+            stars(STARS);
+            if (m_t >= m_nextShoot && m_t < m_nextShoot + 700) {
+                const float p = (m_t - m_nextShoot) / 700.0f;   // a streak falling down and to the left
+                const int16_t hx = m_shootX - (int16_t)(p * 36), hy = m_shootY + (int16_t)(p * 14);
+                g.drawLine(hx, hy, hx + 7, hy - 3, WHITE);
+                g.drawPixel(hx + 10, hy - 4, WHITE);
+                g.drawPixel(hx + 13, hy - 5, WHITE);
+            }
+            break;
+        }
+    }
 }
 
 void Scene::render(Adafruit_GFX& g) const {
     const View v = view();
-    // Parallax: the far moon and hills follow the viewpoint a little, the branch fully
+    // Parallax: the far sky and hills follow the viewpoint a little, the branch fully
     const float dx = v.x - kViews[0].x, dy = v.y - kViews[0].y;
-    // The moon, low on the left: a disc shaded with the ordered pattern, brighter towards its edge
-    const int16_t MX = 26 + (int16_t)lroundf(dx * 0.2f), MY = 28 + (int16_t)lroundf(dy * 0.2f);
-    const int16_t MR = (int16_t)lroundf(13.0f * (0.9f + 0.1f * v.scale));
-    for (int16_t y = -MR; y <= MR; ++y) {
-        for (int16_t x = -MR; x <= MR; ++x) {
-            const int16_t d2 = x * x + y * y;
-            if (d2 > MR * MR) continue;
-            const int16_t level = d2 > (MR - 1) * (MR - 1) ? 16 : 6 + (d2 * 6) / (MR * MR);
-            const int16_t px = MX + x, py = MY + y;
-            if (kBayer4[py & 3][px & 3] < level) g.drawPixel(px, py, WHITE);
-        }
-    }
+    drawSky(g, dx, dy, v.scale);
     // A faint horizon of distant hills
     for (int16_t x = 0; x < 128; x += 2) {
         const float hx = x + dx * 0.08f;

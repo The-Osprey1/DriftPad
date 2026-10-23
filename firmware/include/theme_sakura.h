@@ -91,6 +91,14 @@ public:
     static constexpr uint32_t VIEW_HOLD_MS = 7000;
     static constexpr uint32_t VIEW_MOVE_MS = 5000;
     static constexpr uint8_t VIEWS = 4;
+    // The night sky behind the branch (three designs under review; one will stay)
+    enum class Sky : uint8_t {
+        Crescent = 0,   // a crescent moon, wisps of cloud drifting past, a few stars
+        InkMoon,        // a full moon drawn as an ink outline, crossed by bands of cloud
+        Stars,          // no moon: twinkling stars and now and then a shooting star
+        COUNT
+    };
+    void setSky(Sky s) { m_sky = s; }
     void reset(uint32_t seed);
     void advance(uint32_t dtMs);
     void render(Adafruit_GFX& g) const;
@@ -107,6 +115,13 @@ private:
     uint32_t m_nextGust = 0;
     uint32_t m_gustEnd = 0;
     float m_wind = 0.0f;
+    Sky m_sky = Sky::Crescent;
+    struct SkyStar { uint8_t x, y; uint16_t periodMs, phaseMs; bool bright; };
+    static constexpr uint8_t STARS = 22;
+    SkyStar m_stars[STARS] = {};
+    uint32_t m_nextShoot = 0;
+    uint8_t m_shootX = 0, m_shootY = 0;
+    void drawSky(Adafruit_GFX& g, float dx, float dy, float scale) const;
 };
 
 } // namespace sakura
