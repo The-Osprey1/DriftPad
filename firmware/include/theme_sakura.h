@@ -112,7 +112,9 @@ public:
     // Where things are in the scene, and how far away
     static constexpr float BRANCH_X = 142.0f, BRANCH_Y = 10.0f;   // the base, off the right edge
     static constexpr float MOON_X = 28.0f, MOON_Y = 26.0f;
-    static constexpr float DEPTH_STARS = 0.05f, DEPTH_MOON = 0.15f, DEPTH_CLOUDS = 0.3f;
+    // The moon and stars are infinitely far, as in life: they never move, so they show the eye what
+    // the camera is doing to everything nearer
+    static constexpr float DEPTH_STARS = 0.0f, DEPTH_MOON = 0.0f, DEPTH_CLOUDS = 0.3f;
     static constexpr float DEPTH_HILLS = 0.4f, DEPTH_BRANCH = 1.0f;
 
     void reset(uint32_t seed);

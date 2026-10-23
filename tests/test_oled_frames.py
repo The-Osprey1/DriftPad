@@ -694,15 +694,14 @@ class CherryBlossomTheme(unittest.TestCase):
             self.assertLess(abs(b[2] - a[2]), 0.02)
         self.assertGreaterEqual(min(v[0] for v in layers), 128, "the branch's cut end came on screen")
 
-    def test_sakura_near_and_far_layers_move_apart_both_ways(self):
+    def test_sakura_branch_moves_against_a_still_moon(self):
         layers = self.sakura_cycle()
         span = lambda i: max(v[i] for v in layers) - min(v[i] for v in layers)
         branch_dx, branch_dy, moon_dx, moon_dy = span(0), span(1), span(4), span(5)
         self.assertGreater(branch_dy, 20, "the branch hardly moves up and down")
-        self.assertGreater(moon_dx, 1.0, "the moon is pinned in place")
-        self.assertGreater(moon_dy, 1.0, "the moon is pinned in place")
-        self.assertGreater(branch_dx, 3 * moon_dx, "no parallax across")
-        self.assertGreater(branch_dy, 4 * moon_dy, "no parallax up and down")
+        self.assertGreater(branch_dx, 20, "the branch hardly moves across")
+        # the moon is the fixed point the eye measures the camera against
+        self.assertEqual((moon_dx, moon_dy), (0, 0), "the moon moves")
         # always moving: never more than a second without the camera moving at all
         still, longest = 1, 1
         for a, b in zip(layers, layers[1:]):
