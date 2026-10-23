@@ -27,7 +27,7 @@ void drawBlossom(Adafruit_GFX& g, int16_t cx, int16_t cy, float open, uint8_t ra
 // Falling petals. A petal tumbles (its shape cycles) while the wind and its own sway carry it.
 class Petals {
 public:
-    static constexpr uint8_t MAX = 28;
+    static constexpr uint8_t MAX = 24;   // when full, a new petal takes the oldest one's place
     void clear();
     void seed(uint32_t s) { m_rng = s ? s : 1; }
     // A handful of petals thrown up and out from (x, y), as from a pressed key; they live briefly
@@ -116,7 +116,7 @@ private:
     uint32_t m_gustEnd = 0;
     float m_wind = 0.0f;
     Sky m_sky = Sky::Crescent;
-    struct SkyStar { uint8_t x, y; uint16_t periodMs, phaseMs; bool bright; };
+    struct SkyStar { uint8_t x, y, period20, phase20; };   // twinkle period and phase in 20 ms units; bright in bit 7 of y
     static constexpr uint8_t STARS = 22;
     SkyStar m_stars[STARS] = {};
     uint32_t m_nextShoot = 0;

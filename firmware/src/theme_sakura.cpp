@@ -440,9 +440,9 @@ void Scene::reset(uint32_t seed) {
     for (SkyStar& s : m_stars) {
         s.x = (uint8_t)(frand() * 127.0f);
         s.y = (uint8_t)(2.0f + frand() * 40.0f);
-        s.periodMs = (uint16_t)(1600 + frand() * 2400);
-        s.phaseMs = (uint16_t)(frand() * s.periodMs);
-        s.bright = frand() < 0.25f;
+        s.period20 = (uint8_t)(80 + frand() * 120);           // 1.6 .. 4 s
+        s.phase20 = (uint8_t)(frand() * s.period20);
+        if (frand() < 0.25f) s.y |= 0x80;                       // a bright one
     }
     m_nextShoot = 5000 + (uint32_t)(frand() * 6000);
     m_shootX = (uint8_t)(50 + frand() * 70);
@@ -530,12 +530,14 @@ void Scene::drawSky(Adafruit_GFX& g, float dx, float dy, float scale) const {
     auto stars = [&](uint8_t count) {
         for (uint8_t i = 0; i < count && i < STARS; ++i) {
             const SkyStar& s = m_stars[i];
-            const int16_t x = (int16_t)lroundf(s.x + dx * 0.1f), y = (int16_t)lroundf(s.y + dy * 0.1f);
-            const uint32_t p = (m_t + s.phaseMs) % s.periodMs;
-            const bool on = p < s.periodMs * 3 / 4;   // dims out for a quarter of its period
+            const uint32_t period = s.period20 * 20u;
+            const bool bright = s.y & 0x80;
+            const int16_t x = (int16_t)lroundf(s.x + dx * 0.1f), y = (int16_t)lroundf((s.y & 0x7F) + dy * 0.1f);
+            const uint32_t p = (m_t + s.phase20 * 20u) % period;
+            const bool on = p < period * 3 / 4;   // dims out for a quarter of its period
             if (!on) continue;
             g.drawPixel(x, y, WHITE);
-            if (s.bright && p < s.periodMs / 3) {      // the bright ones flare into a small cross
+            if (bright && p < period / 3) {         // the bright ones flare into a small cross
                 g.drawPixel(x - 1, y, WHITE); g.drawPixel(x + 1, y, WHITE);
                 g.drawPixel(x, y - 1, WHITE); g.drawPixel(x, y + 1, WHITE);
             }
