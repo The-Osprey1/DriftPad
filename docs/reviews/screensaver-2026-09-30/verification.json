@@ -1,0 +1,81 @@
+{
+  "tested_utc": "2026-09-30T23:43:39Z",
+  "mode": "diagnostic",
+  "verdict": "PASSED_DIAGNOSTIC",
+  "elapsed_s": 24.26,
+  "counts": {
+    "planned": 411,
+    "executed": 411,
+    "passed": 411,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "expected_failures": 0,
+    "not_run": 0,
+    "classes": 61,
+    "classes_skipped": 0,
+    "classes_skipped_tests": 0,
+    "classes_errored": 0,
+    "classes_errored_tests": 0,
+    "teardown_errors": 0,
+    "not_run_other": 0,
+    "module_import_errors": 0,
+    "suites_skipped": 0
+  },
+  "inner_results": {
+    "test_configurator_contract": {
+      "request lines compared, fake vs firmware": {
+        "passed": 351,
+        "failed": 0
+      }
+    },
+    "test_configurator_js": {
+      "old-page defect reproductions (e2031e2)": {
+        "passed": 11,
+        "failed": 0
+      },
+      "configurator page tests (index.html)": {
+        "passed": 24,
+        "failed": 0
+      },
+      "configurator module tests (run.html)": {
+        "passed": 66,
+        "failed": 0
+      }
+    }
+  },
+  "firmware_manifest": {
+    "artifacts": {
+      "firmware.bin": {
+        "sha256": "3f565adf6fe4f237e73f1a6608b77598af9cf3642d0578828a3e2bd9ed7b0298",
+        "size": 143144
+      },
+      "firmware.elf": {
+        "sha256": "408fb1bb8d6818a20529f9a2d15f2298d815add9807a05e94696829fa0000a6e",
+        "size": 958716
+      },
+      "firmware.uf2": {
+        "sha256": "4f3068014744d8ded8fefbc57ad12e62ebd317c09037e215c28a28f8f6430a13",
+        "size": 286720
+      }
+    },
+    "build_id": "79195cef4513-dirty",
+    "commit_date": "2026-09-29T21:46:03-07:00",
+    "env": "pico",
+    "fw_version": "2.1.0-beta.1",
+    "generated_utc": "2026-09-30T23:43:51Z",
+    "git_commit": "79195cef451382de2771e6a11fa51aab7b23c956",
+    "git_dirty": true,
+    "protocol": 2
+  },
+  "hardware_exercised_by_automated_suite": false,
+  "physical_panel_observed": false,
+  "source_sha256": {
+    "firmware/src/oled.cpp": "9245a138568a9748b5f175b11126f1056a36b599167da3e45dc9f42a247292b0",
+    "firmware/src/screensaver_player.cpp": "d552b83987a43aeed0d86dd7c3d9b527e0bd044c95e9c5aed629846e708c6b2c",
+    "firmware/include/screensaver_player.h": "7afa4bc1a4db4672f054d58e82936ea4fe012a883f11eb270af8d1afe970b97f",
+    "tests/firmware_host/oled_frames.cpp": "b162754126061f8929b4585f40b2276d4477fd1a3c3943664957eda9892aaadc"
+  },
+  "full_report": "C:\\Users\\devyn\\AppData\\Local\\DriftPad\\backups\\screensaver-checks.json",
+  "hardware_operation_report": "device-update.json"
+}

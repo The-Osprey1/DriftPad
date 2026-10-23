@@ -1,0 +1,33 @@
+{
+  "updated_utc": "2026-09-30T22:21:24.419583+00:00",
+  "port": "COM3",
+  "fw": "2.1.0-beta.1",
+  "build": "79195cef4513-dirty",
+  "uf2_sha256": "5ee4509f5dbdf4fc06b0a6ad4a788a2aa2313261acad3b79812869012a1af63a",
+  "configuration_preserved": true,
+  "settings": {
+    "dirty": false,
+    "source": "slot_b",
+    "seq": 14,
+    "load_errors": []
+  },
+  "calibration": "missing",
+  "output": {
+    "enabled": false,
+    "reason": "calibration_missing",
+    "active_keys": [],
+    "suppressed_keys": [],
+    "overflow": 0,
+    "delivery": "confirmed"
+  },
+  "oled_scan": {
+    "status": "ok",
+    "id": "4",
+    "cmd": "OLED_SCAN",
+    "devices": [
+      60
+    ]
+  },
+  "physical_screen_observed": false,
+  "backup_directory": "C:\\Users\\devyn\\AppData\\Local\\DriftPad\\backups\\20260930T222120Z-manual-countdown-cleanup"
+}

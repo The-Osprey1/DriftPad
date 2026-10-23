@@ -17,11 +17,6 @@ import {
   Zap,
   Check,
   Sparkles,
-  RotateCcw,
-  Terminal,
-  Info,
-  Sliders,
-  CircuitBoard,
 } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
 
@@ -30,7 +25,6 @@ interface HeaderProps {
   hidEnabled?: boolean;
   profiles: ProductivityProfile[];
   activeProfileId: string;
-  syncStatus?: 'synced' | 'saving';
   onSelectProfile: (profileId: string) => void;
   onExportProfiles: () => void;
   onImportProfiles: (file: File) => void;
@@ -38,12 +32,15 @@ interface HeaderProps {
   onDuplicateProfile: (profileId: string) => void;
   onConnectToggle: () => void;
   onToggleVirtualMode: () => void;
-  onOpenFlashFirmware?: () => void;
-  onResetDefaults?: () => void;
-  onOpenSerialConsole?: () => void;
+  onToggleHid?: () => void;
+  onSaveFlash?: () => void;
+  onFactoryReset?: () => void;
+  onCalibrate?: () => void;
+  onScreensaver?: () => void;
+  onBootsel?: () => void;
   onOpenHardwareInfo?: () => void;
-  onOpenCalibration?: () => void;
-  onOpenPinoutConfig?: () => void;
+  onOpenOledTheme?: () => void;
+  onOpenFlashFirmware?: () => void;
 }
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -55,11 +52,10 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   custom: <Sparkles className="w-4 h-4 text-[#5b8e85]" />,
 };
 
-export const Header: React.FC<HeaderProps> = ({
+export const HeaderComponent: React.FC<HeaderProps> = ({
   connectionMode,
   profiles,
   activeProfileId,
-  syncStatus = 'synced',
   onSelectProfile,
   onExportProfiles,
   onImportProfiles,
@@ -68,11 +64,6 @@ export const Header: React.FC<HeaderProps> = ({
   onConnectToggle,
   onToggleVirtualMode,
   onOpenFlashFirmware,
-  onResetDefaults,
-  onOpenSerialConsole,
-  onOpenHardwareInfo,
-  onOpenCalibration,
-  onOpenPinoutConfig,
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -99,8 +90,8 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-[#ffffff] border border-[#ded7ca] rounded-2xl shadow-xs">
-      {/* Left Column: Brand & Auto-Sync State */}
+    <header className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-[#ffffff] border border-[#ded7ca] rounded-2xl shadow-sm">
+      {/* Left Column: Brand Emblem */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-[#153641] flex items-center justify-center font-mono font-black text-white text-sm shadow-xs border border-[#0f262e] relative">
@@ -116,28 +107,14 @@ export const Header: React.FC<HeaderProps> = ({
                 RP2040
               </span>
             </div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-[10px] text-[#71828a] font-medium leading-none">
-                Hall-Effect Studio
-              </span>
-              <span className="text-[10px] text-[#b0bac0]">·</span>
-              {/* Subtle Auto-Save Status */}
-              <div className="inline-flex items-center gap-1 text-[10px] text-[#5b8e85] font-medium leading-none">
-                {syncStatus === 'saving' ? (
-                  <span className="text-[#c86443] animate-pulse">Saving...</span>
-                ) : (
-                  <>
-                    <Check className="w-2.5 h-2.5 stroke-[2.5]" />
-                    <span>Auto-saved</span>
-                  </>
-                )}
-              </div>
-            </div>
+            <span className="text-[10px] text-[#71828a] font-medium leading-none mt-1">
+              Hall-Effect Macropad Studio
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Center Column: Workspace Selector & Consolidated Menu */}
+      {/* Center Column: Workspace Selector Capsule */}
       <div ref={profileRef} className="relative flex items-center justify-center">
         <div className="inline-flex items-center p-0.5 bg-[#f6f3ec] rounded-xl border border-[#ded7ca] shadow-xs">
           <button
@@ -157,30 +134,26 @@ export const Header: React.FC<HeaderProps> = ({
                 {activeProfile.name}
               </span>
             </div>
-            <ChevronDown
-              className={`w-3.5 h-3.5 text-[#71828a] transition-transform duration-150 ${
-                profileDropdownOpen ? 'rotate-180 text-[#c86443]' : ''
-              }`}
-            />
+            <ChevronDown className={`w-3.5 h-3.5 text-[#71828a] transition-transform duration-150 ${profileDropdownOpen ? 'rotate-180 text-[#c86443]' : ''}`} />
           </button>
 
           <HoverExplain
             title="Workspaces"
             badge="Profiles"
-            explanation="Each workspace stores all 16 key bindings, rotary encoder controls, and Rapid Trigger sensitivity. Switch anytime or use the menu to create, duplicate, import, and export configurations."
-            tip="Auto-saves automatically in real time to your browser."
+            explanation="Each workspace stores all 16 key bindings, rotary encoder controls, and Hall-effect Rapid Trigger sensitivity. Switch workspaces anytime to adapt DriftPad to your active application."
+            tip="Duplicate or create a new workspace to customize bindings for your workflow."
             className="ml-1 mr-1"
           />
         </div>
 
-        {/* Consolidated Workspace Dropdown Menu */}
+        {/* Workspace Dropdown Menu */}
         {profileDropdownOpen && (
-          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-84 bg-[#ffffff] border border-[#ded7ca] rounded-2xl shadow-xl py-2 z-50 flex flex-col text-xs animate-in fade-in duration-100">
-            <div className="px-3.5 py-1.5 text-[10px] font-bold text-[#71828a] uppercase tracking-wider border-b border-[#f0ebdf]">
-              Workspaces ({profiles.length})
+          <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 bg-[#ffffff] border border-[#ded7ca] rounded-2xl shadow-xl py-2 z-50 flex flex-col text-xs animate-in fade-in duration-100">
+            <div className="px-3.5 py-1.5 text-[10px] font-bold text-[#71828a] uppercase tracking-wider border-b border-[#f0ebdF]">
+              Select Active Workspace
             </div>
 
-            <div className="max-h-56 overflow-y-auto px-1.5 py-1 space-y-0.5">
+            <div className="max-h-64 overflow-y-auto px-1.5 py-1 space-y-0.5">
               {profiles.map((p) => {
                 const isSelected = p.id === activeProfileId;
                 return (
@@ -207,134 +180,49 @@ export const Header: React.FC<HeaderProps> = ({
                         </span>
                       </div>
                     </div>
-                    {isSelected && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#c86443] text-white shrink-0 ml-2">
-                        ACTIVE
-                      </span>
-                    )}
+                    {isSelected && <Check className="w-4 h-4 text-[#c86443] shrink-0 ml-2" />}
                   </button>
                 );
               })}
             </div>
 
-            {/* Consolidated Workspace Actions */}
-            <div className="pt-1.5 mt-1 border-t border-[#f0ebdf] px-2 flex flex-col gap-0.5">
-              <div className="px-2 py-0.5 text-[9px] font-bold text-[#94a3b8] uppercase tracking-wider">
-                Manage Profile
-              </div>
-              <button
-                onClick={() => {
-                  onCreateCustomProfile();
-                  setProfileDropdownOpen(false);
-                }}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[#1b2930] hover:bg-[#f7f4ee] font-medium"
-              >
-                <Plus className="w-3.5 h-3.5 text-[#15803d]" />
-                <span>New Blank Workspace</span>
-              </button>
+            <div className="border-t border-[#f0ebdF] mt-1 pt-1.5 px-2.5 grid grid-cols-2 gap-1 text-[11px]">
               <button
                 onClick={() => {
                   onDuplicateProfile(activeProfileId);
                   setProfileDropdownOpen(false);
                 }}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[#1b2930] hover:bg-[#f7f4ee] font-medium"
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[#5a6a72] hover:bg-[#f7f4ee] hover:text-[#1b2930]"
               >
-                <Copy className="w-3.5 h-3.5 text-[#5b8e85]" />
-                <span>Duplicate Active Workspace</span>
+                <Copy className="w-3.5 h-3.5 text-[#c86443]" /> Duplicate
               </button>
-              {onResetDefaults && (
-                <button
-                  onClick={() => {
-                    onResetDefaults();
-                    setProfileDropdownOpen(false);
-                  }}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[#1b2930] hover:bg-amber-50 hover:text-amber-800 font-medium"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Reset All to Factory Defaults</span>
-                </button>
-              )}
-            </div>
-
-            {/* Import / Export & Hardware Diagnostics */}
-            <div className="pt-1.5 mt-1 border-t border-[#f0ebdf] px-2 flex flex-col gap-0.5">
-              <div className="px-2 py-0.5 text-[9px] font-bold text-[#94a3b8] uppercase tracking-wider">
-                Backup & Tools
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  onClick={() => {
-                    onExportProfiles();
-                    setProfileDropdownOpen(false);
-                  }}
-                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[#5a6a72] hover:bg-[#f7f4ee] hover:text-[#1b2930] border border-[#e5dfd5]"
-                >
-                  <Download className="w-3.5 h-3.5 text-[#5b8e85]" />
-                  <span>Export JSON</span>
-                </button>
-                <button
-                  onClick={() => {
-                    fileInputRef.current?.click();
-                    setProfileDropdownOpen(false);
-                  }}
-                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[#5a6a72] hover:bg-[#f7f4ee] hover:text-[#1b2930] border border-[#e5dfd5]"
-                >
-                  <Upload className="w-3.5 h-3.5 text-[#b45309]" />
-                  <span>Import JSON</span>
-                </button>
-              </div>
-
-              {onOpenCalibration && (
-                <button
-                  onClick={() => {
-                    onOpenCalibration();
-                    setProfileDropdownOpen(false);
-                  }}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[#1b2930] hover:bg-[#f7f4ee] font-medium"
-                >
-                  <Sliders className="w-3.5 h-3.5 text-[#c86443]" />
-                  <span>Calibrate Hall Sensors</span>
-                </button>
-              )}
-
-              {onOpenPinoutConfig && (
-                <button
-                  onClick={() => {
-                    onOpenPinoutConfig();
-                    setProfileDropdownOpen(false);
-                  }}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[#1b2930] hover:bg-[#f7f4ee] font-medium"
-                >
-                  <CircuitBoard className="w-3.5 h-3.5 text-[#5b8e85]" />
-                  <span>GPIO Pinout &amp; C++ Firmware</span>
-                </button>
-              )}
-
-              {onOpenSerialConsole && (
-                <button
-                  onClick={() => {
-                    onOpenSerialConsole();
-                    setProfileDropdownOpen(false);
-                  }}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[#1b2930] hover:bg-[#f7f4ee] font-medium"
-                >
-                  <Terminal className="w-3.5 h-3.5 text-[#153641]" />
-                  <span>Open USB Serial Console</span>
-                </button>
-              )}
-
-              {onOpenHardwareInfo && (
-                <button
-                  onClick={() => {
-                    onOpenHardwareInfo();
-                    setProfileDropdownOpen(false);
-                  }}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[#1b2930] hover:bg-[#f7f4ee] font-medium"
-                >
-                  <Info className="w-3.5 h-3.5 text-[#71828a]" />
-                  <span>Hardware Pinout &amp; Specs</span>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  onCreateCustomProfile();
+                  setProfileDropdownOpen(false);
+                }}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[#5a6a72] hover:bg-[#f7f4ee] hover:text-[#1b2930]"
+              >
+                <Plus className="w-3.5 h-3.5 text-[#15803d]" /> New Workspace
+              </button>
+              <button
+                onClick={() => {
+                  onExportProfiles();
+                  setProfileDropdownOpen(false);
+                }}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[#5a6a72] hover:bg-[#f7f4ee] hover:text-[#1b2930]"
+              >
+                <Download className="w-3.5 h-3.5 text-[#5b8e85]" /> Export JSON
+              </button>
+              <button
+                onClick={() => {
+                  fileInputRef.current?.click();
+                  setProfileDropdownOpen(false);
+                }}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[#5a6a72] hover:bg-[#f7f4ee] hover:text-[#1b2930]"
+              >
+                <Upload className="w-3.5 h-3.5 text-[#b45309]" /> Import JSON
+              </button>
             </div>
           </div>
         )}
@@ -348,17 +236,17 @@ export const Header: React.FC<HeaderProps> = ({
         />
       </div>
 
-      {/* Right Column: Clean Hardware Dock (Flash, Status, Connect) */}
+      {/* Right Column: Clean Hardware Dock (Status, Flash, Connect) */}
       <div className="flex items-center gap-2.5 justify-end">
-        {/* Flash Firmware Action */}
+        {/* Flash Firmware Button */}
         {onOpenFlashFirmware && (
           <button
             onClick={onOpenFlashFirmware}
             className="px-3.5 py-1.5 bg-[#ede7da] hover:bg-[#e2dacb] text-[#1b2930] rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-[#d5cbb8] transition-colors shadow-xs group"
-            title="Automatically flash the RP2040 pad with latest firmware"
+            title="Install or update your pad’s firmware"
           >
             <Zap className="w-3.5 h-3.5 text-[#c86443] fill-[#c86443] group-hover:scale-110 transition-transform" />
-            <span className="font-bold">Flash Firmware</span>
+            <span className="font-bold">Set Up Pad</span>
           </button>
         )}
 
@@ -408,3 +296,5 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
+export const Header = React.memo(HeaderComponent);

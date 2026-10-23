@@ -1,124 +1,146 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   KeyStatus,
+  ScreensaverAnimation,
+  SCREENSAVER_NAMES,
   OledThemeConfig,
   DEFAULT_OLED_THEME,
-  OledWidgetMode,
-  OledCustomBitmap,
 } from '../types/driftpad';
 import {
+  Eye,
+  Moon,
+  RefreshCw,
   Sparkles,
   Monitor,
-  Moon,
-  Eye,
-  RefreshCw,
-  Gauge,
-  LayoutGrid,
-  Clock,
-  Paintbrush,
   Briefcase,
+  Palette,
 } from 'lucide-react';
 
 interface OledCanvasProps {
-  keys: KeyStatus[];
+  activeLayer?: number;
   actuation: number;
   rtSens: number;
   rtEnabled: boolean;
-  profileName: string;
-  knobName: string;
+  keys: KeyStatus[];
   lastActiveKey: number;
-  lastActiveKeyTime: number;
+  profileName?: string;
+  knobName?: string;
   theme?: OledThemeConfig;
   isSleeping?: boolean;
   screensaverActive?: boolean;
   forcedAnim?: number;
-  totalKeystrokes?: number;
-  apm?: number;
-  cps?: number;
-  customBitmap?: OledCustomBitmap | null;
-  onOpenThemeModal?: () => void;
-  onOpenPixelEditor?: () => void;
   onSendSerialCommand?: (cmd: string) => void;
+  onOpenThemeModal?: () => void;
 }
 
-export type ScreensaverAnimation = 0 | 1 | 2 | 3 | 4 | 5;
-
-const SCREENSAVER_NAMES: Record<ScreensaverAnimation, string> = {
-  0: 'Starfield 3D',
-  1: 'Matrix Rain',
-  2: 'DVD Bounce',
-  3: 'Sine Wave',
-  4: 'Pixel Dust',
-  5: 'Clock HUD',
-};
-
-export const OledCanvas: React.FC<OledCanvasProps> = ({
-  keys,
+export const OledCanvasComponent: React.FC<OledCanvasProps> = ({
   actuation,
   rtSens,
   rtEnabled,
-  profileName,
-  knobName,
+  keys,
   lastActiveKey,
-  lastActiveKeyTime: _lastActiveKeyTime,
+  profileName = 'Standard Number Pad',
+  knobName = 'Volume Dial',
   theme,
   isSleeping = false,
   screensaverActive = false,
   forcedAnim = -1,
-  totalKeystrokes = 0,
-  apm = 0,
-  cps = 0,
-  customBitmap = null,
-  onOpenThemeModal,
-  onOpenPixelEditor,
   onSendSerialCommand,
+  onOpenThemeModal,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [viewMode, setViewMode] = useState<OledWidgetMode>('cockpit');
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [selectedAnim, setSelectedAnim] = useState<ScreensaverAnimation>(0);
+  const [viewMode, setViewMode] = useState<'productivity' | 'cockpit' | 'screensaver' | 'test'>(
+    'productivity'
+  );
 
-  // Timer Widget state
-  const [timerRunning, setTimerRunning] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(25 * 60);
-
-  // State refs for animation loops without re-triggering useEffect
-  const stateRef = useRef({
-    time: 0,
-    // Starfield
-    stars: Array.from({ length: 48 }, () => ({
-      x: (Math.random() - 0.5) * 128,
-      y: (Math.random() - 0.5) * 64,
-      z: Math.random() * 128 + 1,
-    })),
-    // Matrix Rain
-    matrixDrops: Array.from({ length: 16 }, () => Math.floor(Math.random() * 64)),
-    // DVD Bounce
-    dvd: { x: 10, y: 10, vx: 1.2, vy: 0.9, w: 28, h: 12 },
+  // Maintain a ref to current props to avoid re-subscribing requestAnimationFrame loop on every prop change
+  const propsRef = useRef({
+    actuation,
+    rtSens,
+    rtEnabled,
+    keys,
+    lastActiveKey,
+    profileName,
+    knobName,
+    theme,
+    isSleeping,
+    screensaverActive,
+    forcedAnim,
   });
 
-  const animFrameRef = useRef<number | null>(null);
+  propsRef.current = {
+    actuation,
+    rtSens,
+    rtEnabled,
+    keys,
+    lastActiveKey,
+    profileName,
+    knobName,
+    theme,
+    isSleeping,
+    screensaverActive,
+    forcedAnim,
+  };
 
-  // Focus timer tick
+  const animFrameRef = useRef<number | null>(null);
+  const stateRef = useRef<{
+    stars: { x: number; y: number; z: number }[];
+    rain: { y: number; speed: number; len: number }[];
+    oscPhase: number;
+    gridOffset: number;
+    ripples: { x: number; y: number; r: number; maxR: number }[];
+    lifeGrid: Uint8Array;
+    nextLifeGrid: Uint8Array;
+    badge: { x: number; y: number; dx: number; dy: number };
+    time: number;
+  }>({
+    stars: Array.from({ length: 30 }, () => ({
+      x: (Math.random() - 0.5) * 128,
+      y: (Math.random() - 0.5) * 64,
+      z: Math.random() * 80 + 10,
+    })),
+    rain: Array.from({ length: 16 }, () => ({
+      y: Math.random() * 64,
+      speed: Math.random() * 1.5 + 0.8,
+      len: Math.floor(Math.random() * 8) + 4,
+    })),
+    oscPhase: 0,
+    gridOffset: 0,
+    ripples: [{ x: 64, y: 32, r: 2, maxR: 40 }],
+    lifeGrid: (() => {
+      const grid = new Uint8Array(512);
+      for (let i = 0; i < 512; i++) {
+        if (Math.random() > 0.7) grid[i] = 1;
+      }
+      return grid;
+    })(),
+    nextLifeGrid: new Uint8Array(512),
+    badge: { x: 20, y: 20, dx: 0.8, dy: 0.6 },
+    time: 0,
+  });
+
   useEffect(() => {
-    if (!timerRunning) return;
-    const interval = setInterval(() => {
-      setTimerSeconds((prev) => (prev > 0 ? prev - 1 : 25 * 60));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [timerRunning]);
+    if (lastActiveKey >= 0) {
+      const col = lastActiveKey % 4;
+      const row = Math.floor(lastActiveKey / 4);
+      const cx = 20 + col * 28;
+      const cy = 16 + row * 12;
+      stateRef.current.ripples.push({ x: cx, y: cy, r: 2, maxR: 35 });
+      if (stateRef.current.ripples.length > 6) {
+        stateRef.current.ripples.shift();
+      }
+    }
+  }, [lastActiveKey]);
 
   useEffect(() => {
     if (screensaverActive) {
       setViewMode('screensaver');
     }
-  }, [screensaverActive]);
-
-  useEffect(() => {
     if (forcedAnim >= 0 && forcedAnim <= 5) {
       setSelectedAnim(forcedAnim as ScreensaverAnimation);
-      setViewMode('screensaver');
     }
-  }, [forcedAnim]);
+  }, [screensaverActive, forcedAnim]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -129,124 +151,294 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
     const W = 128;
     const H = 64;
 
-    // Single-Color Monochrome White OLED (SSD1306 hardware match)
-    const activeTheme = theme || DEFAULT_OLED_THEME;
-    const primaryColor = activeTheme.textColor || '#ffffff';
-    const bgColor = activeTheme.background || '#04070a';
-    const graphColor = activeTheme.graphColor || '#ffffff';
-    const dimColor = activeTheme.dimColor || '#283238';
-    const accentColor = activeTheme.accentColor || '#ffffff';
-
     const render = () => {
+      const {
+        actuation: curActuation,
+        rtSens: curRtSens,
+        rtEnabled: curRtEnabled,
+        keys: curKeys,
+        lastActiveKey: curLastActiveKey,
+        profileName: curProfileName,
+        knobName: curKnobName,
+        theme: curTheme,
+        isSleeping: curIsSleeping,
+      } = propsRef.current;
+
+      // Single-Color Monochrome White OLED (SSD1306 hardware match)
+      const activeTheme = curTheme || DEFAULT_OLED_THEME;
+      const primaryColor = activeTheme.textColor || '#e8f1ee';
+      const bgColor = activeTheme.background || '#12242b';
+      const graphColor = activeTheme.graphColor || '#71938c';
+      const dimColor = activeTheme.dimColor || '#28464f';
+      const accentColor = activeTheme.accentColor || '#e07a5f';
+
       stateRef.current.time += 1;
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, W, H);
 
-      if (isSleeping) {
+      if (curIsSleeping) {
         animFrameRef.current = requestAnimationFrame(render);
         return;
       }
 
       if (viewMode === 'test') {
-        renderTestPattern(ctx, W, H);
-      } else if (viewMode === 'screensaver') {
-        renderScreensaver(ctx, W, H, selectedAnim);
-      } else if (viewMode === 'speedometer') {
-        renderSpeedometer(ctx, W, H);
-      } else if (viewMode === 'heatmap') {
-        renderHeatmap(ctx, W, H);
-      } else if (viewMode === 'timer') {
-        renderTimer(ctx, W, H);
-      } else if (viewMode === 'custom') {
-        renderCustomBitmap(ctx, W, H);
-      } else {
-        renderCockpit(ctx, W, H);
+        // Checkerboard test pattern
+        ctx.fillStyle = primaryColor;
+        ctx.strokeStyle = primaryColor;
+        for (let y = 0; y < H; y += 8) {
+          for (let x = 0; x < W; x += 8) {
+            if ((x / 8 + y / 8) % 2 === 0) {
+              ctx.fillRect(x, y, 8, 8);
+            }
+          }
+        }
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(20, 24, 88, 16);
+        ctx.fillStyle = primaryColor;
+        ctx.font = 'bold 8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('128x64 OK · 400kHz', 64, 35);
+        ctx.textAlign = 'left';
+        animFrameRef.current = requestAnimationFrame(render);
+        return;
       }
 
+      if (viewMode === 'screensaver') {
+        renderScreensaver(ctx, W, H, selectedAnim, primaryColor, bgColor, graphColor, dimColor, accentColor);
+        animFrameRef.current = requestAnimationFrame(render);
+        return;
+      }
+
+      if (viewMode === 'productivity') {
+        renderProductivity(
+          ctx, W, H, curActuation, curRtSens, curRtEnabled, curKeys, curLastActiveKey, curProfileName, curKnobName,
+          primaryColor, bgColor, graphColor, dimColor, accentColor
+        );
+        animFrameRef.current = requestAnimationFrame(render);
+        return;
+      }
+
+      // Default: Cockpit
+      renderCockpit(
+        ctx, W, H, curActuation, curRtSens, curRtEnabled, curKeys, curLastActiveKey, curProfileName,
+        primaryColor, bgColor, graphColor, dimColor, accentColor
+      );
       animFrameRef.current = requestAnimationFrame(render);
     };
 
-    const renderCockpit = (c: CanvasRenderingContext2D, w: number, _h: number) => {
-      // Top status line
+    const renderProductivity = (
+      c: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      curActuation: number,
+      curRtSens: number,
+      curRtEnabled: boolean,
+      curKeys: KeyStatus[],
+      curLastActiveKey: number,
+      curProfileName: string,
+      curKnobName: string,
+      primaryColor: string,
+      bgColor: string,
+      graphColor: string,
+      dimColor: string,
+      accentColor: string
+    ) => {
+      c.fillStyle = bgColor;
+      c.fillRect(0, 0, w, h);
+
+      // --- Top Status: Workspace Name & 16-Key Badge ---
       c.fillStyle = primaryColor;
       c.font = 'bold 7px monospace';
-      c.fillText(profileName.slice(0, 14).toUpperCase(), 2, 8);
+      const cleanProfile = curProfileName.slice(0, 14).toUpperCase();
+      c.fillText(cleanProfile, 2, 8);
 
-      // Inverted 16-KEY badge
+      // Workspace 16-key pad badge
       c.fillStyle = primaryColor;
       c.fillRect(90, 1, 36, 9);
       c.fillStyle = bgColor;
       c.fillText('16-KEY', 94, 8);
       c.fillStyle = primaryColor;
 
-      // Divider line
+      // Divider
       c.strokeStyle = dimColor;
       c.beginPath();
-      c.moveTo(0, 11);
-      c.lineTo(w, 11);
+      c.moveTo(0, 12);
+      c.lineTo(w, 12);
       c.stroke();
 
-      // Active Key Box
-      const activeKeyObj = keys[lastActiveKey >= 0 ? lastActiveKey : 0] || {
+      // --- Center: Active Key Box + Knob Readout ---
+      const activeKeyObj = curKeys[curLastActiveKey >= 0 ? curLastActiveKey : 0] || {
         idx: 0,
         pressed: false,
         travel: 0.0,
         label: 'KEY',
       };
-      const isActuated = activeKeyObj.pressed;
 
+      const isActuated = activeKeyObj.pressed;
       if (isActuated) {
         c.fillStyle = accentColor;
-        c.fillRect(3, 14, 34, 34);
-        c.fillStyle = bgColor;
+        c.fillRect(3, 15, 34, 34);
+        c.fillStyle = '#ffffff';
       } else {
         c.strokeStyle = graphColor;
-        c.strokeRect(3, 14, 34, 34);
+        c.strokeRect(3, 15, 34, 34);
         c.fillStyle = primaryColor;
       }
 
       c.font = 'bold 11px monospace';
       c.textAlign = 'center';
-      c.fillText(activeKeyObj.label, 20, 31);
+      c.fillText(activeKeyObj.label, 20, 32);
+
       c.font = '6px monospace';
-      c.fillText(`#${activeKeyObj.idx}`, 20, 43);
+      c.fillText(`#${activeKeyObj.idx}`, 20, 44);
       c.textAlign = 'left';
 
-      // Dial readout
+      // Dial Readout on right
       c.fillStyle = primaryColor;
       c.font = '6px monospace';
-      c.fillText(`DIAL: ${knobName.slice(0, 13).toUpperCase()}`, 42, 21);
+      c.fillText(`DIAL: ${curKnobName.slice(0, 13).toUpperCase()}`, 42, 22);
 
       // Travel reading
-      c.font = 'bold 8px monospace';
-      c.fillText(`${activeKeyObj.travel.toFixed(2)}mm`, 42, 32);
+      c.font = 'bold 7px monospace';
+      c.fillStyle = isActuated ? accentColor : primaryColor;
+      c.fillText(`${activeKeyObj.travel.toFixed(2)}mm`, 42, 33);
 
       c.font = '6px monospace';
       c.fillStyle = isActuated ? accentColor : dimColor;
-      c.fillText(isActuated ? 'ACTUATED' : 'IDLE REST', 86, 32);
+      c.fillText(isActuated ? 'ACTUATED' : 'REST/IDLE', 86, 33);
 
-      // Analog Travel Bar
+      // Travel Track
       const trackX = 42;
-      const trackY = 36;
+      const trackY = 37;
       const trackW = 82;
       const trackH = 8;
       c.strokeStyle = dimColor;
       c.strokeRect(trackX, trackY, trackW, trackH);
 
       const fillW = Math.max(0, Math.min(trackW, (activeKeyObj.travel / 4.0) * trackW));
-      c.fillStyle = primaryColor;
+      c.fillStyle = isActuated ? accentColor : graphColor;
       c.fillRect(trackX + 1, trackY + 1, fillW, trackH - 2);
 
       // Actuation Line
-      const effAct = activeKeyObj.customActuation ?? actuation;
+      const effAct = activeKeyObj.customActuation ?? curActuation;
       const actX = trackX + (effAct / 4.0) * trackW;
-      c.strokeStyle = primaryColor;
+      c.strokeStyle = accentColor;
+      c.beginPath();
+      c.moveTo(actX, trackY - 1);
+      c.lineTo(actX, trackY + trackH + 1);
+      c.stroke();
+
+      // --- Bottom Status ---
+      c.strokeStyle = dimColor;
+      c.beginPath();
+      c.moveTo(0, 52);
+      c.lineTo(w, 52);
+      c.stroke();
+
+      c.fillStyle = primaryColor;
+      c.font = '6px monospace';
+      c.fillText(`ACT:${effAct.toFixed(2)}mm · RT:${curRtEnabled ? `${curRtSens.toFixed(2)}mm` : 'OFF'}`, 2, 61);
+    };
+
+    const renderCockpit = (
+      c: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      curActuation: number,
+      curRtSens: number,
+      curRtEnabled: boolean,
+      curKeys: KeyStatus[],
+      curLastActiveKey: number,
+      curProfileName: string,
+      primaryColor: string,
+      bgColor: string,
+      graphColor: string,
+      dimColor: string,
+      accentColor: string
+    ) => {
+      c.fillStyle = bgColor;
+      c.fillRect(0, 0, w, h);
+
+      c.fillStyle = primaryColor;
+      c.font = 'bold 7px monospace';
+      const cleanProfile = curProfileName.slice(0, 9).toUpperCase();
+      c.fillText(cleanProfile, 2, 8);
+
+      if (curRtEnabled) {
+        c.fillStyle = accentColor;
+        c.fillRect(48, 1, 32, 9);
+        c.fillStyle = '#ffffff';
+        c.fillText('RT ON', 52, 8);
+        c.fillStyle = primaryColor;
+      } else {
+        c.strokeStyle = dimColor;
+        c.strokeRect(48, 1, 32, 9);
+        c.fillText('RT OFF', 50, 8);
+      }
+
+      c.font = '6px monospace';
+      c.fillText(`ACT:${curActuation.toFixed(2)}`, 84, 8);
+
+      c.strokeStyle = dimColor;
+      c.beginPath();
+      c.moveTo(0, 12);
+      c.lineTo(w, 12);
+      c.stroke();
+
+      const activeKeyObj = curKeys[curLastActiveKey >= 0 ? curLastActiveKey : 0] || {
+        idx: 0,
+        pressed: false,
+        travel: 0.0,
+        label: 'KEY',
+      };
+
+      const isActuated = activeKeyObj.pressed;
+      if (isActuated) {
+        c.fillStyle = accentColor;
+        c.fillRect(3, 15, 34, 34);
+        c.fillStyle = '#ffffff';
+      } else {
+        c.strokeStyle = graphColor;
+        c.strokeRect(3, 15, 34, 34);
+        c.fillStyle = primaryColor;
+      }
+
+      c.font = 'bold 11px monospace';
+      c.textAlign = 'center';
+      c.fillText(activeKeyObj.label, 20, 32);
+
+      c.font = '6px monospace';
+      c.fillText(`#${activeKeyObj.idx}`, 20, 44);
+      c.textAlign = 'left';
+
+      c.fillStyle = primaryColor;
+      c.font = 'bold 8px monospace';
+      c.fillText(`${activeKeyObj.travel.toFixed(2)} mm`, 44, 23);
+
+      c.font = '6px monospace';
+      c.fillStyle = isActuated ? accentColor : dimColor;
+      c.fillText(isActuated ? 'ACTUATED' : 'REST/IDLE', 86, 23);
+
+      const trackX = 44;
+      const trackY = 27;
+      const trackW = 80;
+      const trackH = 10;
+
+      c.strokeStyle = dimColor;
+      c.strokeRect(trackX, trackY, trackW, trackH);
+
+      const fillW = Math.max(0, Math.min(trackW, (activeKeyObj.travel / 4.0) * trackW));
+      c.fillStyle = isActuated ? accentColor : graphColor;
+      c.fillRect(trackX + 1, trackY + 1, fillW, trackH - 2);
+
+      const effAct = activeKeyObj.customActuation ?? curActuation;
+      const actX = trackX + (effAct / 4.0) * trackW;
+      c.strokeStyle = accentColor;
       c.beginPath();
       c.moveTo(actX, trackY - 2);
       c.lineTo(actX, trackY + trackH + 2);
       c.stroke();
 
-      // Bottom Telemetry Bar
       c.strokeStyle = dimColor;
       c.beginPath();
       c.moveTo(0, 52);
@@ -255,371 +447,219 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
 
       c.fillStyle = primaryColor;
       c.font = '6px monospace';
-      c.fillText(`ACT:${actuation.toFixed(2)}mm`, 2, 60);
-      c.fillText(`RT:${rtSens.toFixed(2)}mm`, 50, 60);
-      c.fillText(rtEnabled ? 'RT:ON' : 'RT:OFF', 98, 60);
-    };
-
-    const renderSpeedometer = (c: CanvasRenderingContext2D, w: number, _h: number) => {
-      // Header
-      c.fillStyle = primaryColor;
-      c.font = 'bold 7px monospace';
-      c.fillText('METRICS HUD · APM', 2, 8);
-
-      c.fillStyle = primaryColor;
-      c.fillRect(86, 1, 40, 9);
-      c.fillStyle = bgColor;
-      c.fillText(`${cps.toFixed(1)} CPS`, 90, 8);
-
-      c.strokeStyle = dimColor;
-      c.beginPath();
-      c.moveTo(0, 11);
-      c.lineTo(w, 11);
-      c.stroke();
-
-      // Big APM Value
-      c.fillStyle = primaryColor;
-      c.font = 'bold 18px monospace';
-      c.fillText(`${Math.round(apm)}`, 6, 32);
-
-      c.font = '6px monospace';
-      c.fillStyle = dimColor;
-      c.fillText('APM SPEED', 6, 41);
-
-      // Gauge Arc on right
-      const centerX = 94;
-      const centerY = 33;
-      const radius = 18;
-
-      // Arc background
-      c.strokeStyle = dimColor;
-      c.lineWidth = 3;
-      c.beginPath();
-      c.arc(centerX, centerY, radius, Math.PI * 0.8, Math.PI * 2.2);
-      c.stroke();
-
-      // Arc progress
-      const progress = Math.min(1, apm / 350);
-      c.strokeStyle = primaryColor;
-      c.beginPath();
-      c.arc(centerX, centerY, radius, Math.PI * 0.8, Math.PI * (0.8 + 1.4 * progress));
-      c.stroke();
-      c.lineWidth = 1;
-
-      // Needle / Center dot
-      c.fillStyle = primaryColor;
-      c.beginPath();
-      c.arc(centerX, centerY, 2.5, 0, Math.PI * 2);
-      c.fill();
-
-      // Bottom bar: Keystrokes & Effort
-      c.strokeStyle = dimColor;
-      c.beginPath();
-      c.moveTo(0, 52);
-      c.lineTo(w, 52);
-      c.stroke();
-
-      c.fillStyle = primaryColor;
-      c.font = '6px monospace';
-      c.fillText(`TOTAL: ${totalKeystrokes} KEYS`, 4, 60);
-      c.fillText(`EFFORT: ${Math.round(progress * 100)}%`, 75, 60);
-    };
-
-    const renderHeatmap = (c: CanvasRenderingContext2D, w: number, _h: number) => {
-      // Header
-      c.fillStyle = primaryColor;
-      c.font = 'bold 7px monospace';
-      c.fillText('4x4 MATRIX SENSOR MAP', 2, 8);
-
-      c.strokeStyle = dimColor;
-      c.beginPath();
-      c.moveTo(0, 11);
-      c.lineTo(w, 11);
-      c.stroke();
-
-      // 4x4 Grid in center
-      const startX = 14;
-      const startY = 14;
-      const keyW = 14;
-      const keyH = 8;
-      const gap = 2;
+      c.fillText(`DRIFTPAD · RT ${curRtSens.toFixed(2)}mm`, 3, 61);
 
       for (let r = 0; r < 4; r++) {
         for (let col = 0; col < 4; col++) {
-          const idx = r * 4 + col;
-          const k = keys[idx] || { pressed: false, travel: 0, label: `${idx}` };
-          const x = startX + col * (keyW + gap);
-          const y = startY + r * (keyH + gap);
-
-          if (k.pressed) {
-            c.fillStyle = primaryColor;
-            c.fillRect(x, y, keyW, keyH);
-            c.fillStyle = bgColor;
-            c.font = 'bold 5px monospace';
-            c.fillText(k.label.slice(0, 3), x + 1, y + 6);
+          const kIdx = r * 4 + col;
+          const kPressed = curKeys[kIdx]?.pressed;
+          const kActive = kIdx === activeKeyObj.idx;
+          const dotX = 108 + col * 4;
+          const dotY = 54 + r * 2;
+          if (kPressed) {
+            c.fillStyle = accentColor;
+            c.fillRect(dotX, dotY, 3, 2);
+          } else if (kActive) {
+            c.fillStyle = graphColor;
+            c.fillRect(dotX, dotY, 2, 1);
           } else {
-            c.strokeStyle = dimColor;
-            c.strokeRect(x, y, keyW, keyH);
-
-            // Inner travel bar proportional to magnetic depth
-            if (k.travel > 0.05) {
-              const fill = Math.min(keyW - 2, (k.travel / 4.0) * (keyW - 2));
-              c.fillStyle = primaryColor;
-              c.fillRect(x + 1, y + keyH - 3, fill, 2);
-            }
-
-            c.fillStyle = primaryColor;
-            c.font = '5px monospace';
-            c.fillText(k.label.slice(0, 3), x + 1, y + 6);
+            c.fillStyle = dimColor;
+            c.fillRect(dotX, dotY, 1, 1);
           }
         }
       }
-
-      // Live readout on right side
-      const activeObj = keys[lastActiveKey >= 0 ? lastActiveKey : 0] || keys[0];
-      c.fillStyle = primaryColor;
-      c.font = 'bold 7px monospace';
-      c.fillText(`KEY #${activeObj?.idx ?? 0}`, 80, 24);
-      c.font = '6px monospace';
-      c.fillText(activeObj?.label ?? 'NONE', 80, 34);
-      c.fillText(`${(activeObj?.travel ?? 0).toFixed(2)}mm`, 80, 44);
-
-      // Footer
-      c.strokeStyle = dimColor;
-      c.beginPath();
-      c.moveTo(0, 53);
-      c.lineTo(w, 53);
-      c.stroke();
-
-      c.fillStyle = primaryColor;
-      c.font = '5px monospace';
-      c.fillText('HALL SENSORS · 0.00-4.00mm CONTINUOUS', 4, 61);
     };
 
-    const renderTimer = (c: CanvasRenderingContext2D, w: number, _h: number) => {
-      // Header
-      c.fillStyle = primaryColor;
-      c.font = 'bold 7px monospace';
-      c.fillText('FOCUS POMODORO TIMER', 2, 8);
-
-      c.fillStyle = primaryColor;
-      c.fillRect(84, 1, 42, 9);
-      c.fillStyle = bgColor;
-      c.fillText(timerRunning ? 'RUNNING' : 'PAUSED', 88, 8);
-
-      c.strokeStyle = dimColor;
-      c.beginPath();
-      c.moveTo(0, 11);
-      c.lineTo(w, 11);
-      c.stroke();
-
-      // Big digital clock
-      const mins = Math.floor(timerSeconds / 60);
-      const secs = timerSeconds % 60;
-      const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-      c.fillStyle = primaryColor;
-      c.font = 'bold 22px monospace';
-      c.textAlign = 'center';
-      c.fillText(timeStr, 64, 38);
-      c.textAlign = 'left';
-
-      // Progress bar
-      const totalSec = 25 * 60;
-      const elapsed = totalSec - timerSeconds;
-      const barW = 100;
-      const fillW = (elapsed / totalSec) * barW;
-      const barX = 14;
-      const barY = 44;
-
-      c.strokeStyle = dimColor;
-      c.strokeRect(barX, barY, barW, 5);
-      c.fillStyle = primaryColor;
-      c.fillRect(barX + 1, barY + 1, fillW, 3);
-
-      // Footer
-      c.strokeStyle = dimColor;
-      c.beginPath();
-      c.moveTo(0, 53);
-      c.lineTo(w, 53);
-      c.stroke();
-
-      c.fillStyle = primaryColor;
-      c.font = '6px monospace';
-      c.fillText('KNOB CLICK TO PLAY/PAUSE', 14, 61);
-    };
-
-    const renderCustomBitmap = (c: CanvasRenderingContext2D, w: number, _h: number) => {
-      // Header
-      c.fillStyle = primaryColor;
-      c.font = 'bold 7px monospace';
-      const title = customBitmap?.name ? customBitmap.name.slice(0, 16) : 'CUSTOM LOGO';
-      c.fillText(title.toUpperCase(), 2, 8);
-
-      c.fillStyle = primaryColor;
-      c.fillRect(90, 1, 36, 9);
-      c.fillStyle = bgColor;
-      c.fillText('BITMAP', 94, 8);
-
-      c.strokeStyle = dimColor;
-      c.beginPath();
-      c.moveTo(0, 11);
-      c.lineTo(w, 11);
-      c.stroke();
-
-      // Draw custom bitmap centered or render default
-      if (customBitmap?.data && customBitmap.data.length === 32 * 32) {
-        const offX = 48;
-        const offY = 16;
-        c.fillStyle = primaryColor;
-        for (let py = 0; py < 32; py++) {
-          for (let px = 0; px < 32; px++) {
-            if (customBitmap.data[py * 32 + px] === 1) {
-              c.fillRect(offX + px, offY + py, 1, 1);
-            }
-          }
-        }
-      } else {
-        // Fallback DP emblem
-        c.fillStyle = primaryColor;
-        c.font = 'bold 16px monospace';
-        c.textAlign = 'center';
-        c.fillText('DRIFTPAD', 64, 34);
-        c.font = '6px monospace';
-        c.fillText('0.96" SSD1306 WHITE OLED', 64, 44);
-        c.textAlign = 'left';
-      }
-
-      // Footer
-      c.strokeStyle = dimColor;
-      c.beginPath();
-      c.moveTo(0, 53);
-      c.lineTo(w, 53);
-      c.stroke();
-
-      c.fillStyle = primaryColor;
-      c.font = '6px monospace';
-      c.fillText('CLICK [EDIT GRAPHIC] TO DRAW', 6, 61);
-    };
-
-    const renderScreensaver = (c: CanvasRenderingContext2D, w: number, h: number, anim: ScreensaverAnimation) => {
-      c.fillStyle = bgColor;
-      c.fillRect(0, 0, w, h);
+    const renderScreensaver = (
+      c: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      anim: ScreensaverAnimation,
+      primaryColor: string,
+      bgColor: string,
+      graphColor: string,
+      dimColor: string,
+      accentColor: string
+    ) => {
+      const st = stateRef.current;
+      const glow = graphColor;
 
       if (anim === 0) {
-        // 3D Starfield
         const cx = w / 2;
         const cy = h / 2;
-        stateRef.current.stars.forEach((s) => {
-          s.z -= 1.5;
-          if (s.z <= 0) {
-            s.z = 128;
+        c.fillStyle = glow;
+        // Optimized indexed for-loop (avoids per-frame callback function allocations)
+        const stars = st.stars;
+        for (let i = 0; i < stars.length; i++) {
+          const s = stars[i];
+          s.z -= 1.8;
+          if (s.z <= 1) {
+            s.z = 80;
             s.x = (Math.random() - 0.5) * 128;
             s.y = (Math.random() - 0.5) * 64;
           }
-          const k = 128 / s.z;
-          const px = cx + s.x * k;
-          const py = cy + s.y * k;
+          const px = cx + (s.x / s.z) * 60;
+          const py = cy + (s.y / s.z) * 60;
           if (px >= 0 && px < w && py >= 0 && py < h) {
-            const size = s.z < 40 ? 2 : 1;
-            c.fillStyle = s.z < 50 ? primaryColor : dimColor;
-            c.fillRect(Math.floor(px), Math.floor(py), size, size);
+            const size = s.z < 25 ? 2 : 1;
+            c.fillRect(px, py, size, size);
           }
-        });
-      } else if (anim === 1) {
-        // Matrix Rain
-        c.font = '6px monospace';
-        stateRef.current.matrixDrops.forEach((dropY, col) => {
-          const x = col * 8;
-          const char = String.fromCharCode(33 + ((stateRef.current.time + col) % 90));
-          c.fillStyle = primaryColor;
-          c.fillText(char, x, dropY);
-          c.fillStyle = dimColor;
-          c.fillText(String.fromCharCode(33 + ((stateRef.current.time * 2 + col) % 90)), x, dropY - 8);
+        }
 
-          stateRef.current.matrixDrops[col] = (dropY + 2) % (h + 16);
-        });
-      } else if (anim === 2) {
-        // DVD Bounce
-        const dvd = stateRef.current.dvd;
-        dvd.x += dvd.vx;
-        dvd.y += dvd.vy;
+        st.badge.x += st.badge.dx;
+        st.badge.y += st.badge.dy;
+        if (st.badge.x <= 2 || st.badge.x >= w - 46) st.badge.dx = -st.badge.dx;
+        if (st.badge.y <= 10 || st.badge.y >= h - 14) st.badge.dy = -st.badge.dy;
 
-        if (dvd.x <= 0 || dvd.x + dvd.w >= w) dvd.vx *= -1;
-        if (dvd.y <= 0 || dvd.y + dvd.h >= h) dvd.vy *= -1;
-
-        c.strokeStyle = primaryColor;
-        c.strokeRect(dvd.x, dvd.y, dvd.w, dvd.h);
+        c.fillStyle = bgColor;
+        c.fillRect(st.badge.x - 2, st.badge.y - 2, 46, 14);
+        c.strokeStyle = accentColor;
+        c.strokeRect(st.badge.x - 2, st.badge.y - 2, 46, 14);
         c.fillStyle = primaryColor;
         c.font = 'bold 7px monospace';
-        c.fillText('DP-OLED', dvd.x + 2, dvd.y + 9);
-      } else if (anim === 3) {
-        // Sine Wave
-        c.strokeStyle = primaryColor;
+        c.fillText('DRIFTPAD', st.badge.x + 2, st.badge.y + 8);
+        return;
+      }
+
+      if (anim === 1) {
+        c.fillStyle = glow;
+        c.font = '7px monospace';
+        // Optimized indexed for-loop
+        const rain = st.rain;
+        for (let i = 0; i < rain.length; i++) {
+          const r = rain[i];
+          r.y += r.speed;
+          if (r.y > h + 10) r.y = -5;
+          const char = String.fromCharCode(0x30 + ((st.time + i) % 10));
+          c.fillText(char, i * 8 + 2, r.y);
+          c.fillStyle = dimColor;
+          c.fillRect(i * 8 + 4, r.y - r.len, 1, r.len);
+          c.fillStyle = glow;
+        }
+        return;
+      }
+
+      if (anim === 2) {
+        st.oscPhase += 0.08;
+        c.strokeStyle = glow;
+        c.lineWidth = 1;
         c.beginPath();
         for (let x = 0; x < w; x++) {
-          const y = h / 2 + Math.sin((x + stateRef.current.time * 2) * 0.08) * 18;
+          const y =
+            h / 2 +
+            Math.sin(x * 0.09 + st.oscPhase) * 16 +
+            Math.sin(x * 0.03 - st.oscPhase * 1.4) * 8;
           if (x === 0) c.moveTo(x, y);
           else c.lineTo(x, y);
         }
         c.stroke();
-      } else {
-        // Clock HUD
-        const now = new Date();
-        const str = now.toTimeString().split(' ')[0];
-        c.fillStyle = primaryColor;
-        c.font = 'bold 16px monospace';
-        c.textAlign = 'center';
-        c.fillText(str, 64, 36);
-        c.font = '6px monospace';
-        c.fillText('RP2040 REALTIME CLOCK', 64, 46);
-        c.textAlign = 'left';
+        return;
       }
-    };
 
-    const renderTestPattern = (c: CanvasRenderingContext2D, w: number, h: number) => {
-      // Checkerboard test pattern
-      c.fillStyle = primaryColor;
-      for (let y = 0; y < h; y += 8) {
-        for (let x = 0; x < w; x += 8) {
-          if ((x / 8 + y / 8) % 2 === 0) {
-            c.fillRect(x, y, 8, 8);
+      if (anim === 3) {
+        st.gridOffset = (st.gridOffset + 1.2) % 16;
+        const horizon = 24;
+        c.strokeStyle = dimColor;
+        c.lineWidth = 1;
+
+        c.beginPath();
+        c.moveTo(0, horizon);
+        c.lineTo(w, horizon);
+        c.stroke();
+
+        const vanishX = w / 2;
+        for (let x = -w; x <= w * 2; x += 18) {
+          c.beginPath();
+          c.moveTo(vanishX, horizon);
+          c.lineTo(x, h);
+          c.stroke();
+        }
+
+        for (let y = horizon; y < h; y += 7) {
+          const currentY = y + (st.gridOffset % 7);
+          if (currentY < h) {
+            c.beginPath();
+            c.moveTo(0, currentY);
+            c.lineTo(w, currentY);
+            c.stroke();
+          }
+        }
+        return;
+      }
+
+      if (anim === 4) {
+        c.strokeStyle = glow;
+        c.lineWidth = 1;
+        // Optimized indexed for-loop
+        const ripples = st.ripples;
+        for (let i = 0; i < ripples.length; i++) {
+          const r = ripples[i];
+          r.r += 1.2;
+          if (r.r < r.maxR) {
+            c.beginPath();
+            c.arc(r.x, r.y, r.r, 0, Math.PI * 2);
+            c.stroke();
+          }
+        }
+        return;
+      }
+
+      if (anim === 5) {
+        if (st.time % 10 === 0) {
+          const curr = st.lifeGrid;
+          const next = st.nextLifeGrid;
+          for (let r = 0; r < 16; r++) {
+            const rowOffset = r << 5;
+            const rAbove = ((r - 1 + 16) & 15) << 5;
+            const rBelow = ((r + 1) & 15) << 5;
+
+            for (let col = 0; col < 32; col++) {
+              const cLeft = (col - 1 + 32) & 31;
+              const cRight = (col + 1) & 31;
+
+              const neighbors =
+                curr[rAbove + cLeft] +
+                curr[rAbove + col] +
+                curr[rAbove + cRight] +
+                curr[rowOffset + cLeft] +
+                curr[rowOffset + cRight] +
+                curr[rBelow + cLeft] +
+                curr[rBelow + col] +
+                curr[rBelow + cRight];
+
+              const idx = rowOffset + col;
+              const cell = curr[idx];
+              next[idx] =
+                (cell === 1 && (neighbors === 2 || neighbors === 3)) || (cell === 0 && neighbors === 3) ? 1 : 0;
+            }
+          }
+          // Swap buffers without allocations
+          st.lifeGrid = next;
+          st.nextLifeGrid = curr;
+        }
+
+        c.fillStyle = glow;
+        const grid = st.lifeGrid;
+        for (let r = 0; r < 16; r++) {
+          const rowOffset = r << 5;
+          const py = r * 4;
+          for (let col = 0; col < 32; col++) {
+            if (grid[rowOffset + col] === 1) {
+              c.fillRect(col * 4, py, 3, 3);
+            }
           }
         }
       }
-      c.fillStyle = bgColor;
-      c.fillRect(16, 24, 96, 16);
-      c.fillStyle = primaryColor;
-      c.font = 'bold 8px monospace';
-      c.textAlign = 'center';
-      c.fillText('128x64 OK · 400kHz', 64, 35);
-      c.textAlign = 'left';
     };
 
     render();
 
     return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
     };
-  }, [
-    viewMode,
-    selectedAnim,
-    isSleeping,
-    theme,
-    actuation,
-    rtSens,
-    rtEnabled,
-    profileName,
-    knobName,
-    keys,
-    lastActiveKey,
-    apm,
-    cps,
-    totalKeystrokes,
-    timerSeconds,
-    timerRunning,
-    customBitmap,
-  ]);
+  }, [viewMode, selectedAnim]);
 
   const handleSelectAnim = (anim: ScreensaverAnimation) => {
     setSelectedAnim(anim);
@@ -637,143 +677,76 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
   const activeTheme = theme || DEFAULT_OLED_THEME;
 
   return (
-    <div className="flex flex-col gap-3 bg-[#ffffff] p-3.5 sm:p-4 rounded-2xl border border-[#ded7ca] shadow-xs text-[#1b2930]">
+    <div className="flex flex-col gap-3 bg-[#ffffff] p-3.5 sm:p-4 rounded-2xl border border-[#ded7ca] shadow-sm text-[#1b2930]">
       {/* Top Header */}
-      <div className="flex items-center justify-between border-b border-[#f0ebdf] pb-2.5">
+      <div className="flex items-center justify-between border-b border-[#f0ebdF] pb-2.5">
         <div className="flex items-center gap-2">
           <Monitor className="w-3.5 h-3.5 text-[#153641]" />
-          <span className="text-xs font-bold text-[#1b2930]">OLED Live Display</span>
-          <span aria-hidden="true" className="text-[#ded7ca]">·</span>
-          <span className="text-[11px] font-mono text-[#71828a]">
-            0.96&quot; · 128×64 White
+          <span className="text-xs font-bold text-[#1b2930]">
+            OLED Live Display
+          </span>
+          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#f6f3ec] text-[#71828a] border border-[#ded7ca]">
+            128x64 White
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {viewMode === 'timer' && (
-            <button
-              onClick={() => setTimerRunning((prev) => !prev)}
-              className="px-2 py-0.5 rounded-lg text-xs font-bold bg-[#153641] text-white hover:bg-[#0f262e] transition-colors"
-            >
-              {timerRunning ? 'Pause' : 'Start'}
-            </button>
-          )}
-
-          {viewMode === 'custom' && onOpenPixelEditor && (
-            <button
-              onClick={onOpenPixelEditor}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#c86443] hover:bg-[#b25536] text-white transition-colors shadow-xs"
-            >
-              <Paintbrush className="w-3 h-3" />
-              <span>Edit Graphic</span>
-            </button>
-          )}
-
+        <div className="flex items-center gap-2">
           <button
             onClick={onOpenThemeModal}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#f7f4ee] hover:bg-[#ede7da] text-[#1b2930] border border-[#ded7ca] transition-colors shadow-xs"
-            title="Display Color Simulation"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#f7f4ee] hover:bg-[#ede7da] text-[#1b2930] border border-[#ded7ca] transition-colors shadow-xs"
+            title="OLED Display Settings"
           >
-            <span>Color Preset</span>
+            <Palette className="w-3.5 h-3.5 text-[#c86443]" />
+            <span>Theme</span>
           </button>
         </div>
       </div>
 
-      {/* Physical OLED Glass & Chamfered Bezel */}
-      <div className="relative flex flex-col items-center bg-[#060a0d] p-3 rounded-2xl border-2 border-[#162127] shadow-[inset_0_2px_8px_rgba(0,0,0,0.8),0_4px_12px_rgba(0,0,0,0.25)] overflow-hidden">
-        {/* Hardware PCB Top Silkscreen Pinout */}
-        <div className="w-full flex items-center justify-between text-[8px] font-mono font-bold text-[#d4af37]/70 pb-1.5 px-2 border-b border-[#162127] mb-1.5 select-none tracking-widest">
-          <span>SSD1306 · 0.96&quot; 128x64</span>
-          <span className="text-[#84949b]">I2C: [ GND · VCC · SCL · SDA ]</span>
-        </div>
-
-        <div className="relative rounded overflow-hidden">
-          <canvas
-            ref={canvasRef}
-            width={128}
-            height={64}
-            className="w-[256px] h-[128px] sm:w-[280px] sm:h-[140px] image-pixelated rounded ring-1 ring-white/10 shadow-lg block"
-            style={{
-              imageRendering: 'pixelated',
-              backgroundColor: activeTheme.background,
-            }}
-          />
-
-          {/* Diagonal Glass Glare Reflection */}
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-white/[0.08] pointer-events-none rounded"
-          />
-        </div>
-
+      {/* Physical OLED Glass & Bezel */}
+      <div className="relative flex justify-center items-center bg-[#0d1a20] p-3 rounded-2xl border border-[#243c44] shadow-inner overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          width={128}
+          height={64}
+          className="w-[256px] h-[128px] sm:w-[280px] sm:h-[140px] image-pixelated rounded"
+          style={{
+            imageRendering: 'pixelated',
+            backgroundColor: activeTheme.background,
+          }}
+        />
         {isSleeping && (
-          <div className="absolute inset-0 bg-[#070b0e]/90 flex items-center justify-center gap-1.5 text-xs text-[#71938c] font-mono">
-            <Moon className="w-4 h-4 text-[#c86443]" /> DISPLAY SLEEPING
+          <div className="absolute inset-0 bg-[#0d1a20]/90 flex items-center justify-center gap-1.5 text-xs text-[#71938c] font-mono">
+            <Moon className="w-4 h-4 text-[#e07a5f]" /> DISPLAY SLEEPING
           </div>
         )}
       </div>
 
-      {/* Modular OLED Widget Selector Bar */}
+      {/* View Mode Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-xs">
-        <div className="flex flex-wrap items-center gap-1 bg-[#f6f3ec] p-1 rounded-xl border border-[#ded7ca]">
+        <div className="flex items-center gap-1 bg-[#f6f3ec] p-1 rounded-xl border border-[#ded7ca]">
+          <button
+            onClick={() => setViewMode('productivity')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
+              viewMode === 'productivity'
+                ? 'bg-[#ffffff] text-[#153641] shadow-xs border border-[#ded7ca]'
+                : 'text-[#5a6a72] hover:text-[#1b2930]'
+            }`}
+          >
+            <Briefcase className="w-3 h-3 text-[#c86443]" /> Workspace
+          </button>
           <button
             onClick={() => setViewMode('cockpit')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
               viewMode === 'cockpit'
                 ? 'bg-[#ffffff] text-[#153641] shadow-xs border border-[#ded7ca]'
                 : 'text-[#5a6a72] hover:text-[#1b2930]'
             }`}
           >
-            <Briefcase className="w-3 h-3 text-[#c86443]" /> Cockpit
+            Cockpit HUD
           </button>
-
-          <button
-            onClick={() => setViewMode('speedometer')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
-              viewMode === 'speedometer'
-                ? 'bg-[#ffffff] text-[#153641] shadow-xs border border-[#ded7ca]'
-                : 'text-[#5a6a72] hover:text-[#1b2930]'
-            }`}
-          >
-            <Gauge className="w-3 h-3 text-[#5b8e85]" /> APM Meter
-          </button>
-
-          <button
-            onClick={() => setViewMode('heatmap')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
-              viewMode === 'heatmap'
-                ? 'bg-[#ffffff] text-[#153641] shadow-xs border border-[#ded7ca]'
-                : 'text-[#5a6a72] hover:text-[#1b2930]'
-            }`}
-          >
-            <LayoutGrid className="w-3 h-3 text-[#b45309]" /> 4x4 Map
-          </button>
-
-          <button
-            onClick={() => setViewMode('timer')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
-              viewMode === 'timer'
-                ? 'bg-[#ffffff] text-[#153641] shadow-xs border border-[#ded7ca]'
-                : 'text-[#5a6a72] hover:text-[#1b2930]'
-            }`}
-          >
-            <Clock className="w-3 h-3 text-[#153641]" /> Focus Timer
-          </button>
-
-          <button
-            onClick={() => setViewMode('custom')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
-              viewMode === 'custom'
-                ? 'bg-[#ffffff] text-[#153641] shadow-xs border border-[#ded7ca]'
-                : 'text-[#5a6a72] hover:text-[#1b2930]'
-            }`}
-          >
-            <Paintbrush className="w-3 h-3 text-[#c86443]" /> Custom Art
-          </button>
-
           <button
             onClick={() => setViewMode('screensaver')}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors ${
               viewMode === 'screensaver'
                 ? 'bg-[#ffffff] text-[#153641] shadow-xs border border-[#ded7ca]'
                 : 'text-[#5a6a72] hover:text-[#1b2930]'
@@ -781,7 +754,6 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
           >
             <Sparkles className="w-3 h-3 text-[#5b8e85]" /> Screensaver
           </button>
-
           <button
             onClick={() => {
               setViewMode('test');
@@ -797,13 +769,12 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
           </button>
         </div>
 
-        {/* Animation Picker and Sleep Actions */}
         <div className="flex items-center gap-1.5">
           {viewMode === 'screensaver' && (
             <select
               value={selectedAnim}
               onChange={(e) => handleSelectAnim(Number(e.target.value) as ScreensaverAnimation)}
-              className="bg-[#ffffff] text-[#1c282e] border border-[#d5ccc0] rounded-lg px-2 py-1 text-[11px] font-mono focus:outline-hidden focus:border-[#c86443]"
+              className="bg-[#ffffff] text-[#1c282e] border border-[#d5ccc0] rounded-lg px-2 py-1 text-[11px] font-mono focus:outline-none focus:border-[#9e5b3d]"
             >
               {[0, 1, 2, 3, 4, 5].map((a) => (
                 <option key={a} value={a}>
@@ -818,12 +789,12 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
             title={isSleeping ? 'Wake OLED' : 'Sleep OLED'}
             className="p-1.5 rounded-lg bg-[#ffffff] hover:bg-[#faf8f5] text-[#57676e] hover:text-[#1c282e] border border-[#e5dfd5] transition-colors"
           >
-            {isSleeping ? <Eye className="w-3.5 h-3.5 text-[#c86443]" /> : <Moon className="w-3.5 h-3.5" />}
+            {isSleeping ? <Eye className="w-3.5 h-3.5 text-[#9e5b3d]" /> : <Moon className="w-3.5 h-3.5" />}
           </button>
 
           <button
             onClick={() => onSendSerialCommand?.('OLED_SCAN')}
-            title="Scan I2C Bus (0x3C)"
+            title="Scan I2C Bus"
             className="p-1.5 rounded-lg bg-[#ffffff] hover:bg-[#faf8f5] text-[#57676e] hover:text-[#1c282e] border border-[#e5dfd5] transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -833,3 +804,5 @@ export const OledCanvas: React.FC<OledCanvasProps> = ({
     </div>
   );
 };
+
+export const OledCanvas = React.memo(OledCanvasComponent);

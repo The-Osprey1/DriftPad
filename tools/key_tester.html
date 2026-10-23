@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DriftPad key tester</title>
+<!-- Offline key event viewer for docs/hardware-acceptance.md: every keydown/keyup the browser
+     receives, with the time since the previous event, repeat flags, per-key counts and the keys
+     the host still considers held. Nothing is loaded from the network. -->
+<style>
+    :root { color-scheme: light dark; --bg: #fff; --fg: #111; --muted: #666; --line: #ccc; --warn: #b00020; --held: #0a6; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; --muted: #aaa; --line: #444; --warn: #ff6b81; --held: #3c9; } }
+    body { background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; margin: 0 auto; max-width: 960px; padding: 16px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p { color: var(--muted); margin: 0 0 12px; }
+    .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+    button { font: inherit; padding: 6px 12px; }
+    #held { font-weight: 600; color: var(--held); }
+    #held.none { color: var(--muted); font-weight: 400; }
+    .grid { display: grid; grid-template-columns: 1fr 280px; gap: 16px; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    table { border-collapse: collapse; width: 100%; font: 13px/1.3 ui-monospace, monospace; }
+    th, td { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; }
+    .log { max-height: 60vh; overflow: auto; border: 1px solid var(--line); }
+    .repeat td { color: var(--muted); }
+    .warn { color: var(--warn); }
+    :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<h1>DriftPad key tester</h1>
+<p>Click in this page, then use the pad. Auto-repeat keydowns are shown greyed and not counted as presses.</p>
+<div class="bar">
+    <button type="button" id="clear">Clear</button>
+    <span>Held now: <span id="held" class="none" aria-live="polite">none</span></span>
+    <span id="totals" aria-live="off"></span>
+</div>
+<div class="grid">
+    <div class="log" tabindex="0" aria-label="Event log, newest first">
+        <table>
+            <thead><tr><th>#</th><th>event</th><th>code</th><th>key</th><th>+ms</th><th>modifiers</th></tr></thead>
+            <tbody id="log"></tbody>
+        </table>
+    </div>
+    <div>
+        <table aria-label="Presses and releases per key">
+            <thead><tr><th>code</th><th>down</th><th>up</th></tr></thead>
+            <tbody id="counts"></tbody>
+        </table>
+        <p id="unbalanced" class="warn"></p>
+    </div>
+</div>
+<script>
+(function () {
+    "use strict";
+    const log = document.getElementById("log");
+    const countsBody = document.getElementById("counts");
+    const heldEl = document.getElementById("held");
+    const totals = document.getElementById("totals");
+    const unbalanced = document.getElementById("unbalanced");
+    const held = new Set();
+    const counts = new Map();
+    let n = 0, last = null, downs = 0, ups = 0, repeats = 0;
+    const MAX_ROWS = 2000;
+
+    function row(ev) {
+        const now = performance.now();
+        const dt = last === null ? "" : (now - last).toFixed(1);
+        last = now;
+        n++;
+        const mods = ["ctrlKey", "shiftKey", "altKey", "metaKey"].filter(m => ev[m]).map(m => m.replace("Key", "")).join("+");
+        const tr = document.createElement("tr");
+        if (ev.type === "keydown" && ev.repeat) tr.className = "repeat";
+        for (const text of [n, ev.type + (ev.repeat ? " (repeat)" : ""), ev.code, ev.key, dt, mods]) {
+            const td = document.createElement("td");
+            td.textContent = String(text);
+            tr.appendChild(td);
+        }
+        log.insertBefore(tr, log.firstChild);
+        while (log.childElementCount > MAX_ROWS) log.removeChild(log.lastChild);
+    }
+
+    function render() {
+        heldEl.textContent = held.size ? [...held].join(", ") : "none";
+        heldEl.className = held.size ? "" : "none";
+        totals.textContent = `${downs} down, ${ups} up, ${repeats} repeats`;
+        countsBody.textContent = "";
+        const odd = [];
+        for (const [code, c] of [...counts].sort()) {
+            const tr = document.createElement("tr");
+            for (const text of [code, c.down, c.up]) {
+                const td = document.createElement("td");
+                td.textContent = String(text);
+                tr.appendChild(td);
+            }
+            if (c.down !== c.up && !held.has(code)) { tr.className = "warn"; odd.push(code); }
+            countsBody.appendChild(tr);
+        }
+        unbalanced.textContent = odd.length ? `Unbalanced (a down without an up, or the reverse): ${odd.join(", ")}` : "";
+    }
+
+    function count(code) {
+        if (!counts.has(code)) counts.set(code, { down: 0, up: 0 });
+        return counts.get(code);
+    }
+
+    window.addEventListener("keydown", ev => {
+        ev.preventDefault();
+        row(ev);
+        if (ev.repeat) { repeats++; } else { downs++; count(ev.code).down++; held.add(ev.code); }
+        render();
+    });
+    window.addEventListener("keyup", ev => {
+        ev.preventDefault();
+        row(ev);
+        ups++;
+        count(ev.code).up++;
+        held.delete(ev.code);
+        render();
+    });
+    // The page cannot see keys released while it had no focus; say so instead of guessing.
+    window.addEventListener("blur", () => {
+        if (held.size) unbalanced.textContent = "The page lost focus with keys held; their release was not seen.";
+    });
+    document.getElementById("clear").addEventListener("click", () => {
+        log.textContent = ""; counts.clear(); held.clear(); n = 0; last = null; downs = ups = repeats = 0; render();
+    });
+    render();
+})();
+</script>
+</body>
+</html>

@@ -4,10 +4,17 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 3000",
-    "build": "tsc && vite build",
-    "lint": "tsc --noEmit",
-    "preview": "vite preview --port 3000"
+    "dev": "vite",
+    "build": "npm run typecheck && vite build && node scripts/copy-device-ui.cjs",
+    "lint": "npm run typecheck",
+    "test": "node scripts/run-tests.cjs",
+    "preview": "vite preview --port 3000",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.node.json",
+    "check": "npm test && npm run build",
+    "benchmark:life": "tsx src/benchmarks/lifeGrid.bench.ts",
+    "desktop:prepare": "npm run build && node scripts/prepare-desktop.cjs",
+    "desktop:start": "npm --prefix desktop start",
+    "desktop:dist": "npm run desktop:prepare && npm --prefix desktop run dist"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -17,11 +24,16 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.9",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
     "tailwindcss": "^4.0.9",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vite": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

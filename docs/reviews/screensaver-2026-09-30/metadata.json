@@ -1,0 +1,121 @@
+{
+  "captured_utc": "2026-09-30T23:43:22.633564+00:00",
+  "git_head": "79195cef451382de2771e6a11fa51aab7b23c956",
+  "scope": "Actual production OLED renderer and Player; real Adafruit GFX; stubbed panel and clock. Host framebuffer rendering only; no physical-screen validation.",
+  "seed_hex": "0xD12F7026",
+  "frame_interval_ms": 33,
+  "fixed_preview_frames": 120,
+  "native_size": [
+    128,
+    64
+  ],
+  "contact_sheet_scale": 3,
+  "host_library": "oled_frames-8100242ccdd5e9e68739.dll",
+  "source_sha256": {
+    "firmware/src/oled.cpp": "9245a138568a9748b5f175b11126f1056a36b599167da3e45dc9f42a247292b0",
+    "firmware/src/screensaver_player.cpp": "d552b83987a43aeed0d86dd7c3d9b527e0bd044c95e9c5aed629846e708c6b2c",
+    "firmware/include/screensaver_player.h": "7afa4bc1a4db4672f054d58e82936ea4fe012a883f11eb270af8d1afe970b97f",
+    "tests/firmware_host/oled_frames.cpp": "b162754126061f8929b4585f40b2276d4477fd1a3c3943664957eda9892aaadc"
+  },
+  "frames": [
+    {
+      "file": "01-driftpad.png",
+      "elapsed_ms": 3960,
+      "shown": 0,
+      "shown_label": "DRIFTPAD",
+      "incoming": -1,
+      "incoming_label": null,
+      "shuffled": false,
+      "label_age_ms": 3960,
+      "sha256": "4547901d8645462cf4c3d7f66cc9420ab2c2fd52b14f45a30491bf40de694ce9"
+    },
+    {
+      "file": "02-plasma.png",
+      "elapsed_ms": 3960,
+      "shown": 1,
+      "shown_label": "PLASMA",
+      "incoming": -1,
+      "incoming_label": null,
+      "shuffled": false,
+      "label_age_ms": 3960,
+      "sha256": "d4b195a69f48d1417e901a0649d0e2416047ac3bf567feb4c53b2b2545b345db"
+    },
+    {
+      "file": "03-tesseract.png",
+      "elapsed_ms": 3960,
+      "shown": 2,
+      "shown_label": "TESSERACT",
+      "incoming": -1,
+      "incoming_label": null,
+      "shuffled": false,
+      "label_age_ms": 3960,
+      "sha256": "5b1ee06b326cadd2d5d1f4ffe1a5003873936c266e4adccead13e1dc822d71db"
+    },
+    {
+      "file": "04-drift-grid.png",
+      "elapsed_ms": 3960,
+      "shown": 3,
+      "shown_label": "DRIFT GRID",
+      "incoming": -1,
+      "incoming_label": null,
+      "shuffled": false,
+      "label_age_ms": 3960,
+      "sha256": "577c7ff58a8410cb21a7cb7217399b8c4068ca775ac6030f059a0e6fb75b6add"
+    },
+    {
+      "file": "05-mag-pulse.png",
+      "elapsed_ms": 3960,
+      "shown": 4,
+      "shown_label": "MAG PULSE",
+      "incoming": -1,
+      "incoming_label": null,
+      "shuffled": false,
+      "label_age_ms": 3960,
+      "sha256": "3668c77b05ce9fdeea77c27dd4af6aee507ae6a8e7f711af22c8b1d4aecf0c6a"
+    },
+    {
+      "file": "06-lava-lamp.png",
+      "elapsed_ms": 3960,
+      "shown": 5,
+      "shown_label": "LAVA LAMP",
+      "incoming": -1,
+      "incoming_label": null,
+      "shuffled": false,
+      "label_age_ms": 3960,
+      "sha256": "0c0b511f0d700ba8ebd2f500dac3112b75dcc2635752351098256f7342f23c32"
+    },
+    {
+      "file": "transition-before-wipe.png",
+      "elapsed_ms": 19999,
+      "shown": 5,
+      "shown_label": "LAVA LAMP",
+      "incoming": -1,
+      "incoming_label": null,
+      "shuffled": true,
+      "label_age_ms": 19999,
+      "sha256": "c2d43086eee253aa4ed82c209b6fb04659d50ced27cf7d6ab1746629cd0c4025"
+    },
+    {
+      "file": "transition-midpoint.png",
+      "elapsed_ms": 20750,
+      "shown": 5,
+      "shown_label": "LAVA LAMP",
+      "incoming": 4,
+      "incoming_label": "MAG PULSE",
+      "shuffled": true,
+      "label_age_ms": 0,
+      "sha256": "b6d85f326885053b9516b3601cd0c4b3b6ddff66b5f7b0b027c9da16cbd7f7eb"
+    },
+    {
+      "file": "transition-after-wipe.png",
+      "elapsed_ms": 21500,
+      "shown": 4,
+      "shown_label": "MAG PULSE",
+      "incoming": -1,
+      "incoming_label": null,
+      "shuffled": true,
+      "label_age_ms": 750,
+      "sha256": "49238536e9e22b2c70d75e755279a5dfc6580d1546dcba1b25271813e263f54c"
+    }
+  ]
+}
