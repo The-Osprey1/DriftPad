@@ -13,7 +13,7 @@
 // Rotary Encoder
 constexpr uint8_t ENCODER_A_PIN   = 20; // GP20
 constexpr uint8_t ENCODER_B_PIN   = 21; // GP21
-constexpr uint8_t ENCODER_SW_PIN  = 4;  // GP4 (fallback/rework pin)
+constexpr uint8_t ENCODER_SW_PIN  = 2;  // GP2
 
 // SSD1306 128x64 OLED (I2C0)
 constexpr uint8_t OLED_SDA_PIN    = 0;  // GP0

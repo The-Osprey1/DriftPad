@@ -850,7 +850,7 @@ export interface PinoutConfig {
   i2cPort: 0 | 1; // Default: 0
   encoderA: number; // Default: 20
   encoderB: number; // Default: 21
-  encoderSw: number; // Default: 4
+  encoderSw: number; // Default: 2
 }
 
 export const DEFAULT_PINOUT_CONFIG: PinoutConfig = {
@@ -865,5 +865,5 @@ export const DEFAULT_PINOUT_CONFIG: PinoutConfig = {
   i2cPort: 0,
   encoderA: 20,
   encoderB: 21,
-  encoderSw: 4,
+  encoderSw: 2,
 };

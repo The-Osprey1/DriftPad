@@ -99,7 +99,7 @@
 | **OLED SCL** | `GP1` | I2C0 SCL | Fast-mode I2C @ 400kHz |
 | **Encoder Channel A**| `GP20` | Rotary Phase A | Quadrature input with internal pull-up |
 | **Encoder Channel B**| `GP21` | Rotary Phase B | Quadrature input with internal pull-up |
-| **Encoder Push SW**  | `GP4` | Tactile Switch | Active LOW push-to-click |
+| **Encoder Push SW**  | `GP2` | Tactile Switch | Active LOW push-to-click |
 
 ---
 
