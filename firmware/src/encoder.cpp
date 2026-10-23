@@ -19,6 +19,10 @@ bool s_clicked = false;
 uint32_t s_lastBtnDebounceTime = 0;
 constexpr uint32_t DEBOUNCE_DELAY_MS = 25;
 
+// The reworked DriftPad V2 knob delivers A and B in the opposite order to the table below, so a
+// clockwise turn would count down. Set to false for a knob that counts up when turned clockwise.
+constexpr bool REVERSE_DIRECTION = true;
+
 // Gray code state table for 4-step rotary encoders
 // Prev state [1:0] << 2 | Curr state [1:0]
 const int8_t QUADRATURE_TABLE[16] = {
@@ -55,7 +59,7 @@ void encoderUpdate() {
     int8_t step = QUADRATURE_TABLE[index];
 
     if (step != 0) {
-        s_position += step;
+        s_position += REVERSE_DIRECTION ? -step : step;
         s_lastState = currState;
     }
 
