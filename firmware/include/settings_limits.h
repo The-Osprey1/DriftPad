@@ -38,6 +38,8 @@ constexpr uint16_t ENCODER_RT_SENS_STEP_CMM    = 5;
 constexpr uint8_t NUM_LAYERS    = 3;
 constexpr uint8_t LABEL_MAX_LEN = 4;   // characters, excluding the terminator
 constexpr uint8_t CODE_MAX      = 255;
+// Extra modifiers held with a key (Ctrl+C): HID left-modifier bits, 1 Ctrl, 2 Shift, 4 Alt, 8 Win
+constexpr uint8_t MODIFIERS_MASK = 0x0F;
 
 // Serial protocol bounds
 constexpr uint8_t  PROTOCOL_VERSION   = 2;

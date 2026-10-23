@@ -113,6 +113,14 @@
                     <input type="number" id="codeInput" min="0" max="255">
                 </div>
             </div>
+            <fieldset class="mods" id="modsField" aria-describedby="modsHint">
+                <legend class="field-label">Hold with the key</legend>
+                <label><input type="checkbox" data-mod="1"> Ctrl</label>
+                <label><input type="checkbox" data-mod="2"> Shift</label>
+                <label><input type="checkbox" data-mod="4"> Alt</label>
+                <label><input type="checkbox" data-mod="8"> Win</label>
+                <span id="modsHint" class="hint">Held together with the key, e.g. Ctrl + C.</span>
+            </fieldset>
             <div class="row">
                 <button id="captureBtn" class="btn capture-btn" type="button" aria-pressed="false">Press a key to assign</button>
                 <span class="muted" id="captureHint">Or pick one below.</span>

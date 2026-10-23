@@ -89,6 +89,7 @@
                 const key = layer[k];
                 if (!key || !isInt(key.code) || key.code < 0 || key.code > 255) return `layers[${l}][${k}].code invalid`;
                 if (typeof key.label !== "string") return `layers[${l}][${k}].label invalid`;
+                if (key.mods !== undefined && (!isInt(key.mods) || key.mods < 0 || key.mods > 15)) return `layers[${l}][${k}].mods invalid`;
                 if (has(key, "idx") && key.idx !== k) return `layers[${l}][${k}].idx is ${key.idx}`;
             }
         }
@@ -102,7 +103,7 @@
             rt_enabled: r.rt_enabled,
             active_layer: r.active_layer,
             boot_output: typeof r.boot_output === "boolean" ? r.boot_output : null,
-            layers: r.layers.map(layer => layer.map(k => ({ code: k.code, label: k.label }))),
+            layers: r.layers.map(layer => layer.map(k => ({ code: k.code, label: k.label, mods: isInt(k.mods) ? k.mods : 0 }))),
             dirty: typeof r.dirty === "boolean" ? r.dirty : null,
             settings_seq: isInt(r.settings_seq) ? r.settings_seq : null,
             readAt: Date.now(),
@@ -547,21 +548,31 @@
             return r[field];
         }
 
-        // SET_KEY; resolves with the normalised {code, label} the device reports.
-        async setKey(layer, key, code, label) {
+        // SET_KEY; resolves with the normalised {code, label, mods} the device reports. `mods`
+        // (Ctrl/Shift/Alt/Win bits) needs the key_modifiers feature; firmware without it stores none.
+        async setKey(layer, key, code, label, mods = 0) {
+            const withMods = this.hasFeature("key_modifiers");
+            if (mods && !withMods) {
+                throw new ProtocolError("bad_request", "This firmware cannot store key combinations; update it (Download firmware)");
+            }
             const args = [layer, key, code];
-            if (label !== null && label !== undefined) args.push(label);
+            if (label !== null && label !== undefined) {
+                args.push(label);
+                if (withMods) args.push(mods);
+            }
             const r = await this.request("SET_KEY", args, {
                 validate: rep => {
                     if (rep.layer !== layer || rep.key !== key) return `reply is for layer ${rep.layer} key ${rep.key}`;
                     if (!isInt(rep.code) || typeof rep.label !== "string") return "code/label missing from the reply";
+                    if (withMods && !isInt(rep.mods)) return "mods missing from the reply";
                     return null;
                 },
             });
-            if (this.confirmed) this.confirmed.layers[layer][key] = { code: r.code, label: r.label };
+            const stored = { code: r.code, label: r.label, mods: isInt(r.mods) ? r.mods : 0 };
+            if (this.confirmed) this.confirmed.layers[layer][key] = { ...stored };
             this._noteDirty(r);
             this._changed();
-            return { code: r.code, label: r.label };
+            return stored;
         }
 
         setOutput(enabled, force) {

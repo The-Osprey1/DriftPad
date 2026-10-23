@@ -238,7 +238,8 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     w.key("features").beginArray();
     static const char* const FEATURES[] = { "keymap", "layers", "rapid_trigger", "telemetry", "timing",
                                             "raw", "sim", "display", "guided_calibration", "boot_output",
-                                            "settings_ab", "display_status", "encoder_status" };
+                                            "settings_ab", "display_status", "encoder_status",
+                                            "key_modifiers" };
     for (const char* f : FEATURES) w.str(f);
     w.endArray();
     w.key("limits").beginObject();
@@ -278,6 +279,7 @@ HandlerResult cmdGetConfig(const Args&, Reply& r, void*) {
             w.beginObject();
             w.key("idx").u32(k).key("code").u32(c.keymaps[l][k].hidCode);
             w.key("label").str(c.keymaps[l][k].label);
+            w.key("mods").u32(c.keymaps[l][k].modifiers);
             w.endObject();
         }
         w.endArray();
@@ -401,7 +403,12 @@ HandlerResult cmdSetKey(const Args& a, Reply& r, void*) {
     pr = proto::parseUint(a[2], 0, limits::CODE_MAX, code);
     if (pr != ParseResult::Ok) return badValue(r, pr, "code must be 0 to 255");
     const char* label = a.count > 3 ? a[3] : nullptr;
-    ConfigStatus st = configSetKey((uint8_t)layer, (uint8_t)key, (uint8_t)code, label);
+    uint32_t mods = 0;   // omitted: a plain key, so an older host never leaves a modifier behind
+    if (a.count > 4) {
+        pr = proto::parseUint(a[4], 0, limits::MODIFIERS_MASK, mods);
+        if (pr != ParseResult::Ok) return badValue(r, pr, "mods must be 0 to 15 (1 Ctrl, 2 Shift, 4 Alt, 8 Win)");
+    }
+    ConfigStatus st = configSetKey((uint8_t)layer, (uint8_t)key, (uint8_t)code, label, (uint8_t)mods);
     if (st == ConfigStatus::InvalidLabel) {
         return configError(r, st, "label must be 1-4 printable ASCII characters, not \" \\ or @");
     }
@@ -410,6 +417,7 @@ HandlerResult cmdSetKey(const Args& a, Reply& r, void*) {
     const LayerKey& lk = configGet().keymaps[layer][key];
     JsonWriter& w = r.ok();
     w.key("layer").u32(layer).key("key").u32(key).key("code").u32(lk.hidCode).key("label").str(lk.label);
+    w.key("mods").u32(lk.modifiers);
     writeApplied(w);
     return HandlerResult::Done;
 }
@@ -816,7 +824,7 @@ const proto::CommandDef TABLE[] = {
     { "SET_RT_SENS",   nullptr,   1, 1, cmdSetRtSens },
     { "SET_RT_ENABLE", nullptr,   1, 1, cmdSetRtEnable },
     { "SET_LAYER",     nullptr,   1, 1, cmdSetLayer },
-    { "SET_KEY",       nullptr,   3, 4, cmdSetKey },
+    { "SET_KEY",       nullptr,   3, 5, cmdSetKey },
     { "SET_HID",       "HID|OUTPUT", 1, 2, cmdSetHid },
     { "SAVE",          nullptr,   0, 0, cmdSave },
     { "REVERT",        nullptr,   0, 0, cmdRevert },

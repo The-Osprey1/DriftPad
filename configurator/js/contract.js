@@ -23,6 +23,7 @@
         NUM_LAYERS: 3,
         LABEL_MAX_LEN: 4,
         CODE_MAX: 255,
+        MODIFIERS_MASK: 15,
         PROTOCOL_VERSION: 2,
         LINE_MAX_LEN: 160,
         REQUEST_ID_MAX_LEN: 12,
@@ -187,6 +188,7 @@
     const FEATURES = Object.freeze([
         "keymap", "layers", "rapid_trigger", "telemetry", "timing", "raw", "sim", "display",
         "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status",
+        "key_modifiers",
     ]);
 
     // Simulated travel accepted by SIM <key> <mm> (firmware: 0.00 .. 4.00 mm).

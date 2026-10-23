@@ -81,6 +81,7 @@
     // ------------------------------------------------------------------ helpers
     const layerName = l => K.LAYER_NAMES[l] || `Layer ${l}`;
     const keyName = code => K.keyName(code);
+    const comboName = key => K.comboName(key.code, key.mods);
     const connected = () => session.isConnected;
     const fmt = mm => (typeof mm === "number" ? `${C.formatMm(mm)} mm` : "?");
 
@@ -283,7 +284,7 @@
         // Replace the label only if the user had not customised it
         const keepLabel = k.label && k.label !== oldDefault && k.label !== layerDefault;
         draft.set(ui.layer, ui.key, code, keepLabel ? k.label : K.defaultLabel(code));
-        announce(`Key ${ui.key} on layer ${ui.layer} now sends ${keyName(code)} (not written yet)`);
+        announce(`Key ${ui.key} on layer ${ui.layer} now sends ${comboName(draft.get(ui.layer, ui.key))} (not written yet)`);
     }
 
     function startCapture() {
@@ -535,7 +536,7 @@
             const st = keymap.keyState(ui.layer, i);
             const c = caps[i];
             c.label.textContent = st.draft.label;
-            c.name.textContent = keyName(st.draft.code);
+            c.name.textContent = comboName(st.draft);
             c.cap.classList.toggle("selected", i === ui.key);
             c.cap.tabIndex = i === ui.key ? 0 : -1;
             const isPressed = isConn && session.telemetry.active && pressed[i];
@@ -548,7 +549,7 @@
             c.flag.textContent = flag;
             c.flag.className = `flag ${cls}`;
             const row = Math.floor(i / 4) + 1, col = (i % 4) + 1;
-            c.cap.setAttribute("aria-label", `Key ${i}, row ${row} column ${col}: ${keyName(st.draft.code)}, label ${st.draft.label}${text ? ", " + text : ""}${isPressed ? ", pressed" : ""}`);
+            c.cap.setAttribute("aria-label", `Key ${i}, row ${row} column ${col}: ${comboName(st.draft)}, label ${st.draft.label}${text ? ", " + text : ""}${isPressed ? ", pressed" : ""}`);
             c.cap.setAttribute("aria-current", i === ui.key ? "true" : "false");
         }
 
@@ -556,7 +557,7 @@
         const st = keymap.keyState(ui.layer, ui.key);
         $("oledLayer").textContent = `L${ui.layer} ${layerName(ui.layer).toUpperCase()}`;
         $("oledMain").textContent = k.label;
-        $("oledSub").textContent = `KEY ${ui.key} · ${keyName(k.code)}`;
+        $("oledSub").textContent = `KEY ${ui.key} · ${comboName(k)}`;
         $("editorTitle").textContent = `Key ${ui.key} · row ${Math.floor(ui.key / 4) + 1}, column ${(ui.key % 4) + 1} · layer ${ui.layer}`;
         const telemetry = session.telemetry;
         const simulated = SIMULATE || !!(session.deviceStatus.sim_mask & (1 << ui.key));
@@ -584,13 +585,21 @@
         }
         const codeInput = $("codeInput");
         if (document.activeElement !== codeInput) codeInput.value = String(k.code);
-        $("sendsName").textContent = keyName(k.code);
+        $("sendsName").textContent = comboName(k);
         $("deviceKeyState").textContent = !st.compared ? "Not compared with a pad." :
             st.error ? `Last write failed: ${st.error}` :
-            st.mismatch ? `The pad stored ${keyName(st.mismatch.stored.code)} / ${st.mismatch.stored.label}.` :
+            st.mismatch ? `The pad stored ${comboName(st.mismatch.stored)} / ${st.mismatch.stored.label}.` :
             st.writing ? "Being written…" :
-            st.pending ? `On the pad: ${keyName(st.device.code)} / ${st.device.label}. Not written yet.` :
+            st.pending ? `On the pad: ${comboName(st.device)} / ${st.device.label}. Not written yet.` :
             "Same as on the pad.";
+        // Older firmware stores no modifiers: the boxes stay usable offline, but not against it
+        const modsUnsupported = isConn && !!session.info && !session.hasFeature("key_modifiers");
+        document.querySelectorAll("#modsField input[data-mod]").forEach(box => {
+            box.checked = ((k.mods || 0) & Number(box.dataset.mod)) !== 0;
+            box.disabled = modsUnsupported;
+        });
+        $("modsHint").textContent = modsUnsupported ? "This firmware cannot store key combinations. Update it with Download firmware." :
+            "Held together with the key, e.g. Ctrl + C.";
         renderPicker();
 
         const pending = keymap.pendingList().length;
@@ -847,6 +856,13 @@
             if (norm !== k.label) draft.set(ui.layer, ui.key, k.code, norm);
         });
         $("labelInput").addEventListener("blur", () => requestRender());
+        document.querySelectorAll("#modsField input[data-mod]").forEach(box => box.addEventListener("change", () => {
+            let mods = 0;
+            document.querySelectorAll("#modsField input[data-mod]").forEach(b => { if (b.checked) mods |= Number(b.dataset.mod); });
+            const k = draft.get(ui.layer, ui.key);
+            draft.set(ui.layer, ui.key, k.code, k.label, mods);
+            announce(`Key ${ui.key} on layer ${ui.layer} now sends ${comboName(draft.get(ui.layer, ui.key))} (not written yet)`);
+        }));
         $("codeInput").addEventListener("change", e => {
             const code = parseInt(e.target.value, 10);
             if (Number.isInteger(code) && K.isAssignable(code)) assign(code);

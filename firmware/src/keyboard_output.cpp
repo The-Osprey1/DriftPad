@@ -245,7 +245,7 @@ const char* reasonName(Reason r) {
     return "unknown";
 }
 
-void onPress(uint8_t physKey, uint8_t code) {
+void onPress(uint8_t physKey, uint8_t code, uint8_t extraModifiers) {
     if (physKey >= NUM_KEYS) return;
     uint16_t bit = (uint16_t)(1u << physKey);
     if (s_pressedMask & bit) return;   // edges alternate; a repeated press changes nothing
@@ -254,10 +254,12 @@ void onPress(uint8_t physKey, uint8_t code) {
     if (!s_enabled || ((s_softSuppressed | s_hardSuppressed) & bit)) return;
 
     HidAction a = keycodeResolve(code);
-    if (!a.valid) {
+    if (a.valid || code == 0) a.modifiers |= extraModifiers;   // an unmapped code stays invalid
+    if (!a.valid && a.modifiers == 0) {
         if (code != 0) s_stats.invalidCode++;   // code 0 is "None": assigned to do nothing
         return;
     }
+    a.valid = true;
     // Rollover: a 7th distinct usage is blocked for this whole press, modifiers included, and is
     // never sent later. Actions that only carry modifiers need no slot and never overflow.
     if (a.usage != 0 && usageRefCount(a.usage) == 0 && distinctUsages() >= MAX_USAGES) {

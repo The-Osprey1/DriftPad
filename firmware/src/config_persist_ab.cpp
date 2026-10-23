@@ -49,6 +49,7 @@ bool settingsValid(const DeviceSettings& s) {
     for (uint8_t l = 0; l < NUM_LAYERS; ++l) {
         for (uint8_t k = 0; k < NUM_KEYS; ++k) {
             if (!keycodeIsAssignable(s.keymaps[l][k].hidCode)) return false;
+            if (s.keymaps[l][k].modifiers & (uint8_t)~limits::MODIFIERS_MASK) return false;
             if (!labelCanonical(s.keymaps[l][k].label)) return false;
         }
     }

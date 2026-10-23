@@ -166,6 +166,11 @@
             transform: rotate(var(--knob-angle, 0deg));
             transition: transform 80ms linear;
         }
+        .mods { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; border: 0; padding: 0; margin: 0 0 12px; }
+        .mods legend { float: left; margin-right: 4px; padding: 0; }
+        .mods label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; }
+        .mods .hint { flex-basis: 100%; }
+
         /* Wrap to the pad's width instead of widening the auto-sized layout column */
         .knob-note { width: 0; min-width: 100%; }
         .knob.pressed .knob-dial { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25) inset; }

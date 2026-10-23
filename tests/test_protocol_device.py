@@ -273,7 +273,7 @@ class TestProtocolDevice(unittest.TestCase):
                 self.assertTrue(self.lib.engine_rt_enabled())
 
     def test_argument_counts_are_exact(self):
-        for line in ("SET_LAYER", "SET_LAYER 1 2", "SET_KEY 0 0", "SET_KEY 0 0 4 AB CD", "PING x",
+        for line in ("SET_LAYER", "SET_LAYER 1 2", "SET_KEY 0 0", "SET_KEY 0 0 4 AB 1 X", "PING x",
                      "SAVE now", "SET_ACTUATION 1 2", "SET_RT_SENS"):
             with self.subTest(line=line):
                 self.assertEqual(self.one(line)["code"], "bad_arguments")
@@ -499,6 +499,79 @@ class TestProtocolDevice(unittest.TestCase):
         self.assertEqual(self._host(), (0, frozenset()))
         self.one("SIM OFF")
         self.one("SET_HID 0")
+
+
+class TestKeyCombinations(unittest.TestCase):
+    """SET_KEY's optional mods value: modifiers the key holds with its own action (Ctrl+C)."""
+
+    CTRL, SHIFT = 0x01, 0x02
+    USAGE_C, USAGE_V = 0x06, 0x19
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = dh.current_device()
+
+    def setUp(self):
+        self.lib.reset_flash()
+        for k in range(16):
+            self.lib.set_travel(k, 0.0)
+        self.d = dh.Device(self.lib)
+
+    def one(self, line: str) -> dict:
+        replies = self.d.replies(line)
+        self.assertEqual(len(replies), 1, f"{line!r} produced {replies}")
+        return replies[0]
+
+    def host(self) -> Tuple[int, list]:
+        out = (ctypes.c_uint8 * 7)()
+        self.lib.usbfake_host_state(out)
+        return out[0], [u for u in list(out)[1:] if u]
+
+    def press(self, key: int, down: bool) -> None:
+        self.lib.set_travel(key, 3.0 if down else 0.0)
+        self.d.run(500)
+
+    def test_mods_are_stored_reported_and_default_to_a_plain_key(self):
+        r = self.one("SET_KEY 0 3 99 COPY 1")
+        self.assertEqual((r["status"], r["code"], r["label"], r["mods"]), ("ok", 99, "COPY", 1))
+        self.assertEqual(self.d.config()["layers"][0][3]["mods"], 1)
+        self.assertEqual(self.one("SET_KEY 0 3 99 C")["mods"], 0, "no mods value sets a plain key")
+        self.assertIn("key_modifiers", self.one("INFO")["features"])
+
+    def test_mods_outside_ctrl_shift_alt_win_are_rejected(self):
+        for value in ("16", "-1", "x"):
+            with self.subTest(mods=value):
+                r = self.one(f"SET_KEY 0 3 99 C {value}")
+                self.assertEqual(r["status"], "error")
+        self.assertEqual(self.d.config()["layers"][0][3]["mods"], 0)
+
+    def test_a_combination_holds_its_modifiers_with_the_key(self):
+        self.one("SET_HID 1 FORCE")
+        self.one("SET_KEY 0 3 99 C 3")                 # Ctrl+Shift+c on key 3
+        self.press(3, True)
+        self.assertEqual(self.host(), (self.CTRL | self.SHIFT, [self.USAGE_C]))
+        self.press(3, False)
+        self.assertEqual(self.host(), (0, []), "releasing the key releases its modifiers")
+
+    def test_a_shared_modifier_stays_down_until_its_last_key_is_released(self):
+        self.one("SET_HID 1 FORCE")
+        self.one("SET_KEY 0 3 99 C 1")                 # Ctrl+c
+        self.one("SET_KEY 0 7 118 V 1")                # Ctrl+v
+        self.press(3, True)
+        self.press(7, True)
+        self.assertEqual(self.host(), (self.CTRL, [self.USAGE_C, self.USAGE_V]))
+        self.press(3, False)
+        self.assertEqual(self.host(), (self.CTRL, [self.USAGE_V]), "Ctrl is still held for Ctrl+v")
+        self.press(7, False)
+        self.assertEqual(self.host(), (0, []))
+
+    def test_modifiers_with_no_key_make_a_modifier_key(self):
+        self.one("SET_HID 1 FORCE")
+        self.one("SET_KEY 0 3 0 CS 3")                 # None + Ctrl+Shift
+        self.press(3, True)
+        self.assertEqual(self.host(), (self.CTRL | self.SHIFT, []))
+        self.press(3, False)
+        self.assertEqual(self.host(), (0, []))
 
 
 class TestKnobActions(unittest.TestCase):

@@ -72,6 +72,8 @@ sensitivity, calibration, output, and display controls.
 - USB WebSerial communication and a browser-side DSP simulator.
 - RP2040 firmware for Hall sensors, a multiplexer, an encoder, and an OLED display. The knob is
   a volume control (turn, press to mute); holding it opens the settings menu on the display.
+- Key combinations: any key can hold Ctrl, Shift, Alt and Win with its key (Ctrl + C, Win + D),
+  set with four checkboxes in the configurator.
 
 The Digital Twin is a software model. Simulator tests and successful firmware
 builds do not establish physical sensor accuracy, USB timing, or hardware acceptance.
