@@ -149,10 +149,13 @@ class TestPersistenceRegressions(unittest.TestCase):
 
 
 RECORD_MAGIC = 0x32535044
-# Current settings schema (settings_store.h SCHEMA_CURRENT) and its payload length; schema 2 is the
-# same payload without the 48 per-key modifier bytes at the end
-SCHEMA, PAYLOAD_LEN = 3, 444
+# Current settings schema (settings_store.h SCHEMA_CURRENT) and its payload length. Each older schema
+# is a prefix: schema 3 lacks the 8-byte display block at the end, schema 2 also the 48 per-key
+# modifier bytes before it.
+SCHEMA, PAYLOAD_LEN = 4, 452
+SCHEMA_V3, PAYLOAD_V3_LEN = 3, 444
 SCHEMA_V2, PAYLOAD_V2_LEN = 2, 396
+OFF_SAVER_IDLE, OFF_SAVER_ANIM, OFF_THEME = 444, 445, 446
 COMMIT_MAGIC = 0x4B4F5044
 
 
@@ -326,7 +329,7 @@ class TestPersistence(unittest.TestCase):
 
     # -- migration ----------------------------------------------------------------------------
 
-    def test_schema_2_settings_load_without_modifiers_and_are_saved_as_schema_3(self):
+    def test_schema_2_settings_load_without_modifiers_and_are_saved_in_the_current_schema(self):
         self.one("SET_ACTUATION 2.00")
         self.one("SET_KEY 0 5 98 B 3")                  # Ctrl+Shift+b, dropped by the schema 2 copy
         self.one("SAVE")
@@ -339,9 +342,64 @@ class TestPersistence(unittest.TestCase):
         cfg = self.d.config()
         self.assertEqual(cfg["actuation"], 2.0)
         self.assertEqual((cfg["layers"][0][5]["code"], cfg["layers"][0][5]["mods"]), (98, 0))
+        self.assertEqual((cfg["saver_idle"], cfg["saver_anim"]), (2, -1), "factory screensaver choices")
         r = self.one("SAVE")
         slot = 0 if r["slot"] == "slot_a" else 1
         self.assertEqual(struct.unpack_from("<H", self.sector(slot), 6)[0], SCHEMA, "saved in the current schema")
+
+    def test_schema_3_settings_keep_their_modifiers_and_get_the_factory_screensaver(self):
+        self.one("SET_KEY 0 5 98 B 3")
+        self.one("SET_SAVER_IDLE 0")                    # dropped by the schema 3 copy
+        self.one("SAVE")
+        self.write_sector(0, ab_record(SCHEMA_V3, 1, bytes(self.sector(0)[32:32 + PAYLOAD_V3_LEN])))
+        info = self.reboot().replies("INFO")[0]
+        self.assertEqual(info["settings"]["source"], "slot_a")
+        self.assertTrue(info["settings"]["dirty"], "a migrated record stays dirty until saved")
+        cfg = self.d.config()
+        self.assertEqual(cfg["layers"][0][5]["mods"], 3)
+        self.assertEqual((cfg["saver_idle"], cfg["saver_anim"]), (2, -1))
+        r = self.one("SAVE")
+        slot = 0 if r["slot"] == "slot_a" else 1
+        self.assertEqual(struct.unpack_from("<H", self.sector(slot), 6)[0], SCHEMA, "saved in the current schema")
+
+    def test_screensaver_choices_survive_a_save_and_reboot(self):
+        cfg = self.d.config()
+        self.assertEqual((cfg["saver_idle"], cfg["saver_anim"]), (2, -1), "factory: 2 minutes, shuffle")
+        self.assertEqual(self.one("SET_SAVER_IDLE 10")["saver_idle"], 10)
+        self.assertEqual(self.one("SET_SAVER_ANIM 4")["saver_anim"], 4)
+        self.assertTrue(self.info()["settings"]["dirty"])
+        self.one("SAVE")
+        cfg = self.reboot().config()
+        self.assertEqual((cfg["saver_idle"], cfg["saver_anim"]), (10, 4))
+        self.assertFalse(cfg["dirty"])
+        payload = self.sector(0)[32:32 + PAYLOAD_LEN]
+        self.assertEqual((payload[OFF_SAVER_IDLE], payload[OFF_SAVER_ANIM], payload[OFF_THEME]), (10, 4, 0))
+        self.assertEqual(self.one("SET_SAVER_ANIM SHUFFLE")["saver_anim"], -1)
+        self.one("RESET")
+        cfg = self.d.config()
+        self.assertEqual((cfg["saver_idle"], cfg["saver_anim"]), (2, -1), "RESET restores the factory choices")
+
+    def test_an_animation_or_theme_from_newer_firmware_falls_back_instead_of_failing(self):
+        self.one("SET_ACTUATION 2.00")
+        self.one("SAVE")                                # slot a, seq 1
+        payload = bytearray(self.sector(0)[32:32 + PAYLOAD_LEN])
+        payload[OFF_SAVER_ANIM] = 9                     # an animation this firmware does not have
+        payload[OFF_THEME] = 7                          # a theme this firmware does not have
+        self.write_sector(1, ab_record(SCHEMA, 9, bytes(payload)))
+        info = self.reboot().replies("INFO")[0]
+        self.assertEqual(info["settings"]["source"], "slot_b", "the newer record still loads")
+        self.assertEqual(info["settings"]["load_errors"], [])
+        cfg = self.d.config()
+        self.assertEqual((cfg["actuation"], cfg["saver_anim"]), (2.0, -1), "unknown animation plays as shuffle")
+
+    def test_a_record_with_an_idle_time_beyond_the_limit_is_invalid(self):
+        self.one("SAVE")                                # slot a, seq 1 (valid)
+        payload = bytearray(self.sector(0)[32:32 + PAYLOAD_LEN])
+        payload[OFF_SAVER_IDLE] = 61
+        self.write_sector(1, ab_record(SCHEMA, 9, bytes(payload)))
+        info = self.reboot().replies("INFO")[0]
+        self.assertEqual(info["settings"]["source"], "slot_a")
+        self.assertIn("slot_b_invalid", info["settings"]["load_errors"])
 
     def test_a_record_with_unknown_modifier_bits_is_invalid(self):
         self.one("SET_ACTUATION 2.00")

@@ -13,6 +13,7 @@ static_assert(FlashIo::SECTOR_SIZE % FlashIo::PAGE_SIZE == 0, "sector must be wh
 static_assert(PAYLOAD_MAX <= PAYLOAD_LIMIT, "payload buffer larger than a slot can hold");
 static_assert(PAYLOAD_V2_SIZE <= PAYLOAD_MAX, "schema 2 payload must fit the buffer");
 static_assert(PAYLOAD_V3_SIZE <= PAYLOAD_MAX, "schema 3 payload must fit the buffer");
+static_assert(PAYLOAD_V4_SIZE <= PAYLOAD_MAX, "schema 4 payload must fit the buffer");
 
 // Scratch pages for write/verify (core 0 only; saves are not re-entrant)
 uint8_t s_page[FlashIo::PAGE_SIZE];
@@ -215,6 +216,51 @@ bool decodeV3(const uint8_t* p, uint16_t len, DeviceSettings& out) {
     return true;
 }
 
+// ---- schema 4 codec: schema 3 + the display block ------------------------------------------------
+
+constexpr uint16_t V4_OFF_DISPLAY = PAYLOAD_V3_SIZE;   // 444
+
+// What records written before schema 4 get: the factory display choices (config.cpp setDefaults)
+void displayDefaults(DeviceSettings& s) {
+    s.saverIdleMin = limits::SAVER_IDLE_DEFAULT_MIN;
+    s.saverAnim    = -1;
+    s.theme        = 0;
+    s.screenSpeed  = 0;
+}
+
+void encodeV4(const DeviceSettings& s, uint8_t* p) {
+    encodeV3(s, p);
+    uint8_t* d = p + V4_OFF_DISPLAY;
+    memset(d, 0, PAYLOAD_V4_SIZE - V4_OFF_DISPLAY);
+    d[0] = s.saverIdleMin;
+    d[1] = (uint8_t)s.saverAnim;
+    d[2] = s.theme;
+    d[3] = s.screenSpeed;
+}
+
+bool decodeV4(const uint8_t* p, uint16_t len, DeviceSettings& out) {
+    if (len != PAYLOAD_V4_SIZE) return false;
+    if (!decodeV3(p, PAYLOAD_V3_SIZE, out)) return false;
+    const uint8_t* d = p + V4_OFF_DISPLAY;
+    out.saverIdleMin = d[0];
+    out.saverAnim    = (int8_t)d[1];
+    out.theme        = d[2];
+    out.screenSpeed  = d[3];
+    return true;
+}
+
+bool migrateV2(const uint8_t* p, uint16_t len, DeviceSettings& out) {
+    if (!decodeV2(p, len, out)) return false;
+    displayDefaults(out);
+    return true;
+}
+
+bool migrateV3(const uint8_t* p, uint16_t len, DeviceSettings& out) {
+    if (!decodeV3(p, len, out)) return false;
+    displayDefaults(out);
+    return true;
+}
+
 struct SchemaDecoder {
     uint16_t schema;
     bool (*decode)(const uint8_t* p, uint16_t len, DeviceSettings& out);
@@ -222,8 +268,9 @@ struct SchemaDecoder {
 
 // Migration table: one row per schema this firmware can read
 const SchemaDecoder kDecoders[] = {
-    { SCHEMA_V2, decodeV2 },   // modifiers stay 0 (decodeV2 clears the record)
-    { SCHEMA_V3, decodeV3 },
+    { SCHEMA_V2, migrateV2 },   // modifiers stay 0 (decodeV2 clears the record), factory display choices
+    { SCHEMA_V3, migrateV3 },   // factory display choices
+    { SCHEMA_V4, decodeV4 },
 };
 
 } // namespace
@@ -244,9 +291,9 @@ uint32_t crc32Update(uint32_t crc, const uint8_t* data, uint32_t len) {
 // ---- codec ----------------------------------------------------------------------------------
 
 uint16_t encode(const DeviceSettings& s, uint8_t* out, uint16_t cap) {
-    if (cap < PAYLOAD_V3_SIZE) return 0;
-    encodeV3(s, out);
-    return PAYLOAD_V3_SIZE;
+    if (cap < PAYLOAD_V4_SIZE) return 0;
+    encodeV4(s, out);
+    return PAYLOAD_V4_SIZE;
 }
 
 bool schemaSupported(uint16_t schema) {

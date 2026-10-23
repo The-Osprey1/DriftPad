@@ -4,7 +4,8 @@
  * Format (format_version 1):
  *   {"format":"driftpad-backup","format_version":1,"created":"<ISO>",
  *    "source":{"fw","protocol","build"},
- *    "settings":{"actuation_mm","rt_sens_mm","rt_enabled","active_layer","boot_output"},
+ *    "settings":{"actuation_mm","rt_sens_mm","rt_enabled","active_layer","boot_output",
+ *                "saver_idle","saver_anim"},   (the last two optional: screensaver minutes, animation)
  *    "layers":[3][16]{"code","label","mods"}}   ("mods" optional, 0 when absent: Ctrl/Shift/Alt/Win bits)
  * Calibration is specific to one pad's sensors and magnets, so it is never part of a backup.
  *
@@ -38,6 +39,7 @@
                 rt_enabled: c.rt_enabled,
                 active_layer: c.active_layer,
                 boot_output: !!c.boot_output,
+                ...(Number.isInteger(c.saver_idle) ? { saver_idle: c.saver_idle, saver_anim: c.saver_anim } : {}),
             },
             layers: c.layers.map(l => l.map(k => ({ code: k.code, label: k.label, mods: k.mods || 0 }))),
         };
@@ -94,6 +96,18 @@
                 if (typeof s.boot_output !== "boolean") problems.push("settings.boot_output must be true or false.");
                 else settings.boot_output = s.boot_output;
             }
+            const idleMax = limits.saver_idle_max || 60;
+            if (s.saver_idle !== undefined) {
+                if (!Number.isInteger(s.saver_idle) || s.saver_idle < 0 || s.saver_idle > idleMax) {
+                    problems.push(`settings.saver_idle must be 0 to ${idleMax} minutes.`);
+                } else settings.saver_idle = s.saver_idle;
+            }
+            if (s.saver_anim !== undefined) {
+                const count = limits.saver_anims || 6;
+                if (!Number.isInteger(s.saver_anim) || s.saver_anim < -1 || s.saver_anim >= count) {
+                    problems.push(`settings.saver_anim must be -1 (shuffle) to ${count - 1}.`);
+                } else settings.saver_anim = s.saver_anim;
+            }
         }
         if (data.source && typeof data.source === "object" && data.source.protocol !== undefined &&
             data.source.protocol !== C.PROTOCOL_VERSION) {
@@ -110,9 +124,10 @@
             const result = { applied: [], failed: [], mismatched: [] };
             const steps = [];
             if (parsed.settings) {
-                for (const field of ["actuation", "rt_sens", "rt_enabled", "active_layer", "boot_output"]) {
+                for (const field of ["actuation", "rt_sens", "rt_enabled", "active_layer", "boot_output", "saver_idle", "saver_anim"]) {
                     if (parsed.settings[field] === undefined) continue;
                     if (field === "boot_output" && !session.hasFeature("boot_output")) continue;
+                    if (field.startsWith("saver_") && !session.hasFeature("screensaver_idle")) continue;
                     steps.push({ what: field, run: () => session.setSetting(field, parsed.settings[field]) });
                 }
             }
@@ -144,6 +159,11 @@
                 }
                 if (parsed.settings.boot_output !== undefined && session.hasFeature("boot_output")) {
                     check("boot_output", parsed.settings.boot_output, cfg.boot_output);
+                }
+                if (session.hasFeature("screensaver_idle")) {
+                    for (const field of ["saver_idle", "saver_anim"]) {
+                        if (parsed.settings[field] !== undefined) check(field, parsed.settings[field], cfg[field]);
+                    }
                 }
             }
             for (let l = 0; l < parsed.layers.length; l++) {

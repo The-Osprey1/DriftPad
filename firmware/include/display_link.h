@@ -50,7 +50,7 @@ struct Snapshot {
     int8_t  lastActiveKey;  // -1 before the first press
     uint8_t activeLayer;
     bool    rapidTrigger;
-    uint8_t _pad;
+    uint8_t saverIdleMin;   // start the screensaver after this many idle minutes, 0 = never
     float   actuationMm;
     float   rtSensMm;
     uint8_t outputStatus;   // OUTPUT_*
@@ -58,7 +58,8 @@ struct Snapshot {
     uint8_t saveSeq;        // low byte of the saved-settings sequence: it changes whenever a save succeeds
     bool    keyInputValid;  // calibrated and not in a calibration run; diagnostic input stays on core 0
     uint16_t faultMask;     // latched sensor rail faults (bit i = key i)
-    uint16_t _pad2;
+    int8_t  saverAnim;      // the animation the idle screensaver plays, -1 = shuffle
+    uint8_t theme;          // screen theme (0 = Drift)
 };
 
 enum class Request : uint8_t {

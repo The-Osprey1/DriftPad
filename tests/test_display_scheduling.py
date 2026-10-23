@@ -41,9 +41,10 @@ class KeyView(ctypes.Structure):
 
 class Snapshot(ctypes.Structure):
     _fields_ = [("keys", KeyView * 16), ("lastActiveKey", ctypes.c_int8), ("activeLayer", ctypes.c_uint8),
-                ("rapidTrigger", ctypes.c_bool), ("actuationMm", ctypes.c_float), ("rtSensMm", ctypes.c_float),
-                ("outputStatus", ctypes.c_uint8), ("settingsDirty", ctypes.c_bool), ("saveSeq", ctypes.c_uint8),
-                ("keyInputValid", ctypes.c_bool), ("faultMask", ctypes.c_uint16), ("_pad2", ctypes.c_uint16)]
+                ("rapidTrigger", ctypes.c_bool), ("saverIdleMin", ctypes.c_uint8), ("actuationMm", ctypes.c_float),
+                ("rtSensMm", ctypes.c_float), ("outputStatus", ctypes.c_uint8), ("settingsDirty", ctypes.c_bool),
+                ("saveSeq", ctypes.c_uint8), ("keyInputValid", ctypes.c_bool), ("faultMask", ctypes.c_uint16),
+                ("saverAnim", ctypes.c_int8), ("theme", ctypes.c_uint8)]
 
 
 def fresh(lib) -> dh.Device:
@@ -122,6 +123,15 @@ class TestSnapshot(unittest.TestCase):
         run_ms(self.d, 200)
         scans = self.published() - before
         self.assertTrue(195 <= scans <= 205, f"{scans} publishes in 200 ms of 1 kHz scanning")
+
+    def test_carries_the_stored_screensaver_choices(self):
+        s = self.snap()
+        self.assertEqual((s.saverIdleMin, s.saverAnim, s.theme), (2, -1, 0), "factory: 2 minutes, shuffle, Drift")
+        self.one("SET_SAVER_IDLE 5")
+        self.one("SET_SAVER_ANIM 4")
+        run_ms(self.d, 5)
+        s = self.snap()
+        self.assertEqual((s.saverIdleMin, s.saverAnim), (5, 4))
 
     def test_follows_keys_and_settings(self):
         s = self.snap()

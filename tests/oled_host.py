@@ -33,6 +33,8 @@ def load():
     lib = ctypes.CDLL(str(path))
     lib.oled_scene.argtypes = [ctypes.c_int, ctypes.c_char_p]
     lib.oled_idle_step.argtypes = [ctypes.c_uint32, ctypes.c_int]
+    lib.oled_auto_saver_step.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    lib.oled_auto_saver_step.restype = None
     lib.oled_label_frame.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p]
     return lib
 

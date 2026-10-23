@@ -439,6 +439,11 @@
             gap: 12px;
         }
 
+/* ---- Screen tab ---- */
+        .saver-card { margin-bottom: 20px; }
+        .saver-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; font-size: 14px; }
+        .saver-row select { min-width: 9em; }
+
 /* ---- Screen Lab ---- */
         .lab-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; align-items: start; }
         .lab-drop {

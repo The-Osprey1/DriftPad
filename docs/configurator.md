@@ -13,7 +13,7 @@ button in place of Back to Studio (`scripts/build-site.cjs`). `keymap.html` only
 | Keys | The pad as it sits on the desk, with a live knob line under it (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), tick Ctrl, Shift, Alt or Win to hold them with it (Ctrl + C), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
 | Sensitivity | Actuation and Rapid Trigger sensitivity (limits come from the pad's `INFO`), Rapid Trigger on/off, live key travel |
 | Device | Firmware version and build, keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
-| Screen | **Screen Lab** (a preview; nothing is sent to the pad): load a GIF or picture, convert it to the 128 × 64 black-and-white screen and see it in three possible places. See below |
+| Screen | **Screensaver**: when it starts by itself (Never, 1, 2, 5, 10 or 30 minutes idle) and which animation it plays, with Play now and Save. **Screen Lab** (a preview; nothing is sent to the pad): load a GIF or picture, convert it to the 128 × 64 black-and-white screen and see it in three possible places. See below |
 
 ## What it promises
 
@@ -55,8 +55,10 @@ only the browser selection; **Play screensaver** sends the request. **Stop scree
 to the selected screen. **Display off** turns the OLED off. None of these commands changes keymaps,
 calibration, keyboard output, or saved sensitivity settings.
 
-Idle leaves the selected screen in place. Screensaver playback starts only when explicitly
-requested; Shuffle all changes animations during that requested playback. A fixed selection keeps
+After the idle time chosen on the **Screen** tab (factory: 2 minutes, Shuffle all) the pad starts its
+screensaver by itself; **Never** turns that off. Those two choices are stored settings, applied at once
+and kept by **Save to the pad**, and included in backups. The selection here only chooses what
+**Play screensaver** plays now. Shuffle all changes animations during playback. A fixed selection keeps
 its animation. Turn or press the knob to wake the display. In the settings menu the first input only wakes it, so it
 does not also adjust a setting or advance a page; outside the menu, volume and mute still apply.
 

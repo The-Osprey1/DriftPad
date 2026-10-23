@@ -383,6 +383,41 @@
         }
     }
 
+    // Screen tab: when the screensaver starts by itself and what it plays (stored settings)
+    const SAVER_ANIMS = ["Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp"];
+    function minutesText(n) { return `${n} minute${n === 1 ? "" : "s"}`; }
+    function renderSaver(isConn) {
+        const s = session;
+        const feature = isConn && s.hasFeature("screensaver_idle");
+        const c = s.confirmed;
+        const ready = feature && !!c && Number.isInteger(c.saver_idle);
+        const idle = $("saverIdle"), anim = $("saverAnim");
+        idle.disabled = anim.disabled = !ready;
+        $("saverPlayBtn").disabled = !isConn || s.opState("display") === "pending";
+        $("saverSaveBtn").disabled = !ready || s.dirty !== true;
+        if (ready) {
+            // A value set another way (serial console) gets its own entry instead of showing a wrong one
+            const v = String(c.saver_idle);
+            if (![...idle.options].some(o => o.value === v)) {
+                const o = document.createElement("option");
+                o.value = v;
+                o.textContent = minutesText(c.saver_idle);
+                idle.appendChild(o);
+            }
+            if (document.activeElement !== idle) idle.value = v;
+            if (document.activeElement !== anim) anim.value = String(c.saver_anim);
+        }
+        const badge = $("saverBadge");
+        badge.textContent = !isConn ? "Not connected" : !feature ? "Manual only" : !ready ? "Reading…" : c.saver_idle === 0 ? "Off" : `After ${minutesText(c.saver_idle)}`;
+        badge.className = `badge ${ready && c.saver_idle > 0 ? "badge-ok" : ""}`;
+        const what = ready ? (c.saver_anim >= 0 ? SAVER_ANIMS[c.saver_anim] || `animation ${c.saver_anim}` : "all animations in turn") : "";
+        setLine("saverState", !isConn ? "Connect the pad to choose when its screensaver starts." :
+            !feature ? "This firmware plays the screensaver only when you start it. Update the firmware (Download firmware) to have it start by itself." :
+            !ready ? "" :
+            `${c.saver_idle === 0 ? "The screensaver plays only when you start it" : `After ${minutesText(c.saver_idle)} idle, the pad plays ${what}`}.` +
+            (s.dirty === true ? " Not saved yet." : ""));
+    }
+
     async function save() {
         const r = await run("Save", () => session.save());
         if (r) {
@@ -721,6 +756,8 @@
         $("bootOutputNote").hidden = !bootNote;
         setLine("bootOutputNote", bootNote, bootNote ? "error" : null);
 
+        renderSaver(isConn);
+
         $("calCard").hidden = !calFeature;
         const calState = s.cal && s.cal.active ? "in_progress" : cal ? cal.state : "unknown";
         const badge = $("calState");
@@ -899,6 +936,22 @@
         $("forceOutputBtn").addEventListener("click", () => setOutput(true, true));
         $("bootOutputToggle").addEventListener("change", e => run("Standalone mode", () => session.setSetting("boot_output", e.target.checked),
             e.target.checked ? "Standalone mode on (applied, save to keep it)." : "Standalone mode off (applied, save to keep it)."));
+        $("saverIdle").addEventListener("change", e => {
+            const n = Number(e.target.value);
+            run("Screensaver", () => session.setSetting("saver_idle", n),
+                n === 0 ? "The screensaver no longer starts by itself (applied, save to keep it)." : `The screensaver starts after ${minutesText(n)} idle (applied, save to keep it).`);
+        });
+        $("saverAnim").addEventListener("change", e => {
+            const n = Number(e.target.value);
+            run("Screensaver", () => session.setSetting("saver_anim", n),
+                `Screensaver: ${n < 0 ? "all animations in turn" : SAVER_ANIMS[n]} (applied, save to keep it).`);
+        });
+        $("saverPlayBtn").addEventListener("click", () => {
+            if (session.opState("display") === "pending" || session.opState("displayStatus") === "pending") return;
+            const v = $("saverAnim").value;
+            run("Display", () => session.display("ANIM", v === "-1" ? [] : [v]), "Screensaver playing. Press any key or turn the knob to return.");
+        });
+        $("saverSaveBtn").addEventListener("click", save);
         $("calStartBtn").addEventListener("click", () => run("Calibration", () => session.calStart(), "Calibration started: keep your hands off the pad."));
         $("calFinishBtn").addEventListener("click", async () => {
             try {

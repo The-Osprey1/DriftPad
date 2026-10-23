@@ -444,6 +444,35 @@
         return (el.getAttribute("title") || "").trim();
     }
 
+    test("app: the Screen tab sets when the screensaver starts and what it plays", async () => {
+        await connected();
+        app().setView("screen", false);
+        assert(await waitUntil(() => !$("saverIdle").disabled), "choices unlock once the pad's settings are read");
+        assertEq([$("saverIdle").value, $("saverAnim").value], ["2", "-1"]);
+        assertEq(text("saverBadge"), "After 2 minutes");
+        assert(/After 2 minutes idle, the pad plays all animations in turn\./.test(text("saverState")), text("saverState"));
+        const idle = $("saverIdle");
+        idle.value = "10";
+        idle.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.saverIdle === 10), "sent to the pad");
+        const anim = $("saverAnim");
+        anim.value = "5";
+        anim.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => /plays Lava lamp\. Not saved yet\./.test(text("saverState"))), text("saverState"));
+        assertEq(text("saverBadge"), "After 10 minutes");
+        assert(!$("saverSaveBtn").disabled, "unsaved changes can be saved from here");
+        $("saverSaveBtn").click();
+        assert(await waitUntil(() => app().session.dirty === false), "saved");
+        assert(!/Not saved yet/.test(text("saverState")));
+        idle.value = "0";
+        idle.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => text("saverBadge") === "Off"), text("saverBadge"));
+        assert(/plays only when you start it/.test(text("saverState")), text("saverState"));
+        $("saverPlayBtn").click();
+        assert(await waitUntil(() => countVerb("ANIM") > 0), "Play now starts it");
+        app().setView("keys", false);
+    });
+
     test("app: accessibility invariants hold in every state visited", async () => {
         await connected();
         for (const view of ["keys", "sensitivity", "device", "screen"]) {
@@ -480,7 +509,7 @@
 
     test("app: controls that need a device are disabled without one", async () => {
         await disconnected();
-        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn"]) {
+        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn"]) {
             assert($(id).disabled, `#${id} must be disabled while disconnected`);
         }
         assert(!$("captureBtn").disabled, "the draft stays editable offline");

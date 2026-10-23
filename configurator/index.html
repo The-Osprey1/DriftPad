@@ -292,6 +292,29 @@
 
 <!-- ============================== SCREEN ============================== -->
 <section id="panel-screen" role="tabpanel" aria-labelledby="tab-screen" class="panel" hidden>
+    <div class="card saver-card">
+        <div class="card-header">
+            <h2 class="card-title">Screensaver</h2>
+            <span id="saverBadge" class="badge">Not connected</span>
+        </div>
+        <div class="saver-row">
+            <label for="saverIdle">Start by itself after</label>
+            <select id="saverIdle" disabled aria-describedby="saverHint">
+                <option value="0">Never</option><option value="1">1 minute</option><option value="2">2 minutes</option>
+                <option value="5">5 minutes</option><option value="10">10 minutes</option><option value="30">30 minutes</option>
+            </select>
+            <label for="saverAnim">Animation</label>
+            <select id="saverAnim" disabled aria-describedby="saverHint">
+                <option value="-1">Shuffle all</option><option value="0">Starfield</option><option value="1">Plasma</option>
+                <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option>
+            </select>
+            <button id="saverPlayBtn" class="btn btn-sm" type="button" disabled>Play now</button>
+            <button id="saverSaveBtn" class="btn btn-sm btn-primary" type="button" disabled>Save to the pad</button>
+        </div>
+        <p id="saverHint" class="hint">Idle means no key press and no knob turn. Any key or the knob brings the key screen back. Changes apply at once; save to keep them after unplugging.</p>
+        <p id="saverState" class="state-line" role="status" aria-live="polite"></p>
+    </div>
+
     <div class="lab-grid">
         <div class="card">
             <div class="card-header">

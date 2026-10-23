@@ -11,6 +11,13 @@ work with this firmware and says so.
 
 ### Changed
 
+- The screensaver starts by itself after 2 minutes idle (no trusted key press, knob input or
+  mutating command). The time (Never, or 1 to 60 minutes) and the animation are stored settings:
+  `SET_SAVER_IDLE`, `SET_SAVER_ANIM`, `GET_CONFIG` `saver_idle`/`saver_anim`, INFO feature
+  `screensaver_idle`, and a Screensaver card on the configurator's Screen tab. It never starts over
+  the tuning menu, on an uncalibrated pad or with the display turned off. Settings schema 4 adds the
+  choices (and stores a theme and a screen speed for later); schema 2 and 3 records load with the
+  factory choices and stay unsaved until the next save.
 - Screensaver playback now shuffles complete bags of all six animations without adjacent repeats,
   keeps fixed selections fixed, and gives each animation a 20-second dwell plus a 1.5-second wipe.
   A separate player owns playlist timing and randomness; animation motion follows elapsed time with
@@ -20,8 +27,7 @@ work with this firmware and says so.
   without adjusting a setting or changing the selected menu, and held keys preserve frame pacing.
 - Standby no longer cycles pages on a timer. Encoder-selected settings screens remain selected
   until the button advances through RT sensitivity, actuation, RT on/off, layer and the key screen.
-  Removed the old auto-return countdown graphic. Automatic idle screensaver/sleep are disabled;
-  explicit display commands remain available.
+  Removed the old auto-return countdown graphic. Idle never puts the display to sleep.
 - Physical rail samples are excluded from the travel filter. Eight consecutive rail samples
   latch a per-key fault and release its host output; recovery needs 100 consecutive readings
   near the established rest point and suppresses output until release. Faults appear in INFO.

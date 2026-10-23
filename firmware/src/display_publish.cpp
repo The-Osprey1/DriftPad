@@ -31,6 +31,9 @@ void displayBuildSnapshot(display_link::Snapshot& out) {
     out.rtSensMm = HallKey::getRtSensitivity();
     out.settingsDirty = configIsDirty();
     out.saveSeq = (uint8_t)configSettingsSeq();
+    out.saverIdleMin = configGet().saverIdleMin;
+    out.saverAnim = configGet().saverAnim;
+    out.theme = configGet().theme;
     if (KeyboardOutput::isEnabled()) {
         out.outputStatus = display_link::OUTPUT_ON;
     } else {

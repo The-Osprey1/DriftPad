@@ -38,8 +38,10 @@ second opens the settings menu: a press then selects Rapid Trigger sensitivity, 
 Trigger on/off, layer, then the key screen again, turning adjusts the selected setting, and
 holding again closes the menu. Selected settings screens stay visible;
 they do not time out or cycle automatically.
-Idle does not start a screensaver or put the display to sleep. Those display modes remain
-available through explicit configurator/serial commands.
+After 2 minutes without a key press or knob input, the screensaver starts by itself (any key or
+the knob brings the key screen back). Choose the time (or Never) and the animation on the
+configurator's **Screen** tab. It does not start while the pad is uncalibrated, so the calibration
+hint stays visible. Idle never turns the display off.
 
 1. Connect the physical pad in the configurator and leave keyboard output off. Turn off any
    injected key simulation in Device before checking physical movement.

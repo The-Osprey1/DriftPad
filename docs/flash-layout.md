@@ -47,7 +47,8 @@ the ELF symbol table, the processed linker script and the UF2 file:
 
 Each slot holds at most one record: a 32-byte header (magic `DPS2`, header version, schema version,
 sequence number, payload length, payload CRC-32, header CRC-32), the payload, and a separate commit
-page (`DPOK` + sequence) programmed last. The exact byte layout and the schema-2 payload are in
+page (`DPOK` + sequence) programmed last. The exact byte layout and the payload schemas (2, 3 and the
+current 4, which adds the screensaver, theme and screen-speed choices) are in
 `firmware/include/settings_store.h`.
 
 `SAVE` (and the encoder's delayed save):

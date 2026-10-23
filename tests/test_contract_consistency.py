@@ -78,6 +78,9 @@ class TestLimits(unittest.TestCase):
             m = re.search(rf"const {name} = (\d+);", fake)
             self.assertIsNotNone(m, name)
             self.assertEqual(int(m.group(1)), h[fw], name)
+        idle = re.search(r"const SAVER_IDLE = \{ max: (\d+), def: (\d+) \}", fake)
+        self.assertEqual(tuple(map(int, idle.groups())), (h["SAVER_IDLE_MAX_MIN"], h["SAVER_IDLE_DEFAULT_MIN"]))
+        self.assertEqual(int(re.search(r"const SAVER_ANIMS = (\d+);", fake).group(1)), h["SAVER_ANIM_COUNT"])
 
 
 class TestProtocolFacts(unittest.TestCase):

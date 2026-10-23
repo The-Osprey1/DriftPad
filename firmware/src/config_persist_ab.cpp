@@ -46,6 +46,7 @@ bool settingsValid(const DeviceSettings& s) {
     if (!inRange(s.actuationCmm, limits::ACTUATION_MIN_CMM, limits::ACTUATION_MAX_CMM)) return false;
     if (!inRange(s.rtSensCmm, limits::RT_SENS_MIN_CMM, limits::RT_SENS_MAX_CMM)) return false;
     if (s.activeLayer >= NUM_LAYERS) return false;
+    if (s.saverIdleMin > limits::SAVER_IDLE_MAX_MIN) return false;
     for (uint8_t l = 0; l < NUM_LAYERS; ++l) {
         for (uint8_t k = 0; k < NUM_KEYS; ++k) {
             if (!keycodeIsAssignable(s.keymaps[l][k].hidCode)) return false;
@@ -54,6 +55,13 @@ bool settingsValid(const DeviceSettings& s) {
         }
     }
     return true;
+}
+
+// Display choices made by newer firmware (an animation or theme this one does not have) fall back
+// to shuffle and the default theme instead of rejecting the whole record
+void finishLoadedDisplay(DeviceSettings& s) {
+    if (s.saverAnim < -1 || s.saverAnim >= (int8_t)limits::SAVER_ANIM_COUNT) s.saverAnim = -1;
+    if (s.theme >= limits::THEME_COUNT) s.theme = 0;
 }
 
 // Stored calibration is re-judged by the current plausibility rules on every load
@@ -79,6 +87,7 @@ void scanSlots(SlotInfo info[FlashIo::SECTOR_COUNT], uint16_t* errors) {
             DeviceSettings& c = s_candidate[slot];
             if (SettingsStore::decode(si.schema, s_payload, si.payloadLen, c) && settingsValid(c)) {
                 finishLoadedCalibration(c.calibration);
+                finishLoadedDisplay(c);
             } else {
                 si.state = SlotState::Invalid;
             }
