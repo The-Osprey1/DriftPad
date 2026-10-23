@@ -669,6 +669,31 @@ class CherryBlossomTheme(unittest.TestCase):
             self.assertGreater(self.lit(fb, 13, 15, 40, 42), 150)
             self.assertGreater(self.lit(fb, 64, 0, 128, 30), 40)
 
+    def test_sakura_viewpoint_drifts_between_views_without_jumps(self):
+        import ctypes
+        self.lib.oled_animation_reset.argtypes = [ctypes.c_uint32]
+        self.lib.oled_animation_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
+        self.lib.oled_animation_reset(9)
+        buf = ctypes.create_string_buffer(1024)
+        view = (ctypes.c_float * 4)()
+        views = []
+        for _ in range(int(50000 / 33)):             # a whole cycle of four views, 48 s
+            self.lib.oled_animation_step(6, 33, buf)
+            self.lib.oled_sakura_view(view)
+            views.append(tuple(view))
+        scales = [v[2] for v in views]
+        self.assertGreaterEqual(max(scales), 1.6, "never comes close")
+        self.assertLessEqual(min(scales), 0.8, "never pulls back")
+        for a, b in zip(views, views[1:]):
+            self.assertLess(abs(b[0] - a[0]) + abs(b[1] - a[1]), 1.5, "the viewpoint jumped")
+            self.assertLess(abs(b[2] - a[2]), 0.02)
+        # each view holds still for about 7 s before easing on
+        held, longest = 1, 1
+        for a, b in zip(views, views[1:]):
+            held = held + 1 if a == b else 1
+            longest = max(longest, held)
+        self.assertGreaterEqual(longest * 33, 6500)
+
 
 if __name__ == "__main__":
     unittest.main()

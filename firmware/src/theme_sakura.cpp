@@ -68,10 +68,18 @@ const Bud kBuds[BLOSSOMS] = {
 };
 
 void thickLine(Adafruit_GFX& g, float x0, float y0, float x1, float y1, uint8_t width) {
-    g.drawLine((int16_t)lroundf(x0), (int16_t)lroundf(y0), (int16_t)lroundf(x1), (int16_t)lroundf(y1), WHITE);
-    if (width > 1) {
-        g.drawLine((int16_t)lroundf(x0), (int16_t)lroundf(y0) + 1, (int16_t)lroundf(x1), (int16_t)lroundf(y1) + 1, WHITE);
+    for (uint8_t i = 0; i < width; ++i) {
+        g.drawLine((int16_t)lroundf(x0), (int16_t)lroundf(y0) + i, (int16_t)lroundf(x1), (int16_t)lroundf(y1) + i, WHITE);
     }
+}
+
+// A point of the branch (from its base, as drawn) on screen, seen from `v`
+void place(const View& v, float px, float py, float* sx, float* sy) {
+    const float c = cosf(v.angle), s = sinf(v.angle);
+    const float x = px * v.scale, y = py * v.scale;
+    const float xr = x * c - y * s;
+    *sx = v.x + (v.mirrored ? -xr : xr);
+    *sy = v.y + x * s + y * c;
 }
 
 // Petal sprites by tumble phase: a petal turns as it falls, so its outline changes
@@ -107,11 +115,12 @@ void drawBlossom(Adafruit_GFX& g, int16_t cx, int16_t cy, float open, uint8_t ra
         return;
     }
     const float r = radius * (0.5f + 0.5f * (open > 1.0f ? 1.0f : open));
+    const int16_t petal = radius >= 4 ? 2 : 1;   // seen close up, the petals are larger
     for (uint8_t i = 0; i < 5; ++i) {
         const float a = -TAU / 4 + i * TAU / 5;
         const int16_t px = cx + (int16_t)lroundf(cosf(a) * r);
         const int16_t py = cy + (int16_t)lroundf(sinf(a) * r);
-        if (radius >= 2) g.fillCircle(px, py, 1, WHITE);
+        if (radius >= 2) g.fillCircle(px, py, petal, WHITE);
         else g.drawPixel(px, py, WHITE);
     }
     if (radius >= 2) g.drawPixel(cx, cy, BLACK);   // the dark heart
@@ -191,15 +200,20 @@ uint8_t Petals::live() const {
 
 // ---- the branch ---------------------------------------------------------------------------------
 
-void blossomAt(uint8_t i, int16_t ox, int16_t oy, bool mirrored, int16_t* x, int16_t* y) {
+void blossomAt(uint8_t i, const View& v, int16_t* x, int16_t* y) {
     const Bud& b = kBuds[i % BLOSSOMS];
-    *x = mirrored ? ox - b.x : ox + b.x;
-    *y = oy + b.y;
+    float sx, sy;
+    place(v, b.x, b.y, &sx, &sy);
+    *x = (int16_t)lroundf(sx);
+    *y = (int16_t)lroundf(sy);
 }
 
-void drawBranch(Adafruit_GFX& g, int16_t ox, int16_t oy, bool mirrored, float grow, float bloom, float sway) {
+void blossomAt(uint8_t i, int16_t ox, int16_t oy, bool mirrored, int16_t* x, int16_t* y) {
+    blossomAt(i, View{(float)ox, (float)oy, 1.0f, 0.0f, mirrored}, x, y);
+}
+
+void drawBranch(Adafruit_GFX& g, const View& v, float grow, float bloom, float sway) {
     const float growPct = grow * 100.0f;
-    const float sx = mirrored ? -1.0f : 1.0f;
     for (const Segment& s : kBranch) {
         if (growPct <= s.from) continue;
         float p = (growPct - s.from) / (float)(s.to - s.from);
@@ -208,17 +222,26 @@ void drawBranch(Adafruit_GFX& g, int16_t ox, int16_t oy, bool mirrored, float gr
         const float y1 = s.y0 + (s.y1 - s.y0) * p;
         // Only the thin outer twigs sway
         const float tip = s.width == 1 ? sway * p : 0.0f;
-        thickLine(g, ox + sx * s.x0, oy + s.y0, ox + sx * (x1 + tip), oy + y1, s.width);
+        float ax, ay, bx, by;
+        place(v, s.x0, s.y0, &ax, &ay);
+        place(v, x1 + tip, y1, &bx, &by);
+        const long w = lroundf(s.width * v.scale);
+        thickLine(g, ax, ay, bx, by, (uint8_t)(w < 1 ? 1 : w > 4 ? 4 : w));
     }
     for (uint8_t i = 0; i < BLOSSOMS; ++i) {
         const Bud& b = kBuds[i];
         if (growPct < b.at) continue;
         // Blossoms open one after another as `bloom` rises
         const float open = bloom * (BLOSSOMS + 2) - i;
-        int16_t x, y;
-        blossomAt(i, ox, oy, mirrored, &x, &y);
-        drawBlossom(g, x + (int16_t)lroundf(sway * sx * (b.radius == 1 ? 1.0f : 0.5f)), y, open, b.radius);
+        float x, y;
+        place(v, b.x + sway * (b.radius == 1 ? 1.0f : 0.5f), b.y, &x, &y);
+        const long r = lroundf(b.radius * v.scale);
+        drawBlossom(g, (int16_t)lroundf(x), (int16_t)lroundf(y), open, (uint8_t)(r < 1 ? 1 : r > 4 ? 4 : r));
     }
+}
+
+void drawBranch(Adafruit_GFX& g, int16_t ox, int16_t oy, bool mirrored, float grow, float bloom, float sway) {
+    drawBranch(g, View{(float)ox, (float)oy, 1.0f, 0.0f, mirrored}, grow, bloom, sway);
 }
 
 void drawSprig(Adafruit_GFX& g, int16_t x, int16_t y, int16_t w, uint32_t nowMs) {
@@ -379,11 +402,40 @@ float Scene::frand() {
     return (xorshift(m_rng) & 0xFFFF) / 65535.0f;
 }
 
+namespace {
+
+// The viewpoints the screensaver drifts between, in order (then back to the first)
+const View kViews[Scene::VIEWS] = {
+    {127.0f, 10.0f, 1.00f, 0.00f, true},    // as drawn, reaching in from the top right
+    {152.0f, 0.0f, 1.70f, 0.10f, true},     // close up: the blossoms fill the right of the screen
+    {133.0f, 22.0f, 0.75f, -0.08f, true},   // from further off, the whole branch lower down
+    {138.0f, 4.0f, 1.25f, 0.28f, true},     // tilted, the tips hanging down
+};
+
+float smooth(float p) { return p * p * (3.0f - 2.0f * p); }
+
+} // namespace
+
+View Scene::view() const {
+    constexpr uint32_t STEP = VIEW_HOLD_MS + VIEW_MOVE_MS;
+    const uint32_t phase = (m_t + m_viewStart) % (STEP * VIEWS);
+    const uint8_t k = (uint8_t)(phase / STEP);
+    const uint32_t within = phase % STEP;
+    const View& a = kViews[k];
+    if (within < VIEW_HOLD_MS) return a;
+    const View& b = kViews[(k + 1) % VIEWS];
+    const float p = smooth((float)(within - VIEW_HOLD_MS) / VIEW_MOVE_MS);
+    return View{a.x + (b.x - a.x) * p, a.y + (b.y - a.y) * p, a.scale + (b.scale - a.scale) * p,
+                a.angle + (b.angle - a.angle) * p, a.mirrored};
+}
+
 void Scene::reset(uint32_t seed) {
     m_rng = seed ? seed : 1;
     m_petals.clear();
     m_petals.seed(seed ^ 0x9e3779b9u);
     m_t = 0;
+    // Each session opens on one of the views, so the screensaver does not always start the same way
+    m_viewStart = (uint32_t)(frand() * VIEWS) * (VIEW_HOLD_MS + VIEW_MOVE_MS);
     m_dropAcc = 0;
     m_wind = -2.0f;
     m_nextGust = 4000 + (uint32_t)(frand() * 4000);
@@ -418,7 +470,7 @@ void Scene::advance(uint32_t dtMs) {
         m_dropAcc -= every;
         if (frand() < 0.6f) {
             int16_t x, y;
-            blossomAt((uint8_t)(frand() * BLOSSOMS), 127, 10, true, &x, &y);
+            blossomAt((uint8_t)(frand() * BLOSSOMS), view(), &x, &y);
             m_petals.drop(x, y);
         } else {
             m_petals.drop(30.0f + frand() * 100.0f, -2.0f);
@@ -428,8 +480,12 @@ void Scene::advance(uint32_t dtMs) {
 }
 
 void Scene::render(Adafruit_GFX& g) const {
+    const View v = view();
+    // Parallax: the far moon and hills follow the viewpoint a little, the branch fully
+    const float dx = v.x - kViews[0].x, dy = v.y - kViews[0].y;
     // The moon, low on the left: a disc shaded with the ordered pattern, brighter towards its edge
-    constexpr int16_t MX = 26, MY = 28, MR = 13;
+    const int16_t MX = 26 + (int16_t)lroundf(dx * 0.2f), MY = 28 + (int16_t)lroundf(dy * 0.2f);
+    const int16_t MR = (int16_t)lroundf(13.0f * (0.9f + 0.1f * v.scale));
     for (int16_t y = -MR; y <= MR; ++y) {
         for (int16_t x = -MR; x <= MR; ++x) {
             const int16_t d2 = x * x + y * y;
@@ -441,12 +497,13 @@ void Scene::render(Adafruit_GFX& g) const {
     }
     // A faint horizon of distant hills
     for (int16_t x = 0; x < 128; x += 2) {
-        const int16_t y = 58 + (int16_t)lroundf(sinf(x * 0.05f) * 2.0f + sinf(x * 0.13f + 1.0f));
+        const float hx = x + dx * 0.08f;
+        const int16_t y = 58 + (int16_t)lroundf(sinf(hx * 0.05f) * 2.0f + sinf(hx * 0.13f + 1.0f));
         g.drawPixel(x, y, WHITE);
     }
     // The branch reaching in from the top right, swaying with the wind
     const float sway = sinf(m_t / 700.0f) * 0.8f + m_wind * 0.08f;
-    drawBranch(g, 127, 10, true, 1.0f, 1.0f, sway);
+    drawBranch(g, v, 1.0f, 1.0f, sway);
     m_petals.draw(g);
 }
 

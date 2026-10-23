@@ -136,7 +136,7 @@ older protocol-2 firmware without `display_status` or the optional object.
 | `3` | Drift grid |
 | `4` | Magnetic pulse |
 | `5` | Lava lamp |
-| `6` | Sakura (petals falling past a moon; the Cherry blossom theme's own) |
+| `6` | Sakura (petals falling past a moon, seen from a slowly drifting viewpoint; the Cherry blossom theme's own) |
 
 Omitting the argument shuffles a complete bag of seven animations, using every animation once before
 refilling it. Adjacent animations never repeat, including across bag boundaries. Each animation

@@ -38,6 +38,8 @@ def load():
     lib.oled_scene_theme.argtypes = [ctypes.c_int]
     lib.oled_scene_theme.restype = None
     lib.oled_key_petals.restype = ctypes.c_int
+    lib.oled_sakura_view.argtypes = [ctypes.POINTER(ctypes.c_float)]
+    lib.oled_sakura_view.restype = None
     lib.oled_idle_step.argtypes = [ctypes.c_uint32, ctypes.c_int]
     lib.oled_auto_saver_step.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
     lib.oled_auto_saver_step.restype = None

@@ -50,12 +50,22 @@ private:
     uint32_t m_rng = 1;
 };
 
+// A viewpoint on the branch: where its base is on screen, how close it is and how it is turned
+struct View {
+    float x, y;       // the base, in screen pixels (it may be off screen)
+    float scale;      // 1 = as drawn; larger is closer
+    float angle;      // radians; positive turns the tips downwards
+    bool mirrored;    // grows leftwards from a base on the right
+};
+
 // The branch: a hand-drawn limb with twigs and eleven blossoms. Grown to `grow` (0..1) from its base,
-// blossoms opened to `bloom` (0..1, each opening in turn), tips swaying by `sway` px. Drawn from
-// (ox, oy); mirrored grows leftwards from a base on the right.
+// blossoms opened to `bloom` (0..1, each opening in turn), tips swaying by `sway` px, seen from `v`.
+void drawBranch(Adafruit_GFX& g, const View& v, float grow, float bloom, float sway);
+// The same at its drawn size and angle, from a base at (ox, oy)
 void drawBranch(Adafruit_GFX& g, int16_t ox, int16_t oy, bool mirrored, float grow, float bloom, float sway);
-// Where blossom `i` (0..BLOSSOMS-1) of a branch drawn at (ox, oy) sits, for petals to fall from
+// Where blossom `i` (0..BLOSSOMS-1) of the branch sits on screen, for petals to fall from
 constexpr uint8_t BLOSSOMS = 11;
+void blossomAt(uint8_t i, const View& v, int16_t* x, int16_t* y);
 void blossomAt(uint8_t i, int16_t ox, int16_t oy, bool mirrored, int16_t* x, int16_t* y);
 
 // Standby: a sprig across the bottom of the left panel, from x to x + w around row y
@@ -72,18 +82,26 @@ void drawShoji(Adafruit_GFX& g, uint32_t elapsed, uint32_t total, uint8_t layer,
 // seal stamps in, the name appears, then the pad's status line types in. status: the state line.
 void drawIntro(Adafruit_GFX& g, uint32_t t, const char* status);
 
-// The Sakura screensaver: a moon, a branch reaching in from the right, petals on gusts of wind
+// The Sakura screensaver: a moon, a branch reaching in from the right, petals on gusts of wind. The
+// viewpoint drifts between four views of the branch (as drawn, close up, from further off, tilted),
+// holding each for VIEW_HOLD_MS and easing to the next over VIEW_MOVE_MS; the moon and the hills move
+// less than the branch, so the scene has depth.
 class Scene {
 public:
+    static constexpr uint32_t VIEW_HOLD_MS = 7000;
+    static constexpr uint32_t VIEW_MOVE_MS = 5000;
+    static constexpr uint8_t VIEWS = 4;
     void reset(uint32_t seed);
     void advance(uint32_t dtMs);
     void render(Adafruit_GFX& g) const;
+    View view() const;   // the viewpoint now
     const Petals& petals() const { return m_petals; }
 
 private:
     float frand();
     Petals m_petals;
     uint32_t m_t = 0;
+    uint32_t m_viewStart = 0;   // where in the cycle of views this session began
     uint32_t m_rng = 1;
     uint32_t m_dropAcc = 0;
     uint32_t m_nextGust = 0;
