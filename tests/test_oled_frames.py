@@ -669,51 +669,46 @@ class CherryBlossomTheme(unittest.TestCase):
             self.assertGreater(self.lit(fb, 13, 12, 44, 42), 60)
             self.assertGreater(self.lit(fb, 64, 0, 128, 30), 40)
 
-    def test_each_night_sky_draws_its_own_sky(self):
-        import ctypes
-        self.lib.oled_sakura_sky.argtypes = [ctypes.c_int]
-        self.lib.oled_animation_reset.argtypes = [ctypes.c_uint32]
-        self.lib.oled_animation_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
-        skies = []
-        try:
-            for sky in range(3):                       # crescent, ink moon, stars
-                self.lib.oled_sakura_sky(sky)
-                self.lib.oled_animation_reset(5)
-                buf = ctypes.create_string_buffer(1024)
-                self.lib.oled_animation_step(6, 2000, buf)
-                skies.append(bytes(buf.raw))
-        finally:
-            self.lib.oled_sakura_sky(0)
-        self.assertEqual(len(set(skies)), 3, "two skies look the same")
-        moon = lambda fb: self.lit(fb, 10, 8, 46, 44)
-        self.assertGreater(moon(skies[0]), 60, "no crescent")
-        self.assertGreater(moon(skies[1]), 60, "no ink moon")
-        self.assertLess(moon(skies[2]), moon(skies[0]), "the starry sky has a moon")
-
-    def test_sakura_viewpoint_drifts_between_views_without_jumps(self):
+    def sakura_cycle(self):
+        """The branch base (x, y, scale, angle) and moon centre (x, y) every 33 ms over 40 s"""
         import ctypes
         self.lib.oled_animation_reset.argtypes = [ctypes.c_uint32]
         self.lib.oled_animation_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
         self.lib.oled_animation_reset(9)
         buf = ctypes.create_string_buffer(1024)
-        view = (ctypes.c_float * 4)()
-        views = []
-        for _ in range(int(50000 / 33)):             # a whole cycle of four views, 48 s
+        out = (ctypes.c_float * 6)()
+        layers = []
+        for _ in range(int(40000 / 33)):             # a whole cycle of four views is 36 s
             self.lib.oled_animation_step(6, 33, buf)
-            self.lib.oled_sakura_view(view)
-            views.append(tuple(view))
-        scales = [v[2] for v in views]
-        self.assertGreaterEqual(max(scales), 1.6, "never comes close")
-        self.assertLessEqual(min(scales), 0.8, "never pulls back")
-        for a, b in zip(views, views[1:]):
-            self.assertLess(abs(b[0] - a[0]) + abs(b[1] - a[1]), 1.5, "the viewpoint jumped")
+            self.lib.oled_sakura_view(out)
+            layers.append(tuple(out))
+        return layers
+
+    def test_sakura_camera_zooms_and_glides_without_jumps(self):
+        layers = self.sakura_cycle()
+        scales = [v[2] for v in layers]
+        self.assertGreaterEqual(max(scales), 1.5, "never comes close")
+        self.assertLessEqual(min(scales), 0.85, "never pulls back")
+        for a, b in zip(layers, layers[1:]):
+            self.assertLess(abs(b[0] - a[0]) + abs(b[1] - a[1]), 2.0, "the branch jumped")
             self.assertLess(abs(b[2] - a[2]), 0.02)
-        # each view holds still for about 7 s before easing on
-        held, longest = 1, 1
-        for a, b in zip(views, views[1:]):
-            held = held + 1 if a == b else 1
-            longest = max(longest, held)
-        self.assertGreaterEqual(longest * 33, 6500)
+        self.assertGreaterEqual(min(v[0] for v in layers), 128, "the branch's cut end came on screen")
+
+    def test_sakura_near_and_far_layers_move_apart_both_ways(self):
+        layers = self.sakura_cycle()
+        span = lambda i: max(v[i] for v in layers) - min(v[i] for v in layers)
+        branch_dx, branch_dy, moon_dx, moon_dy = span(0), span(1), span(4), span(5)
+        self.assertGreater(branch_dy, 20, "the branch hardly moves up and down")
+        self.assertGreater(moon_dx, 1.0, "the moon is pinned in place")
+        self.assertGreater(moon_dy, 1.0, "the moon is pinned in place")
+        self.assertGreater(branch_dx, 3 * moon_dx, "no parallax across")
+        self.assertGreater(branch_dy, 4 * moon_dy, "no parallax up and down")
+        # always moving: never more than a second without the camera moving at all
+        still, longest = 1, 1
+        for a, b in zip(layers, layers[1:]):
+            still = still + 1 if a == b else 1
+            longest = max(longest, still)
+        self.assertLess(longest * 33, 1000)
 
 
 if __name__ == "__main__":

@@ -42,11 +42,12 @@ void oled_scene_theme(int theme) {
     s_keyPetals.clear();
 }
 int oled_key_petals() { return s_keyPetals.live(); }
-void oled_sakura_sky(int sky) { s_sakuraScene.setSky((sakura::Scene::Sky)sky); }
-// The Sakura screensaver's viewpoint now: x, y, scale, angle
+// The Sakura screensaver's layers on screen now: the branch's base x, y, its scale and angle, then
+// the moon's centre x, y
 void oled_sakura_view(float* out) {
-    const sakura::View v = s_sakuraScene.view();
+    const sakura::View v = s_sakuraScene.branchView();
     out[0] = v.x; out[1] = v.y; out[2] = v.scale; out[3] = v.angle;
+    s_sakuraScene.camera().project(sakura::Scene::MOON_X, sakura::Scene::MOON_Y, sakura::Scene::DEPTH_MOON, &out[4], &out[5]);
 }
 int oled_scene(int id, uint8_t* out) {
     forget_state_history();

@@ -15,8 +15,10 @@ work with this firmware and says so.
   branch grows and blossoms, a 桜 seal stamps in), a seal-like key card with plain lettering,
   petals thrown up by each key press, a blossoming sprig on the standby screen, paper doors that
   slide shut on a layer change, and the new **Sakura** screensaver (animation 6: petals on gusts of
-  wind under a night sky, seen from a slowly drifting viewpoint that holds each of four views for 7 s and
-  eases to the next; the moon and hills move less than the branch). Every screen works the same in both themes. Chosen with `SET_THEME`
+  wind under a crescent moon, wisps of cloud and a few stars). Its camera pans up, down and sideways
+  and zooms between four views, pausing 2.5 s at each and gliding to the next over 6.5 s while it
+  floats gently, and each layer moves by its depth (branch and petals fully, hills 40%, clouds 30%,
+  moon 15%, stars 5%), so near things slide past far ones. Every screen works the same in both themes. Chosen with `SET_THEME`
   (feature `themes`), the knob menu's new Screen theme page or the configurator's Screen tab, and
   stored in the settings; choosing a theme also picks its screensaver.
 - The screensaver starts by itself after 2 minutes idle (no trusted key press, knob input or

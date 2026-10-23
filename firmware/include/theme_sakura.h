@@ -24,6 +24,18 @@ void drawSeal(Adafruit_GFX& g, int16_t x, int16_t y);
 // A blossom of five petals around a dark heart. open: 0 (bud) .. 1 (full); radius 1..3
 void drawBlossom(Adafruit_GFX& g, int16_t cx, int16_t cy, float open, uint8_t radius);
 
+// How the screensaver's camera sees its scene. Everything is placed in scene pixels (the 128 x 64
+// screen at rest, y down), each layer at a depth from 0 (infinitely far: never moves) to 1 (the
+// branch and its petals: moves fully). The camera's pan, zoom and tilt apply to a layer in proportion
+// to its depth, so when the camera moves, near things slide past far ones: that is the parallax.
+struct Camera {
+    float panX, panY;   // how far the camera has moved, in scene pixels (positive: right, down)
+    float zoom;         // 1 = at rest; larger is closer
+    float tilt;         // radians; positive turns the view clockwise
+    float zoomAt(float depth) const { return 1.0f + (zoom - 1.0f) * depth; }
+    void project(float x, float y, float depth, float* sx, float* sy) const;
+};
+
 // Falling petals. A petal tumbles (its shape cycles) while the wind and its own sway carry it.
 class Petals {
 public:
@@ -35,7 +47,11 @@ public:
     // One petal letting go of a branch at (x, y)
     void drop(float x, float y);
     void step(uint32_t dtMs, float wind);
+    // Petals beyond these leave (screen pixels by default; a scene with a moving camera widens them)
+    void setBounds(float left, float right, float bottom) { m_left = left; m_right = right; m_bottom = bottom; }
     void draw(Adafruit_GFX& g) const;
+    // Petals placed in a scene, as `cam` sees them at `depth`
+    void draw(Adafruit_GFX& g, const Camera& cam, float depth) const;
     uint8_t live() const;
 
 private:
@@ -48,6 +64,7 @@ private:
     float frand();   // 0 .. 1
     Petal m_p[MAX] = {};
     uint32_t m_rng = 1;
+    float m_left = -4.0f, m_right = 131.0f, m_bottom = 66.0f;
 };
 
 // A viewpoint on the branch: where its base is on screen, how close it is and how it is turned
@@ -82,46 +99,42 @@ void drawShoji(Adafruit_GFX& g, uint32_t elapsed, uint32_t total, uint8_t layer,
 // seal stamps in, the name appears, then the pad's status line types in. status: the state line.
 void drawIntro(Adafruit_GFX& g, uint32_t t, const char* status);
 
-// The Sakura screensaver: a moon, a branch reaching in from the right, petals on gusts of wind. The
-// viewpoint drifts between four views of the branch (as drawn, close up, from further off, tilted),
-// holding each for VIEW_HOLD_MS and easing to the next over VIEW_MOVE_MS; the moon and the hills move
-// less than the branch, so the scene has depth.
+// The Sakura screensaver: a crescent moon with wisps of cloud and a few stars, distant hills, and a
+// branch reaching in from the right with petals on gusts of wind. The camera glides between four
+// views (at rest, close on the blossoms, pulled back and lower, tilted), pausing VIEW_HOLD_MS at
+// each and easing to the next over VIEW_MOVE_MS, and it floats a little all the time, so the layers
+// keep sliding past one another.
 class Scene {
 public:
-    static constexpr uint32_t VIEW_HOLD_MS = 7000;
-    static constexpr uint32_t VIEW_MOVE_MS = 5000;
     static constexpr uint8_t VIEWS = 4;
-    // The night sky behind the branch (three designs under review; one will stay)
-    enum class Sky : uint8_t {
-        Crescent = 0,   // a crescent moon, wisps of cloud drifting past, a few stars
-        InkMoon,        // a full moon drawn as an ink outline, crossed by bands of cloud
-        Stars,          // no moon: twinkling stars and now and then a shooting star
-        COUNT
-    };
-    void setSky(Sky s) { m_sky = s; }
+    static constexpr uint32_t VIEW_HOLD_MS = 2500;
+    static constexpr uint32_t VIEW_MOVE_MS = 6500;
+    // Where things are in the scene, and how far away
+    static constexpr float BRANCH_X = 142.0f, BRANCH_Y = 10.0f;   // the base, off the right edge
+    static constexpr float MOON_X = 28.0f, MOON_Y = 26.0f;
+    static constexpr float DEPTH_STARS = 0.05f, DEPTH_MOON = 0.15f, DEPTH_CLOUDS = 0.3f;
+    static constexpr float DEPTH_HILLS = 0.4f, DEPTH_BRANCH = 1.0f;
+
     void reset(uint32_t seed);
     void advance(uint32_t dtMs);
     void render(Adafruit_GFX& g) const;
-    View view() const;   // the viewpoint now
+    Camera camera() const;       // the camera now
+    View branchView() const;     // the branch as the camera sees it
     const Petals& petals() const { return m_petals; }
 
 private:
     float frand();
-    Petals m_petals;
+    Petals m_petals;             // in scene pixels, at the branch's depth
     uint32_t m_t = 0;
-    uint32_t m_viewStart = 0;   // where in the cycle of views this session began
+    uint32_t m_viewStart = 0;    // where in the cycle of views this session began
     uint32_t m_rng = 1;
     uint32_t m_dropAcc = 0;
     uint32_t m_nextGust = 0;
     uint32_t m_gustEnd = 0;
     float m_wind = 0.0f;
-    Sky m_sky = Sky::Crescent;
     struct SkyStar { uint8_t x, y, period20, phase20; };   // twinkle period and phase in 20 ms units; bright in bit 7 of y
-    static constexpr uint8_t STARS = 22;
+    static constexpr uint8_t STARS = 8;
     SkyStar m_stars[STARS] = {};
-    uint32_t m_nextShoot = 0;
-    uint8_t m_shootX = 0, m_shootY = 0;
-    void drawSky(Adafruit_GFX& g, float dx, float dy, float scale) const;
 };
 
 } // namespace sakura

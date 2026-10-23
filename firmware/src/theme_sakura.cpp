@@ -178,7 +178,7 @@ void Petals::step(uint32_t dtMs, float wind) {
         p.y += p.vy * dt;
         p.phase += dt * (2.0f + (p.vx > 0 ? p.vx : -p.vx) * 0.08f);
         if (p.lifeMs && p.ageMs >= p.lifeMs) p.live = false;
-        if (p.y > 66.0f || p.x < -4.0f || p.x > 131.0f) p.live = false;
+        if (p.y > m_bottom || p.x < m_left || p.x > m_right) p.live = false;
     }
 }
 
@@ -189,6 +189,23 @@ void Petals::draw(Adafruit_GFX& g) const {
         if (p.lifeMs && p.ageMs + 150 > p.lifeMs && ((p.ageMs / 50) & 1)) continue;
         drawPetalShape(g, (int16_t)lroundf(p.x), (int16_t)lroundf(p.y), (uint8_t)p.phase);
     }
+}
+
+void Petals::draw(Adafruit_GFX& g, const Camera& cam, float depth) const {
+    for (const Petal& p : m_p) {
+        if (!p.live) continue;
+        float x, y;
+        cam.project(p.x, p.y, depth, &x, &y);
+        drawPetalShape(g, (int16_t)lroundf(x), (int16_t)lroundf(y), (uint8_t)p.phase);
+    }
+}
+
+void Camera::project(float x, float y, float depth, float* sx, float* sy) const {
+    const float a = tilt * depth, z = zoomAt(depth);
+    const float rx = x - 64.0f - panX * depth, ry = y - 32.0f - panY * depth;
+    const float c = cosf(a), s = sinf(a);
+    *sx = 64.0f + (rx * c - ry * s) * z;
+    *sy = 32.0f + (rx * s + ry * c) * z;
 }
 
 uint8_t Petals::live() const {
@@ -403,35 +420,73 @@ float Scene::frand() {
 
 namespace {
 
-// The viewpoints the screensaver drifts between, in order (then back to the first)
-const View kViews[Scene::VIEWS] = {
-    {127.0f, 10.0f, 1.00f, 0.00f, true},    // as drawn, reaching in from the top right
-    {152.0f, 0.0f, 1.70f, 0.10f, true},     // close up: the blossoms fill the right of the screen
-    {133.0f, 22.0f, 0.75f, -0.08f, true},   // from further off, the whole branch lower down
-    {138.0f, 4.0f, 1.25f, 0.28f, true},     // tilted, the tips hanging down
+// The camera's views, in order (then back to the first). The branch's base stays off the right edge
+// in every one, so the branch always reaches in from outside the screen.
+const Camera kViews[Scene::VIEWS] = {
+    {10.0f, 0.0f, 1.00f, 0.00f},     // at rest: the branch across the top right, the moon on the left
+    {20.0f, -20.0f, 1.60f, 0.06f},   // close on the blossoms, the camera raised
+    {-6.0f, 18.0f, 0.82f, -0.05f},   // pulled back and lowered: the branch high, the hills rising
+    {16.0f, -6.0f, 1.25f, 0.20f},    // tilted, the tips hanging down
 };
 
 float smooth(float p) { return p * p * (3.0f - 2.0f * p); }
 
+// A drifting shape's x in the scene: comes in from the right, leaves on the left, comes round again.
+// The span is wide enough that a moving camera never sees it wrap.
+float drift(uint32_t tMs, float speedPxPerS, float offset) {
+    constexpr float LEFT = -80.0f, SPAN = 300.0f;
+    float x = fmodf(offset - tMs / 1000.0f * speedPxPerS, SPAN);
+    if (x < 0) x += SPAN;
+    return LEFT + x;
+}
+
+// A wisp of cloud: three thin strokes, stepped like a brush drawn sideways, scaled by `z`. The dark
+// around each stroke hides whatever is behind it, so the moon disappears behind the wisp.
+void drawWisp(Adafruit_GFX& g, float x, float y, float z) {
+    static const int8_t kStroke[3][2] = {{0, 26}, {6, 16}, {2, 9}};   // x offset, length
+    for (uint8_t pass = 0; pass < 2; ++pass) {
+        for (uint8_t i = 0; i < 3; ++i) {
+            const int16_t sx = (int16_t)lroundf(x + kStroke[i][0] * z), sy = (int16_t)lroundf(y + i * 2 * z);
+            const int16_t len = (int16_t)lroundf(kStroke[i][1] * z);
+            if (pass == 0) g.fillRect(sx - 1, sy - 1, len + 2, 3, BLACK);
+            else g.drawFastHLine(sx, sy, len, WHITE);
+        }
+    }
+}
+
 } // namespace
 
-View Scene::view() const {
+Camera Scene::camera() const {
     constexpr uint32_t STEP = VIEW_HOLD_MS + VIEW_MOVE_MS;
     const uint32_t phase = (m_t + m_viewStart) % (STEP * VIEWS);
     const uint8_t k = (uint8_t)(phase / STEP);
     const uint32_t within = phase % STEP;
-    const View& a = kViews[k];
-    if (within < VIEW_HOLD_MS) return a;
-    const View& b = kViews[(k + 1) % VIEWS];
-    const float p = smooth((float)(within - VIEW_HOLD_MS) / VIEW_MOVE_MS);
-    return View{a.x + (b.x - a.x) * p, a.y + (b.y - a.y) * p, a.scale + (b.scale - a.scale) * p,
-                a.angle + (b.angle - a.angle) * p, a.mirrored};
+    const Camera& a = kViews[k];
+    const Camera& b = kViews[(k + 1) % VIEWS];
+    const float p = within < VIEW_HOLD_MS ? 0.0f : smooth((float)(within - VIEW_HOLD_MS) / VIEW_MOVE_MS);
+    Camera c{a.panX + (b.panX - a.panX) * p, a.panY + (b.panY - a.panY) * p,
+             a.zoom + (b.zoom - a.zoom) * p, a.tilt + (b.tilt - a.tilt) * p};
+    // A slow float on top, so the camera is never quite still
+    const float t = m_t / 1000.0f;
+    c.panX += 2.0f * sinf(t * TAU / 8.3f);
+    c.panY += 4.0f * sinf(t * TAU / 6.1f + 1.0f);
+    return c;
+}
+
+View Scene::branchView() const {
+    // The branch is rigid, so the camera's view of it is again a placement: where its base lands,
+    // scaled by the zoom and turned by the tilt (turning the other way, since it is mirrored)
+    const Camera c = camera();
+    float x, y;
+    c.project(BRANCH_X, BRANCH_Y, DEPTH_BRANCH, &x, &y);
+    return View{x, y, c.zoomAt(DEPTH_BRANCH), -c.tilt * DEPTH_BRANCH, true};
 }
 
 void Scene::reset(uint32_t seed) {
     m_rng = seed ? seed : 1;
     m_petals.clear();
     m_petals.seed(seed ^ 0x9e3779b9u);
+    m_petals.setBounds(-60.0f, 200.0f, 120.0f);   // the scene is wider than the screen
     m_t = 0;
     // Each session opens on one of the views, so the screensaver does not always start the same way
     m_viewStart = (uint32_t)(frand() * VIEWS) * (VIEW_HOLD_MS + VIEW_MOVE_MS);
@@ -439,19 +494,16 @@ void Scene::reset(uint32_t seed) {
     m_wind = -2.0f;
     for (SkyStar& s : m_stars) {
         s.x = (uint8_t)(frand() * 127.0f);
-        s.y = (uint8_t)(2.0f + frand() * 40.0f);
+        s.y = (uint8_t)(2.0f + frand() * 30.0f);
         s.period20 = (uint8_t)(80 + frand() * 120);           // 1.6 .. 4 s
         s.phase20 = (uint8_t)(frand() * s.period20);
         if (frand() < 0.25f) s.y |= 0x80;                       // a bright one
     }
-    m_nextShoot = 5000 + (uint32_t)(frand() * 6000);
-    m_shootX = (uint8_t)(50 + frand() * 70);
-    m_shootY = (uint8_t)(2 + frand() * 14);
     m_nextGust = 4000 + (uint32_t)(frand() * 4000);
     m_gustEnd = 0;
     // Start with petals already in the air, as if the scene had been going for a while
     for (uint8_t i = 0; i < 10; ++i) {
-        m_petals.drop(20.0f + frand() * 108.0f, frand() * 60.0f);
+        m_petals.drop(20.0f + frand() * 120.0f, frand() * 60.0f);
     }
 }
 
@@ -472,140 +524,81 @@ void Scene::advance(uint32_t dtMs) {
     const float k = dtMs / 600.0f > 1.0f ? 1.0f : dtMs / 600.0f;
     m_wind += (target - m_wind) * k;
 
-    // Petals let go of the blossoms, more of them in a gust; others drift in from above
+    // Petals let go of the blossoms, more of them in a gust; others drift in from above. They live in
+    // the scene, so the camera sees them move with the branch.
     m_dropAcc += dtMs;
     const uint32_t every = m_gustEnd ? 140 : 420;
+    const View atRest{BRANCH_X, BRANCH_Y, 1.0f, 0.0f, true};
     while (m_dropAcc >= every) {
         m_dropAcc -= every;
         if (frand() < 0.6f) {
             int16_t x, y;
-            blossomAt((uint8_t)(frand() * BLOSSOMS), view(), &x, &y);
+            blossomAt((uint8_t)(frand() * BLOSSOMS), atRest, &x, &y);
             m_petals.drop(x, y);
         } else {
-            m_petals.drop(30.0f + frand() * 100.0f, -2.0f);
+            m_petals.drop(20.0f + frand() * 130.0f, -24.0f);
         }
     }
     m_petals.step(dtMs, m_wind);
-    // A shooting star crosses for 700 ms every 10 to 18 s (drawn only by the starry sky)
-    if (m_t >= m_nextShoot + 700) {
-        m_nextShoot = m_t + 10000 + (uint32_t)(frand() * 8000);
-        m_shootX = (uint8_t)(50 + frand() * 70);
-        m_shootY = (uint8_t)(2 + frand() * 14);
-    }
-}
-
-namespace {
-
-// A drifting shape's x: enters from the right, leaves on the left, then comes round again
-float drift(uint32_t tMs, float speedPxPerS, float width, float offset) {
-    const float span = 128.0f + width;
-    float x = fmodf(offset - tMs / 1000.0f * speedPxPerS, span);
-    if (x < 0) x += span;
-    return x - width;
-}
-
-// A wisp of cloud: three thin strokes, stepped like a brush drawn sideways. The dark around each
-// stroke hides whatever is behind it, so the moon disappears behind the wisp
-void drawWisp(Adafruit_GFX& g, int16_t x, int16_t y) {
-    static const int8_t kStroke[3][2] = {{0, 26}, {6, 16}, {2, 9}};   // x offset, length
-    for (uint8_t i = 0; i < 3; ++i) {
-        const int16_t sx = x + kStroke[i][0], sy = y + i * 2, len = kStroke[i][1];
-        g.fillRect(sx - 1, sy - 1, len + 2, 3, BLACK);
-    }
-    for (uint8_t i = 0; i < 3; ++i) g.drawFastHLine(x + kStroke[i][0], y + i * 2, kStroke[i][1], WHITE);
-}
-
-// A band of cloud in the woodblock style: a rounded bar, dark inside, outlined
-void drawBand(Adafruit_GFX& g, int16_t x, int16_t y, int16_t w) {
-    g.fillRoundRect(x, y, w, 6, 3, BLACK);
-    g.drawRoundRect(x, y, w, 6, 3, WHITE);
-}
-
-} // namespace
-
-void Scene::drawSky(Adafruit_GFX& g, float dx, float dy, float scale) const {
-    // Far things follow the viewpoint a little: the moon by a fifth, the stars by a tenth
-    const int16_t mx = 28 + (int16_t)lroundf(dx * 0.2f), my = 26 + (int16_t)lroundf(dy * 0.2f);
-    const float grow = 0.9f + 0.1f * scale;
-    auto stars = [&](uint8_t count) {
-        for (uint8_t i = 0; i < count && i < STARS; ++i) {
-            const SkyStar& s = m_stars[i];
-            const uint32_t period = s.period20 * 20u;
-            const bool bright = s.y & 0x80;
-            const int16_t x = (int16_t)lroundf(s.x + dx * 0.1f), y = (int16_t)lroundf((s.y & 0x7F) + dy * 0.1f);
-            const uint32_t p = (m_t + s.phase20 * 20u) % period;
-            const bool on = p < period * 3 / 4;   // dims out for a quarter of its period
-            if (!on) continue;
-            g.drawPixel(x, y, WHITE);
-            if (bright && p < period / 3) {         // the bright ones flare into a small cross
-                g.drawPixel(x - 1, y, WHITE); g.drawPixel(x + 1, y, WHITE);
-                g.drawPixel(x, y - 1, WHITE); g.drawPixel(x, y + 1, WHITE);
-            }
-        }
-    };
-    switch (m_sky) {
-        case Sky::Crescent: {
-            stars(8);
-            // A crescent: the outer disc minus a second one pushed up and to the right
-            const int16_t r = (int16_t)lroundf(11.0f * grow), cut = r - 1;
-            const int16_t cx = mx + r / 2 + 1, cy = my - r / 4;
-            for (int16_t y = -r; y <= r; ++y) {
-                for (int16_t x = -r; x <= r; ++x) {
-                    if (x * x + y * y > r * r) continue;
-                    const int16_t ix = mx + x - cx, iy = my + y - cy;
-                    if (ix * ix + iy * iy <= cut * cut) continue;
-                    g.drawPixel(mx + x, my + y, WHITE);
-                }
-            }
-            // The dark rest of the moon, only hinted at by a dotted edge
-            for (uint8_t i = 0; i < 48; i += 3) {
-                const float a = i * TAU / 48;
-                const int16_t x = mx + (int16_t)lroundf(cosf(a) * r), y = my + (int16_t)lroundf(sinf(a) * r);
-                const int16_t ix = x - cx, iy = y - cy;
-                if (ix * ix + iy * iy <= cut * cut) g.drawPixel(x, y, WHITE);
-            }
-            drawWisp(g, (int16_t)drift(m_t, 2.0f, 40, 30), my + 4);
-            drawWisp(g, (int16_t)drift(m_t, 3.2f, 40, 100), 40);
-            break;
-        }
-        case Sky::InkMoon: {
-            const int16_t r = (int16_t)lroundf(14.0f * grow);
-            g.drawCircle(mx, my, r, WHITE);
-            g.drawCircle(mx, my, r - 2, WHITE);   // a second, inner line, like a brushed rim
-            drawBand(g, (int16_t)drift(m_t, 1.5f, 38, 20), my - 3, 38);
-            drawBand(g, (int16_t)drift(m_t, 2.4f, 28, 70), my + 8, 28);
-            drawBand(g, (int16_t)drift(m_t, 1.1f, 46, 120), 44, 46);
-            break;
-        }
-        default: {   // Sky::Stars
-            stars(STARS);
-            if (m_t >= m_nextShoot && m_t < m_nextShoot + 700) {
-                const float p = (m_t - m_nextShoot) / 700.0f;   // a streak falling down and to the left
-                const int16_t hx = m_shootX - (int16_t)(p * 36), hy = m_shootY + (int16_t)(p * 14);
-                g.drawLine(hx, hy, hx + 7, hy - 3, WHITE);
-                g.drawPixel(hx + 10, hy - 4, WHITE);
-                g.drawPixel(hx + 13, hy - 5, WHITE);
-            }
-            break;
-        }
-    }
 }
 
 void Scene::render(Adafruit_GFX& g) const {
-    const View v = view();
-    // Parallax: the far sky and hills follow the viewpoint a little, the branch fully
-    const float dx = v.x - kViews[0].x, dy = v.y - kViews[0].y;
-    drawSky(g, dx, dy, v.scale);
-    // A faint horizon of distant hills
-    for (int16_t x = 0; x < 128; x += 2) {
-        const float hx = x + dx * 0.08f;
-        const int16_t y = 58 + (int16_t)lroundf(sinf(hx * 0.05f) * 2.0f + sinf(hx * 0.13f + 1.0f));
-        g.drawPixel(x, y, WHITE);
+    const Camera cam = camera();
+    float x, y;
+
+    // Stars, the farthest layer: they barely move
+    for (const SkyStar& s : m_stars) {
+        const uint32_t period = s.period20 * 20u;
+        const uint32_t p = (m_t + s.phase20 * 20u) % period;
+        if (p >= period * 3 / 4) continue;   // each dims out for a quarter of its period
+        cam.project(s.x, s.y & 0x7F, DEPTH_STARS, &x, &y);
+        const int16_t sx = (int16_t)lroundf(x), sy = (int16_t)lroundf(y);
+        g.drawPixel(sx, sy, WHITE);
+        if ((s.y & 0x80) && p < period / 3) {   // the bright ones flare into a small cross
+            g.drawPixel(sx - 1, sy, WHITE); g.drawPixel(sx + 1, sy, WHITE);
+            g.drawPixel(sx, sy - 1, WHITE); g.drawPixel(sx, sy + 1, WHITE);
+        }
     }
-    // The branch reaching in from the top right, swaying with the wind
+
+    // The crescent moon: the outer disc minus a second one pushed up and to the right; its dark side
+    // is only hinted at by a dotted edge
+    cam.project(MOON_X, MOON_Y, DEPTH_MOON, &x, &y);
+    const int16_t mx = (int16_t)lroundf(x), my = (int16_t)lroundf(y);
+    const int16_t r = (int16_t)lroundf(11.0f * cam.zoomAt(DEPTH_MOON)), cut = r - 1;
+    const int16_t cx = mx + r / 2 + 1, cy = my - r / 4;
+    for (int16_t yy = -r; yy <= r; ++yy) {
+        for (int16_t xx = -r; xx <= r; ++xx) {
+            if (xx * xx + yy * yy > r * r) continue;
+            const int16_t ix = mx + xx - cx, iy = my + yy - cy;
+            if (ix * ix + iy * iy <= cut * cut) continue;
+            g.drawPixel(mx + xx, my + yy, WHITE);
+        }
+    }
+    for (uint8_t i = 0; i < 48; i += 3) {
+        const float a = i * TAU / 48;
+        const int16_t ex = mx + (int16_t)lroundf(cosf(a) * r), ey = my + (int16_t)lroundf(sinf(a) * r);
+        const int16_t ix = ex - cx, iy = ey - cy;
+        if (ix * ix + iy * iy <= cut * cut) g.drawPixel(ex, ey, WHITE);
+    }
+
+    // Wisps of cloud, nearer than the moon: they drift across it
+    const float cz = cam.zoomAt(DEPTH_CLOUDS);
+    cam.project(drift(m_t, 2.0f, 110.0f), MOON_Y + 4, DEPTH_CLOUDS, &x, &y);
+    drawWisp(g, x, y, cz);
+    cam.project(drift(m_t, 3.2f, 260.0f), 40.0f, DEPTH_CLOUDS, &x, &y);
+    drawWisp(g, x, y, cz);
+
+    // A faint horizon of distant hills, nearer still
+    for (int16_t hx = -60; hx < 190; hx += 2) {
+        const float hy = 58.0f + sinf(hx * 0.05f) * 2.0f + sinf(hx * 0.13f + 1.0f);
+        cam.project(hx, hy, DEPTH_HILLS, &x, &y);
+        g.drawPixel((int16_t)lroundf(x), (int16_t)lroundf(y), WHITE);
+    }
+
+    // The branch and its petals, nearest: they move fully with the camera
     const float sway = sinf(m_t / 700.0f) * 0.8f + m_wind * 0.08f;
-    drawBranch(g, v, 1.0f, 1.0f, sway);
-    m_petals.draw(g);
+    drawBranch(g, branchView(), 1.0f, 1.0f, sway);
+    m_petals.draw(g, cam, DEPTH_BRANCH);
 }
 
 } // namespace sakura
