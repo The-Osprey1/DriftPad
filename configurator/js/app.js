@@ -384,15 +384,19 @@
     }
 
     // Screen tab: when the screensaver starts by itself and what it plays (stored settings)
-    const SAVER_ANIMS = ["Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp"];
+    const SAVER_ANIMS = ["Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura"];
+    const THEME_NAMES = ["Drift", "Cherry blossom"];
     function minutesText(n) { return `${n} minute${n === 1 ? "" : "s"}`; }
     function renderSaver(isConn) {
         const s = session;
         const feature = isConn && s.hasFeature("screensaver_idle");
         const c = s.confirmed;
         const ready = feature && !!c && Number.isInteger(c.saver_idle);
-        const idle = $("saverIdle"), anim = $("saverAnim");
+        const idle = $("saverIdle"), anim = $("saverAnim"), theme = $("themeSelect");
         idle.disabled = anim.disabled = !ready;
+        const themeReady = isConn && s.hasFeature("themes") && !!c && Number.isInteger(c.theme);
+        theme.disabled = !themeReady;
+        if (themeReady && document.activeElement !== theme) theme.value = String(c.theme);
         $("saverPlayBtn").disabled = !isConn || s.opState("display") === "pending";
         $("saverSaveBtn").disabled = !ready || s.dirty !== true;
         if (ready) {
@@ -793,7 +797,7 @@
             $(id).disabled = !isConn || displayPending || !!(display && !display.available);
         }
         $("displayRefreshBtn").disabled = !isConn || displayPending || !s.hasFeature("display_status");
-        const animNames = ["Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp"];
+        const animNames = SAVER_ANIMS;
         $("animSelect").options[0].textContent = !isConn || s.hasFeature("display_status") ? "Shuffle all" : "All animations";
         const reported = !display ? "Display state has not been read." : !display.available ? "Device reports: OLED unavailable." :
             display.mode === "screen" ? "Device reports: selected screen active." :
@@ -940,6 +944,11 @@
             const n = Number(e.target.value);
             run("Screensaver", () => session.setSetting("saver_idle", n),
                 n === 0 ? "The screensaver no longer starts by itself (applied, save to keep it)." : `The screensaver starts after ${minutesText(n)} idle (applied, save to keep it).`);
+        });
+        $("themeSelect").addEventListener("change", e => {
+            const n = Number(e.target.value);
+            run("Theme", () => session.setSetting("theme", n),
+                () => `Theme: ${THEME_NAMES[n]}. The screensaver is now ${session.confirmed && session.confirmed.saver_anim >= 0 ? SAVER_ANIMS[session.confirmed.saver_anim] : "all animations in turn"} (applied, save to keep it).`);
         });
         $("saverAnim").addEventListener("change", e => {
             const n = Number(e.target.value);

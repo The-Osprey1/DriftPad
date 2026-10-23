@@ -12,7 +12,7 @@ if str(TESTS_DIR) not in sys.path:
 import host_build as hb
 
 
-COUNT = 6
+COUNT = 7
 DWELL = 20000
 WIPE = 1500
 U32 = 0xFFFFFFFF
@@ -59,7 +59,7 @@ class ScreensaverPlayer(unittest.TestCase):
     def test_each_shuffle_bag_uses_every_animation_once(self):
         for seed in (0, 1, 2, 12345678, U32):
             with self.subTest(seed=seed):
-                shown = self.sequence(seed, 300)
+                shown = self.sequence(seed, COUNT * 40)
                 for begin in range(0, len(shown), COUNT):
                     self.assertEqual(sorted(shown[begin:begin + COUNT]), list(range(COUNT)))
 

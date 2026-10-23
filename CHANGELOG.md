@@ -11,6 +11,16 @@ work with this firmware and says so.
 
 ### Changed
 
+- Screen themes: **Cherry blossom** joins the original **Drift** look. It has its own title (a
+  branch grows and blossoms, a 桜 seal stamps in), a seal-like key card with plain lettering,
+  petals thrown up by each key press, a blossoming sprig on the standby screen, paper doors that
+  slide shut on a layer change, and the new **Sakura** screensaver (animation 6: petals on gusts of
+  wind under a crescent moon, wisps of cloud and a few stars). Its camera starts far off, pushes in
+  slowly on the blossoms (14 s), rests, pulls back out the same way and starts again. The branch and
+  petals take the full zoom, the hills and clouds part of it, and the moon and stars stay still, so
+  the zoom is easy to see. Every screen works the same in both themes. Chosen with `SET_THEME`
+  (feature `themes`), the knob menu's new Screen theme page or the configurator's Screen tab, and
+  stored in the settings; choosing a theme also picks its screensaver.
 - The screensaver starts by itself after 2 minutes idle (no trusted key press, knob input or
   mutating command). The time (Never, or 1 to 60 minutes) and the animation are stored settings:
   `SET_SAVER_IDLE`, `SET_SAVER_ANIM`, `GET_CONFIG` `saver_idle`/`saver_anim`, INFO feature

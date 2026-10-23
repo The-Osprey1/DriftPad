@@ -26,8 +26,8 @@
         MODIFIERS_MASK: 15,
         SAVER_IDLE_MAX_MIN: 60,
         SAVER_IDLE_DEFAULT_MIN: 2,
-        SAVER_ANIM_COUNT: 6,
-        THEME_COUNT: 1,
+        SAVER_ANIM_COUNT: 7,
+        THEME_COUNT: 2,
         PROTOCOL_VERSION: 2,
         LINE_MAX_LEN: 160,
         REQUEST_ID_MAX_LEN: 12,
@@ -69,6 +69,7 @@
         stream_hz_max: LIMITS_CMM.STREAM_HZ_MAX,
         saver_idle_max: LIMITS_CMM.SAVER_IDLE_MAX_MIN,
         saver_anims: LIMITS_CMM.SAVER_ANIM_COUNT,
+        themes: LIMITS_CMM.THEME_COUNT,
     });
 
     // -----------------------------------------------------------------------------------------
@@ -194,7 +195,7 @@
     const FEATURES = Object.freeze([
         "keymap", "layers", "rapid_trigger", "telemetry", "timing", "raw", "sim", "display",
         "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status",
-        "key_modifiers", "screensaver_idle",
+        "key_modifiers", "screensaver_idle", "themes",
     ]);
 
     // Simulated travel accepted by SIM <key> <mm> (firmware: 0.00 .. 4.00 mm).

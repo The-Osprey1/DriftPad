@@ -239,7 +239,7 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     static const char* const FEATURES[] = { "keymap", "layers", "rapid_trigger", "telemetry", "timing",
                                             "raw", "sim", "display", "guided_calibration", "boot_output",
                                             "settings_ab", "display_status", "encoder_status",
-                                            "key_modifiers", "screensaver_idle" };
+                                            "key_modifiers", "screensaver_idle", "themes" };
     for (const char* f : FEATURES) w.str(f);
     w.endArray();
     w.key("limits").beginObject();
@@ -254,6 +254,7 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     w.key("stream_hz_max").u32(limits::STREAM_HZ_MAX);
     w.key("saver_idle_max").u32(limits::SAVER_IDLE_MAX_MIN);
     w.key("saver_anims").u32(limits::SAVER_ANIM_COUNT);
+    w.key("themes").u32(limits::THEME_COUNT);
     w.endObject();
     writeCalibration(w);
     writeOutput(w);
@@ -274,6 +275,7 @@ HandlerResult cmdGetConfig(const Args&, Reply& r, void*) {
     w.key("boot_output").boolean(c.bootOutput);
     w.key("saver_idle").u32(c.saverIdleMin);
     w.key("saver_anim").i32(c.saverAnim);
+    w.key("theme").u32(c.theme);
     w.key("dirty").boolean(configIsDirty());
     w.key("settings_seq").u32(configSettingsSeq());
     w.key("layers").beginArray();
@@ -687,12 +689,26 @@ HandlerResult cmdSetSaverAnim(const Args& a, Reply& r, void*) {
     if (!proto::keywordIs(a[0], "shuffle")) {
         uint32_t v;
         ParseResult pr = proto::parseUint(a[0], 0, limits::SAVER_ANIM_COUNT - 1, v);
-        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 5, or SHUFFLE");
+        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 6, or SHUFFLE");
         anim = (int32_t)v;
     }
     ConfigStatus st = configSetSaverAnim((int8_t)anim);
     if (st != ConfigStatus::Ok) return configError(r, st, "animation rejected");
     JsonWriter& w = r.ok();
+    w.key("saver_anim").i32(configGet().saverAnim);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetTheme(const Args& a, Reply& r, void*) {
+    wakeDisplay();
+    uint32_t theme;
+    ParseResult pr = proto::parseUint(a[0], 0, limits::THEME_COUNT - 1, theme);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "theme must be 0 (Drift) or 1 (Cherry blossom)");
+    ConfigStatus st = configSetTheme((uint8_t)theme);
+    if (st != ConfigStatus::Ok) return configError(r, st, "theme rejected");
+    JsonWriter& w = r.ok();
+    w.key("theme").u32(configGet().theme);
     w.key("saver_anim").i32(configGet().saverAnim);
     writeApplied(w);
     return HandlerResult::Done;
@@ -803,7 +819,7 @@ HandlerResult cmdAnim(const Args& a, Reply& r, void*) {
     if (a.count == 1) {
         uint32_t v;
         ParseResult pr = proto::parseUint(a[0], 0, OLED_ANIM_COUNT - 1, v);
-        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 5 (omit it to shuffle)");
+        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 6 (omit it to shuffle)");
         idx = (int32_t)v;
     }
     oledSetScreensaverAnim((int8_t)idx);
@@ -868,6 +884,7 @@ const proto::CommandDef TABLE[] = {
     { "SET_BOOT_OUTPUT", nullptr, 1, 1, cmdSetBootOutput },
     { "SET_SAVER_IDLE", nullptr,  1, 1, cmdSetSaverIdle },
     { "SET_SAVER_ANIM", nullptr,  1, 1, cmdSetSaverAnim },
+    { "SET_THEME",     nullptr,   1, 1, cmdSetTheme },
     { "SIM",           nullptr,   1, 2, cmdSim },
     { "SCAN_RATE",     nullptr,   0, 0, cmdScanRate },
     { "TIMING",        nullptr,   0, 1, cmdTiming },

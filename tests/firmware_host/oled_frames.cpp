@@ -16,6 +16,9 @@ static void forget_state_history() {
     s_menuRequested = false;
 }
 
+// The theme every scene and intro frame is drawn in (0 Drift, 1 Cherry blossom)
+static uint8_t g_sceneTheme = 0;
+
 // No key has been pressed or focused before this frame (for scenes that are not a press sequence)
 static void forget_press_history() {
     s_focusKey = -1;
@@ -31,7 +34,21 @@ void host_clock_advance_us(uint64_t);
 // Scenes: 0 standby, 1 key travelling, 2 two keys actuated, 3 ENT bottomed out, 4 standby with
 // calibration missing, 5 key travelling with output off, 6/7 held key backing off with Rapid Trigger
 // on/off,
-// 10..13 tuning menu pages, 20 splash, 30..35 screensaver animation N (its frame 40)
+// 10..14 tuning menu pages, 20 splash, 30..36 screensaver animation N (its frame 40),
+// 40/41 layer change (40: the middle of it, 41: 150 ms in), 42 a key press 150 ms ago
+void oled_scene_theme(int theme) {
+    g_sceneTheme = (uint8_t)theme;
+    s_introTheme = -1;
+    s_keyPetals.clear();
+}
+int oled_key_petals() { return s_keyPetals.live(); }
+// The Sakura screensaver's layers on screen now: the branch's base x, y, its scale and angle, then
+// the moon's centre x, y
+void oled_sakura_view(float* out) {
+    const sakura::View v = s_sakuraScene.branchView();
+    out[0] = v.x; out[1] = v.y; out[2] = v.scale; out[3] = v.angle;
+    s_sakuraScene.camera().project(sakura::Scene::MOON_X, sakura::Scene::MOON_Y, sakura::Scene::DEPTH_MOON, &out[4], &out[5]);
+}
 int oled_scene(int id, uint8_t* out) {
     forget_state_history();
     static bool started = false;
@@ -50,6 +67,10 @@ int oled_scene(int id, uint8_t* out) {
     s.rapidTrigger = true;
     s.actuationMm = 1.2f;
     s.rtSensMm = 0.2f;
+    s.theme = g_sceneTheme;
+    s_keyPetals.clear();
+    s_keyPetals.seed(7);
+    s_keyPetalsAt = millis();
 
     s_screensaverActive = false;
     s_menuLastActive = millis() - 10000;
@@ -98,20 +119,44 @@ int oled_scene(int id, uint8_t* out) {
     } else if (id == 3) {
         s.keys[14].travelMm = 4.0f; s.keys[14].pressed = true; s.keys[14].pressCount = 1;
         s.lastActiveKey = 14;
-    } else if (id >= 10 && id <= 13) {
+    } else if (id == 40 || id == 41) {
+        s.activeLayer = 2;
+        s.outputStatus = display_link::OUTPUT_ON;
+    } else if (id == 42) {
+        // key 5 pressed 150 ms ago and still held: the press effect under way
+        s.keys[5].travelMm = 1.85f; s.keys[5].pressed = true; s.keys[5].pressCount = 1; s.lastActiveKey = 5;
+        s.outputStatus = display_link::OUTPUT_ON;
+        s_prevFocusActuated = false;
+        memset(s_prevActuated, 0, sizeof s_prevActuated);
+        memset(s_keyFlash, 0, sizeof s_keyFlash);
+        display_link::publish(s);
+        display_link::read(s_view);
+        s_haveView = true;
+        s_menuVisible = false; s_modeTransition = false;
+        for (int f = 0; f < 5; f++) {
+            renderFullScreen();
+            host_clock_advance_us(33000);
+        }
+    } else if (id >= 10 && id <= 14) {
         s.activeLayer = id == 13 ? 1 : 0;
         s_currentMenu = (MenuMode)(id - 10);
         s_menuLastActive = millis();
         s_menuRequested = true;
     }
 
-    s_menuVisible = id >= 10 && id <= 13;   // scenes show their screen, not a wipe towards it
+    s_menuVisible = id >= 10 && id <= 14;   // scenes show their screen, not a wipe towards it
     s_modeTransition = false;
     display_link::publish(s);
     display_link::read(s_view);
     s_haveView = true;
     s_display.clearDisplay();
-    if (id >= 30 && id <= 35) {
+    if (id == 40 || id == 41) {
+        // The layer was 2 all along, so start the change by hand: the flash began 650 or 150 ms ago
+        s_layerSeen = 2;
+        s_layerFlashActive = true;
+        s_layerFlashAt = millis() - (id == 40 ? 650 : 150);
+    }
+    if (id >= 30 && id <= 36) {
         startScreensaver(millis(), (int8_t)(id - 30));
         s_ssPlayer.start(millis(), (int8_t)(id - 30), 1);
         resetScreensaverAnimations(1);
@@ -321,6 +366,7 @@ int oled_intro_frame(uint32_t t_ms, uint8_t* out) {
     for (int i = 0; i < 16; i++) strcpy(s.keys[i].label, labels[i]);
     s.lastActiveKey = -1; s.rapidTrigger = true; s.actuationMm = 1.2f; s.rtSensMm = 0.2f;
     s.outputStatus = display_link::OUTPUT_NEEDS_CAL;
+    s.theme = g_sceneTheme;
     display_link::publish(s);
     display_link::read(s_view);
     s_haveView = true;

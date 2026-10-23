@@ -33,6 +33,12 @@ bool encoderMenuApply(MenuMode page, int32_t delta) {
             if (l >= NUM_LAYERS) l = 0;
             return configSetActiveLayer((uint8_t)l) == ConfigStatus::Ok;
         }
+        case MenuMode::THEME: {
+            int8_t t = (int8_t)cfg.theme + (delta > 0 ? 1 : -1);
+            if (t < 0) t = limits::THEME_COUNT - 1;
+            if (t >= (int8_t)limits::THEME_COUNT) t = 0;
+            return configSetTheme((uint8_t)t) == ConfigStatus::Ok;
+        }
         default:
             return false;
     }

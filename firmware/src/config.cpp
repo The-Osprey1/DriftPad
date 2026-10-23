@@ -296,6 +296,22 @@ ConfigStatus configSetSaverIdle(uint8_t minutes) {
     return ConfigStatus::Ok;
 }
 
+int8_t configThemeScreensaver(uint8_t theme) {
+    static const int8_t kThemeSaver[limits::THEME_COUNT] = {
+        -1,   // Drift: every animation in turn
+        6,    // Cherry blossom: Sakura
+    };
+    return theme < limits::THEME_COUNT ? kThemeSaver[theme] : -1;
+}
+
+ConfigStatus configSetTheme(uint8_t theme) {
+    if (theme >= limits::THEME_COUNT) return ConfigStatus::OutOfRange;
+    s_settings.theme = theme;
+    s_settings.saverAnim = configThemeScreensaver(theme);
+    updateDirty();
+    return ConfigStatus::Ok;
+}
+
 ConfigStatus configSetSaverAnim(int8_t anim) {
     if (anim < -1 || anim >= (int8_t)limits::SAVER_ANIM_COUNT) return ConfigStatus::OutOfRange;
     s_settings.saverAnim = anim;

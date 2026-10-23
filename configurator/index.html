@@ -267,7 +267,7 @@
                 <label for="animSelect">Screensaver animation</label>
                 <select id="animSelect" disabled aria-describedby="displayHint">
                     <option value="-1">Shuffle all</option><option value="0">Starfield</option><option value="1">Plasma</option>
-                    <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option>
+                    <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option><option value="6">Sakura</option>
                 </select>
                 <button id="screensaverBtn" class="btn btn-sm" type="button" disabled>Play screensaver</button>
                 <button id="screensaverStopBtn" class="btn btn-sm" type="button" disabled>Stop screensaver</button>
@@ -294,8 +294,16 @@
 <section id="panel-screen" role="tabpanel" aria-labelledby="tab-screen" class="panel" hidden>
     <div class="card saver-card">
         <div class="card-header">
-            <h2 class="card-title">Screensaver</h2>
+            <h2 class="card-title">Theme and screensaver</h2>
             <span id="saverBadge" class="badge">Not connected</span>
+        </div>
+        <div class="saver-row">
+            <label for="themeSelect">Theme</label>
+            <select id="themeSelect" disabled aria-describedby="themeHint">
+                <option value="0">Drift (the original look)</option>
+                <option value="1">Cherry blossom</option>
+            </select>
+            <span id="themeHint" class="hint">Changes the pad's whole look: its title, key card, press effect, layer change and screensaver. Everything works the same in every theme. Also on the pad: hold the knob, then press until Screen theme.</span>
         </div>
         <div class="saver-row">
             <label for="saverIdle">Start by itself after</label>
@@ -306,7 +314,7 @@
             <label for="saverAnim">Animation</label>
             <select id="saverAnim" disabled aria-describedby="saverHint">
                 <option value="-1">Shuffle all</option><option value="0">Starfield</option><option value="1">Plasma</option>
-                <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option>
+                <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option><option value="6">Sakura</option>
             </select>
             <button id="saverPlayBtn" class="btn btn-sm" type="button" disabled>Play now</button>
             <button id="saverSaveBtn" class="btn btn-sm btn-primary" type="button" disabled>Save to the pad</button>

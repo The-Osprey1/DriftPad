@@ -47,9 +47,9 @@ constexpr uint8_t SAVER_IDLE_MAX_MIN     = 60;
 constexpr uint8_t SAVER_IDLE_DEFAULT_MIN = 2;
 // Built-in screensaver animations (OLED_ANIM_COUNT in oled.h); -1 shuffles them. A stored
 // animation this firmware does not have plays as shuffle.
-constexpr uint8_t SAVER_ANIM_COUNT = 6;
-// Screen themes (0 = Drift). A stored theme this firmware does not have draws as Drift.
-constexpr uint8_t THEME_COUNT = 1;
+constexpr uint8_t SAVER_ANIM_COUNT = 7;
+// Screen themes: 0 Drift, 1 Cherry blossom. A stored theme this firmware does not have draws as Drift.
+constexpr uint8_t THEME_COUNT = 2;
 
 // Serial protocol bounds
 constexpr uint8_t  PROTOCOL_VERSION   = 2;

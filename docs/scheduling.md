@@ -39,7 +39,7 @@ transfer (about 23 ms at 100 kHz) or a bus scan.
 
 Normal idle leaves the selected screen in place. Screensaver and sleep modes start only through
 explicit requests. The screensaver player on core 1 handles a fixed animation or a shuffled bag of
-all six, with a 20-second dwell and a 1.5-second wipe. Its private random generator keeps playlist
+all seven, with a 20-second dwell and a 1.5-second wipe. Its private random generator keeps playlist
 order independent of particle animation randomness. A delayed pass performs bounded catch-up
 instead of walking an unbounded backlog of unseen screens. Animation motion uses elapsed time,
 so extra redraws do not speed it up and repeated draws at the same time do not advance it.

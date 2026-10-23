@@ -300,7 +300,7 @@ class OledFrames(unittest.TestCase):
         self.lib.oled_manual_step.argtypes = [ctypes.c_int, ctypes.c_uint32]
         self.lib.oled_manual_reset()
         self.assertEqual(self.lib.oled_manual_step(0, 10000), -1)
-        for page in (0, 1, 2, 3, -1):
+        for page in (0, 1, 2, 3, 4, -1):   # sensitivity, actuation, RT on/off, layer, theme, closed
             self.assertEqual(self.lib.oled_manual_step(1, 500), page)
             if page >= 0:
                 self.assertEqual(self.lib.oled_manual_step(0, 300), page)  # finish the entry wipe
@@ -570,6 +570,140 @@ class OledFrames(unittest.TestCase):
         for dt in (46000, 200000, 3600000):
             self.lib.oled_idle_step(dt, 0)
             self.assertEqual(self.lib.oled_idle_hidden(), 0, "idle hid the selected screen")
+
+
+class CherryBlossomTheme(unittest.TestCase):
+    """Theme 1 restyles the screens; every screen keeps its place and its information."""
+
+    @classmethod
+    def setUpClass(cls):
+        import ctypes
+        cls.lib = oh.load()
+        cls.lib.oled_intro_frame.argtypes = [ctypes.c_uint32, ctypes.c_char_p]
+
+    def setUp(self):
+        self.lib.oled_scene_theme(1)
+
+    def tearDown(self):
+        self.lib.oled_scene_theme(0)
+
+    def both(self, scene):
+        self.lib.oled_scene_theme(0)
+        drift = oh.frame(self.lib, scene)
+        self.lib.oled_scene_theme(1)
+        return drift, oh.frame(self.lib, scene)
+
+    def intro(self, ms):
+        import ctypes
+        buf = ctypes.create_string_buffer(1024)
+        self.lib.oled_intro_frame(ms, buf)
+        return bytes(buf.raw)
+
+    @staticmethod
+    def lit(fb, x0, y0, x1, y1):
+        return sum(oh.pixel(fb, x, y) for x in range(x0, x1) for y in range(y0, y1))
+
+    def test_every_screen_is_restyled_but_the_key_map_and_header_stay(self):
+        for scene in ("standby", "travelling", "actuated", "menu_theme"):
+            with self.subTest(scene=scene):
+                drift, sakura = self.both(scene)
+                self.assertNotEqual(drift, sakura, "the theme changes nothing")
+                if scene != "menu_theme":
+                    # the layer caption (rows 0..8) and the keypad map (x 85..127) are the same information
+                    self.assertEqual(self.lit(drift, 0, 0, 80, 9), self.lit(sakura, 0, 0, 80, 9))
+                    if scene == "travelling":   # a fresh press differs on purpose: a ring in Drift, petals here
+                        self.assertEqual(self.lit(drift, 85, 10, 128, 52), self.lit(sakura, 85, 10, 128, 52))
+
+    def test_the_key_card_is_a_seal_and_a_pressed_key_a_solid_stamp(self):
+        fb = oh.frame(self.lib, "travelling")
+        # double border: outer at x 2, inner at x 4 (rows 23..41), clear between them
+        self.assertEqual([oh.pixel(fb, x, 30) for x in (2, 3, 4)], [1, 0, 1])
+        pressed = oh.frame(self.lib, "actuated")
+        self.assertEqual([oh.pixel(pressed, x, 30) for x in (2, 3, 4, 5)], [1, 1, 0, 1],
+                         "a solid stamp with a dark inner border")
+
+    def test_a_key_press_throws_petals_instead_of_the_ring(self):
+        oh.frame(self.lib, "key_press")
+        self.assertGreater(self.lib.oled_key_petals(), 0, "no petals from the press")
+        self.lib.oled_scene_theme(0)
+        oh.frame(self.lib, "key_press")
+        self.assertEqual(self.lib.oled_key_petals(), 0, "Drift has no petals")
+
+    def test_standby_shows_a_sprig_in_place_of_the_empty_scale(self):
+        drift, sakura = self.both("standby")
+        self.assertGreater(self.lit(sakura, 4, 52, 78, 61), self.lit(drift, 4, 52, 78, 61))
+        self.assertEqual(self.lit(sakura, 0, 61, 80, 64), 0, "the sprig stays above the bottom rows")
+
+    def test_a_layer_change_slides_paper_doors_shut_and_open(self):
+        start = oh.frame(self.lib, "layer_change_start")
+        shut = oh.frame(self.lib, "layer_change")
+        # 150 ms in, the doors are on their way: their top rail does not yet cross the middle
+        self.assertLess(sum(oh.pixel(start, x, 0) for x in range(128)), 128, "the doors met too soon")
+        full_column = lambda fb, xs: any(all(oh.pixel(fb, x, y) for y in range(64)) for x in xs)
+        self.assertTrue(full_column(start, range(0, 64)) and full_column(start, range(64, 128)),
+                        "both doors (their lattice runs top to bottom) are on screen")
+        # in the middle of the change they are shut, and a paper strip names the layer
+        self.assertEqual(sum(oh.pixel(shut, 127, y) for y in range(64)), 64)
+        self.assertGreater(self.lit(shut, 30, 30, 98, 46), 80, "no layer name on the strip")
+
+    def test_the_title_grows_a_branch_stamps_the_seal_and_says_the_status(self):
+        early, seal, end = self.intro(300), self.intro(3000), self.intro(5000)
+        self.assertLess(self.lit(early, 0, 0, 128, 64), self.lit(seal, 0, 0, 128, 64))
+        self.assertEqual(self.lit(early, 96, 0, 128, 30), 0, "the seal is there before it is stamped")
+        self.assertGreater(self.lit(seal, 101, 5, 121, 25), 250, "the seal (a 20 x 20 stamp) is missing")
+        self.assertGreater(self.lit(end, 0, 54, 128, 63), 40, "the status line is not typed in")
+
+    def test_sakura_screensaver_moves_and_keeps_petals_in_the_air(self):
+        import ctypes
+        self.lib.oled_animation_reset.argtypes = [ctypes.c_uint32]
+        self.lib.oled_animation_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
+        self.lib.oled_animation_reset(5)
+        frames = []
+        for _ in range(4):
+            buf = ctypes.create_string_buffer(1024)
+            self.lib.oled_animation_step(6, 500, buf)
+            frames.append(bytes(buf.raw))
+        self.assertEqual(len(set(frames)), 4, "the scene stands still")
+        # the moon (left) and the branch (top right) are always there
+        for fb in frames:
+            self.assertGreater(self.lit(fb, 13, 12, 44, 42), 60)
+            self.assertGreater(self.lit(fb, 64, 0, 128, 30), 40)
+
+    def sakura_cycle(self):
+        """The branch base (x, y, scale, angle) and moon centre (x, y) every 33 ms over one 34 s cycle"""
+        import ctypes
+        self.lib.oled_animation_reset.argtypes = [ctypes.c_uint32]
+        self.lib.oled_animation_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
+        self.lib.oled_animation_reset(9)
+        buf = ctypes.create_string_buffer(1024)
+        out = (ctypes.c_float * 6)()
+        layers = []
+        for _ in range(int(34000 / 33)):
+            self.lib.oled_animation_step(6, 33, buf)
+            self.lib.oled_sakura_view(out)
+            layers.append(tuple(out))
+        return layers
+
+    def test_sakura_camera_starts_far_pushes_in_then_pulls_back(self):
+        layers = self.sakura_cycle()
+        scales = [v[2] for v in layers]
+        self.assertAlmostEqual(scales[0], 0.75, places=3, msg="does not start far off")
+        top = scales.index(max(scales))
+        self.assertAlmostEqual(max(scales), 1.7, places=3, msg="never comes close")
+        self.assertTrue(all(b >= a for a, b in zip(scales[:top], scales[1:top + 1])), "the push-in wavers")
+        self.assertTrue(all(b <= a for a, b in zip(scales[top:], scales[top + 1:])), "the pull-back wavers")
+        self.assertLess(scales[-1], 0.8, "does not return to far")
+        for a, b in zip(layers, layers[1:]):
+            self.assertLess(abs(b[0] - a[0]) + abs(b[1] - a[1]), 2.0, "the branch jumped")
+        self.assertEqual({v[3] for v in layers}, {0.0}, "the camera tilts")
+        self.assertGreaterEqual(min(v[0] for v in layers), 128, "the branch's cut end came on screen")
+
+    def test_sakura_branch_grows_against_a_still_moon(self):
+        layers = self.sakura_cycle()
+        span = lambda i: max(v[i] for v in layers) - min(v[i] for v in layers)
+        self.assertGreater(span(0), 20, "the branch hardly moves as the camera zooms")
+        # the moon is the fixed point the eye measures the zoom against
+        self.assertEqual((span(4), span(5)), (0, 0), "the moon moves")
 
 
 if __name__ == "__main__":

@@ -379,6 +379,17 @@ class TestPersistence(unittest.TestCase):
         cfg = self.d.config()
         self.assertEqual((cfg["saver_idle"], cfg["saver_anim"]), (2, -1), "RESET restores the factory choices")
 
+    def test_a_theme_survives_a_save_and_brings_its_own_screensaver(self):
+        r = self.one("SET_THEME 1")
+        self.assertEqual((r["theme"], r["saver_anim"]), (1, 6), "Cherry blossom plays Sakura")
+        self.assertEqual(self.one("SET_SAVER_ANIM 2")["saver_anim"], 2, "another animation can still be chosen")
+        self.one("SAVE")
+        cfg = self.reboot().config()
+        self.assertEqual((cfg["theme"], cfg["saver_anim"]), (1, 2))
+        self.assertEqual(self.sector(0)[32 + OFF_THEME], 1)
+        r = self.one("SET_THEME 0")
+        self.assertEqual((r["theme"], r["saver_anim"]), (0, -1), "Drift shuffles every animation")
+
     def test_an_animation_or_theme_from_newer_firmware_falls_back_instead_of_failing(self):
         self.one("SET_ACTUATION 2.00")
         self.one("SAVE")                                # slot a, seq 1
