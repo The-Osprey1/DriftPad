@@ -9,6 +9,10 @@ int32_t s_lastReportedPosition = 0;
 
 uint8_t s_lastState = 0;
 
+// Diagnostics: last raw pin levels and debounced presses since boot
+uint8_t s_rawLevels = 0;
+uint32_t s_pressCount = 0;
+
 // Button debounce
 bool s_lastBtnState = false;
 bool s_clicked = false;
@@ -36,7 +40,10 @@ void encoderInit() {
     s_lastState = (a << 1) | b;
     s_position = 0;
     s_lastReportedPosition = 0;
-    s_lastBtnState = (digitalRead(ENCODER_SW_PIN) == LOW);
+    uint8_t sw = digitalRead(ENCODER_SW_PIN);
+    s_lastBtnState = (sw == LOW);
+    s_rawLevels = (uint8_t)((a ? 0x01 : 0) | (b ? 0x02 : 0) | (sw ? 0x04 : 0));
+    s_pressCount = 0;
 }
 
 void encoderUpdate() {
@@ -53,13 +60,16 @@ void encoderUpdate() {
     }
 
     // Debounce button
-    bool reading = (digitalRead(ENCODER_SW_PIN) == LOW);
+    uint8_t sw = digitalRead(ENCODER_SW_PIN);
+    s_rawLevels = (uint8_t)((a ? 0x01 : 0) | (b ? 0x02 : 0) | (sw ? 0x04 : 0));
+    bool reading = (sw == LOW);
     if (reading != s_lastBtnState) {
         if ((millis() - s_lastBtnDebounceTime) > DEBOUNCE_DELAY_MS) {
             s_lastBtnDebounceTime = millis();
             s_lastBtnState = reading;
             if (s_lastBtnState) {
                 s_clicked = true;
+                s_pressCount++;
             }
         }
     }
@@ -79,6 +89,18 @@ int32_t encoderGetDelta() {
 
 bool encoderIsPressed() {
     return s_lastBtnState;
+}
+
+uint8_t encoderRawLevels() {
+    return s_rawLevels;
+}
+
+int32_t encoderStepCount() {
+    return s_position;
+}
+
+uint32_t encoderPressCount() {
+    return s_pressCount;
 }
 
 bool encoderWasClicked() {

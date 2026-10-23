@@ -6,7 +6,7 @@ DriftPad speaks a line-based text protocol over its USB serial port (CDC, 115200
 [`firmware/src/commands.cpp`](../firmware/src/commands.cpp); `tests/test_contract_consistency.py`
 fails when this document and the table disagree. Detect capabilities with `INFO`: `protocol` is 2 and
 `features[]` lists what this firmware has (`keymap layers rapid_trigger telemetry timing raw sim
-display guided_calibration boot_output settings_ab display_status`). Firmware before 2.1.0 spoke protocol 1
+display guided_calibration boot_output settings_ab display_status encoder_status`). Firmware before 2.1.0 spoke protocol 1
 (replies without `cmd` or `id`); the configurator refuses it and says so.
 
 ## Limits
@@ -73,7 +73,7 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 | `INFO` (alias `HELLO`) | `type:"info", device:"DriftPad", hw, fw, protocol:2, build, build_date, features[], limits{actuation{min,max,default,step}, rt_sens{...}, layers, keys, label_max, label_chars, code_max, line_max, stream_hz_max}, calibration{state}, output{enabled, reason, active_keys[], suppressed_keys[], overflow, delivery}, settings{dirty, source, seq, load_errors[]}, uptime_ms`, plus optional `display{available, mode, animation, shuffle, dimmed}` when `display_status` is advertised |
 | `GET_CONFIG` | `type:"config", actuation, rt_sens, rt_enabled, active_layer, boot_output, dirty, settings_seq, layers[3][16]{idx, code, label}` |
 | `STATUS` | `type:"status", active_layer, last_key, keys[16]{idx, pressed, travel, label}, output{...}, calibration{state}, sim_mask, dirty`, plus optional `display{...}` when `display_status` is advertised |
-| `STREAM <0|1> [hz]` | `streaming, hz`; then `{"type":"telemetry","seq","t","layer","pressed"(bitmask),"active"(bitmask),"sim"(bitmask),"travel"[16 × cmm ints],"dirty"}` at `hz` (default 30, max 60). Streaming stops when the host closes the port. |
+| `STREAM <0|1> [hz]` | `streaming, hz`; then `{"type":"telemetry","seq","t","layer","pressed"(bitmask),"active"(bitmask),"sim"(bitmask),"travel"[16 × cmm ints],"knob"{a,b,sw,steps,presses},"dirty"}` at `hz` (default 30, max 60). `knob` (feature `encoder_status`) gives the raw encoder pin levels (1 = HIGH, contact open) and the quadrature steps and debounced presses counted since boot, for wiring checks. Streaming stops when the host closes the port. |
 | `SET_ACTUATION <mm>` | `actuation` + applied/persisted/dirty |
 | `SET_RT_SENS <mm>` | `rt_sens` + applied/persisted/dirty |
 | `SET_RT_ENABLE <bool>` | `rt_enabled` + applied/persisted/dirty |

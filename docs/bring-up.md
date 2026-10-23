@@ -69,7 +69,11 @@ blocked because calibration is missing. The rest-noise and range requirements ar
 4. Turn keyboard output on and test individual presses and releases in a blank text editor.
    Check numbers and Enter; verify Esc and macro/function keys with an appropriate key viewer,
    since those keys may produce no visible text. Check that no key remains held after release.
-5. Test the encoder and layer changes. Enable and save standalone mode only if keyboard output
+5. Test the encoder and layer changes. If turning or pressing the knob does nothing on the OLED,
+   watch the knob line under the pad on the configurator's Keys page: A and B should switch
+   between high and low while turning (4 steps per click), and the switch should read closed
+   while pressed. No change there means the signal never reaches GP20, GP21 or GP2; check the
+   knob's ground and signal wires. Enable and save standalone mode only if keyboard output
    should start automatically at future power-ups.
 
 Record the results in the [hardware acceptance procedure](hardware-acceptance.md). Passing these

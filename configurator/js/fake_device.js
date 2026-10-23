@@ -44,7 +44,7 @@
     const CAL_TRAVEL_MIN_CMM = 300;
     // INFO.features of the current firmware (firmware/src/commands.cpp, cmdInfo).
     const FEATURES = ["keymap", "layers", "rapid_trigger", "telemetry", "timing", "raw", "sim", "display",
-                      "guided_calibration", "boot_output", "settings_ab", "display_status"];
+                      "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status"];
     const TIMING_OPS = ["command", "telemetry", "save", "calibration", "publish", "display_request", "tx_drain"];
     const GAP_LIMITS_US = [1100, 1500, 2000, 5000, 10000, 50000];
 
@@ -811,7 +811,10 @@
             if (this.output.enabled) active = pressed & ~this.simMask;
             this._emit({
                 type: "telemetry", seq: this.frameSeq++, t: Date.now() - this.t0, layer: this.state.activeLayer,
-                pressed, active, sim: this.simMask, travel: this.travelCmm.slice(), dirty: this.dirty,
+                pressed, active, sim: this.simMask, travel: this.travelCmm.slice(),
+                // The simulated pad has no knob wiring: pins at rest (pulled HIGH), nothing counted
+                ...(this.has("encoder_status") ? { knob: { a: 1, b: 1, sw: 1, steps: 0, presses: 0 } } : {}),
+                dirty: this.dirty,
             });
         }
 

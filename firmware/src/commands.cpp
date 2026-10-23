@@ -10,6 +10,7 @@
 #include "keyboard_output.h"
 #include "oled.h"
 #include "display_link.h"
+#include "encoder.h"
 #include "settings_limits.h"
 
 namespace commands {
@@ -237,7 +238,7 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     w.key("features").beginArray();
     static const char* const FEATURES[] = { "keymap", "layers", "rapid_trigger", "telemetry", "timing",
                                             "raw", "sim", "display", "guided_calibration", "boot_output",
-                                            "settings_ab", "display_status" };
+                                            "settings_ab", "display_status", "encoder_status" };
     for (const char* f : FEATURES) w.str(f);
     w.endArray();
     w.key("limits").beginObject();
@@ -851,6 +852,12 @@ void sendTelemetry(uint32_t nowMs) {
         w.i32((int32_t)(HallManager::getKey(i).getTravelMm() * 100.0f + 0.5f));
     }
     w.endArray();
+    // Raw knob pins (1 = HIGH, contact open) and counters since boot, for wiring checks
+    const uint8_t knob = encoderRawLevels();
+    w.key("knob").beginObject();
+    w.key("a").u32(knob & 0x01 ? 1 : 0).key("b").u32(knob & 0x02 ? 1 : 0).key("sw").u32(knob & 0x04 ? 1 : 0);
+    w.key("steps").i32(encoderStepCount()).key("presses").u32(encoderPressCount());
+    w.endObject();
     w.key("dirty").boolean(configIsDirty());
     if (!s_events.send(*s_tx)) s_framesDropped++;
 }

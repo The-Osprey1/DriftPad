@@ -564,6 +564,16 @@
             telemetry.error ? `Live readings unavailable: ${telemetry.error}` :
             !(telemetry.active && telemetry.target && telemetry.hasFrame) ? "Waiting for live sensor readings…" :
             `${simulated ? "Simulated" : "Sensor"} travel: ${telemetry.travel[ui.key].toFixed(2)} mm · ${telemetry.pressed[ui.key] ? "Pressed" : "Released"} · ${telemetry.sending[ui.key] ? "Sending to computer" : "Not sending to computer"}`;
+        const knob = isConn && telemetry.active && telemetry.target && telemetry.hasFrame ? telemetry.knob : null;
+        const level = v => v ? "high" : "low";
+        $("knobState").textContent = !isConn ? "Connect the pad to check the knob." :
+            !session.hasFeature("encoder_status") ? "This firmware does not report the knob. Update it to check the knob's wiring." :
+            !knob ? "Waiting for knob readings…" :
+            `${SIMULATE ? "Simulated knob" : "Knob"}: A ${level(knob.a)} · B ${level(knob.b)} · switch ${knob.sw ? "open" : "closed (pressed)"} · ` +
+            `${knob.steps} step${knob.steps === 1 || knob.steps === -1 ? "" : "s"} turned · ${knob.presses} press${knob.presses === 1 ? "" : "es"} since power-up`;
+        $("knob").classList.toggle("pressed", !!knob && knob.sw === 0);
+        // 80 steps per turn on a 20-click encoder; the pointer follows the counted steps
+        $("knob").style.setProperty("--knob-angle", `${knob ? knob.steps * 4.5 : 0}deg`);
         $("keyTravelHint").textContent = simulated ?
             "Simulated readings do not verify a physical sensor. Travel is an estimate." :
             "Travel is an estimate; calibrate all 16 keys before testing keyboard output.";
@@ -785,7 +795,8 @@
 
     // ------------------------------------------------------------------ wiring
     function wire() {
-        $("studioLink").addEventListener("click", async e => {
+        // The published web page has no Studio, so its build leaves this link out
+        if ($("studioLink")) $("studioLink").addEventListener("click", async e => {
             e.preventDefault();
             if ((session.dirty || settings.pendingFields().length) && !await confirmDialog({
                 title: "Return to Studio?",

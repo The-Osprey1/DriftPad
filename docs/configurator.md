@@ -3,13 +3,14 @@
 `configurator/index.html` is one page that talks to the pad over WebSerial (Chrome, Edge or Opera). It
 needs no install and loads nothing from the network; open the file directly, or run
 `python tools/serve_configurator.py` and use `http://127.0.0.1:8791` when a browser or tool will not
-open files. The same page is published at https://the-osprey1.github.io/DriftPad/configurator/. `keymap.html` only redirects to `index.html#keys`.
+open files. The same page is published at https://the-osprey1.github.io/DriftPad/, with a **Download firmware**
+button in place of Back to Studio (`scripts/build-site.cjs`). `keymap.html` only redirects to `index.html#keys`.
 
 ## Pages
 
 | Tab | What it does |
 |---|---|
-| Keys | The pad as it sits on the desk. Pick a layer and a key, choose what it sends (or press it on your keyboard), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
+| Keys | The pad as it sits on the desk, with a live knob line under it (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
 | Sensitivity | Actuation and Rapid Trigger sensitivity (limits come from the pad's `INFO`), Rapid Trigger on/off, live key travel |
 | Device | Firmware version and build, keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
 

@@ -1,5 +1,5 @@
-# Publishes the Studio, the device configurator and the verified Pico firmware to GitHub Pages
-# on every push to main. The firmware comes from the full release-mode verification
+# Publishes the device configurator and the verified Pico firmware to GitHub Pages on every
+# push to main. The Studio simulator is not part of the site (it ships in the desktop app). The firmware comes from the full release-mode verification
 # (firmware.yml), so the site never offers a build that failed a suite.
 #
 # One-time setup: Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
@@ -31,27 +31,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm test
-      # Relative asset paths, so the site works under https://<owner>.github.io/DriftPad/
-      - run: npm run build
-        env:
-          DRIFTPAD_BASE: ./
+      # The configurator's own tests ran in the firmware job (test_configurator_js)
+      - name: Build the configurator site
+        run: node scripts/build-site.cjs
       - uses: actions/download-artifact@v4
         with:
           name: pico-firmware
           path: firmware-bin
-      # Set Up Pad (FlashFirmwareModal) offers ./driftpad.uf2, the same name the desktop app bundles
+      # The configurator's Download firmware button links to ./driftpad.uf2
       - name: Add the verified firmware to the site
         run: |
-          cp firmware-bin/firmware.uf2 dist/driftpad.uf2
-          mkdir -p dist/firmware
-          cp firmware-bin/build_manifest.json dist/firmware/build_manifest.json
-          (cd dist && sha256sum driftpad.uf2 > firmware/SHA256SUMS.txt)
+          cp firmware-bin/firmware.uf2 dist-site/driftpad.uf2
+          mkdir -p dist-site/firmware
+          cp firmware-bin/build_manifest.json dist-site/firmware/build_manifest.json
+          (cd dist-site && sha256sum driftpad.uf2 > firmware/SHA256SUMS.txt)
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: dist-site
 
   deploy:
     needs: build

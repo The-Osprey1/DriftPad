@@ -110,8 +110,9 @@
     }
 
     // Telemetry frame (docs/serial-protocol.md, STREAM; firmware sendTelemetry()):
-    //   "pressed", "active", "sim": 16-bit masks; "travel": 16 integers in centi-millimetres.
-    // Returns {pressed[16], sending[16], travel[16] in mm, simMask}, or null for anything else.
+    //   "pressed", "active", "sim": 16-bit masks; "travel": 16 integers in centi-millimetres;
+    //   optional "knob" (encoder_status): raw A/B/switch levels and step/press counts since boot.
+    // Returns {pressed[16], sending[16], travel[16] in mm, simMask, knob}, or null for anything else.
     function parseTelemetry(ev) {
         if (!isInt(ev.pressed) || !Array.isArray(ev.travel) || ev.travel.length !== NUM_KEYS) return null;
         const bit = (mask, i) => isInt(mask) && (mask & (1 << i)) !== 0;
@@ -123,7 +124,17 @@
             sending.push(bit(ev.active, i));
             travel.push(isInt(ev.travel[i]) ? ev.travel[i] / 100 : 0);
         }
-        return { pressed, sending, travel, simMask: isInt(ev.sim) ? ev.sim : 0 };
+        return { pressed, sending, travel, simMask: isInt(ev.sim) ? ev.sim : 0, knob: parseKnob(ev.knob) };
+    }
+
+    // Knob wiring readout. A level is 1 when the pin reads HIGH (contact open, pulled up).
+    // Anything malformed is unknown (null), never a guessed level.
+    function parseKnob(value) {
+        if (!value || typeof value !== "object") return null;
+        const level = v => v === 0 || v === 1;
+        if (!level(value.a) || !level(value.b) || !level(value.sw) ||
+            !isInt(value.steps) || !isInt(value.presses) || value.presses < 0) return null;
+        return { a: value.a, b: value.b, sw: value.sw, steps: value.steps, presses: value.presses };
     }
 
     // Optional on newer protocol-2 firmware. An absent or malformed field is unknown, never
@@ -153,7 +164,7 @@
             this.logLines = [];
             this.counters = { unmatched: 0, events: 0, telemetryFrames: 0, textLines: 0 };
             this.pageVisible = true;
-            this.telemetry = { wanted: new Set(), target: false, active: false, hz: null, error: null, pressed: new Array(NUM_KEYS).fill(false), sending: new Array(NUM_KEYS).fill(false), travel: new Array(NUM_KEYS).fill(0), frames: 0 };
+            this.telemetry = { wanted: new Set(), target: false, active: false, hz: null, error: null, pressed: new Array(NUM_KEYS).fill(false), sending: new Array(NUM_KEYS).fill(false), travel: new Array(NUM_KEYS).fill(0), knob: null, frames: 0 };
             this._telemetryChain = Promise.resolve();
             this._rawCollector = null;
             this._expectReboot = false;
@@ -178,6 +189,7 @@
             this.telemetry.pressed = new Array(NUM_KEYS).fill(false);
             this.telemetry.sending = new Array(NUM_KEYS).fill(false);
             this.telemetry.travel = new Array(NUM_KEYS).fill(0);
+            this.telemetry.knob = null;
             this.telemetry.hasFrame = false;
         }
 
@@ -403,6 +415,7 @@
                     this.telemetry.pressed = t.pressed;
                     this.telemetry.sending = t.sending;
                     this.telemetry.travel = t.travel;
+                    this.telemetry.knob = t.knob;
                     this.telemetry.frames++;
                     this.telemetry.hasFrame = true;
                     this.counters.telemetryFrames++;
@@ -667,6 +680,7 @@
                 this.telemetry.pressed = new Array(NUM_KEYS).fill(false);
                 this.telemetry.sending = new Array(NUM_KEYS).fill(false);
                 this.telemetry.travel = new Array(NUM_KEYS).fill(0);
+                this.telemetry.knob = null;
                 this.emit("telemetry", this.telemetry);
             }
             this._telemetryChain = this._telemetryChain.then(() => this._applyTelemetry()).catch(() => {});

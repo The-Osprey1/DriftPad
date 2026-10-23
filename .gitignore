@@ -69,6 +69,7 @@ venv/
 # Node modules & build output
 node_modules/
 dist/
+dist-site/
 
 # OS / editor files
 .DS_Store
