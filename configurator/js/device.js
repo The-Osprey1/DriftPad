@@ -109,7 +109,7 @@
             // Screensaver idle start (minutes, 0 = never) and animation (-1 = shuffle); null without screensaver_idle
             saver_idle: isInt(r.saver_idle) ? r.saver_idle : null,
             saver_anim: isInt(r.saver_anim) ? r.saver_anim : null,
-            theme: isInt(r.theme) ? r.theme : null,   // 0 Drift, 1 Cherry blossom; null without themes
+            theme: isInt(r.theme) ? r.theme : null,   // 0 Drift, 1 Cherry blossom, 2 Space; null without themes
             layers: r.layers.map(layer => layer.map(k => ({ code: k.code, label: k.label, mods: isInt(k.mods) ? k.mods : 0 }))),
             dirty: typeof r.dirty === "boolean" ? r.dirty : null,
             settings_seq: isInt(r.settings_seq) ? r.settings_seq : null,
@@ -537,8 +537,8 @@
         }
 
         // Applies one setting ("actuation" | "rt_sens" | "rt_enabled" | "active_layer" | "boot_output"
-        // | "saver_idle" (minutes, 0 = never) | "saver_anim" (0..6, -1 = shuffle) | "theme" (0 Drift,
-        // 1 Cherry blossom; the pad also switches its screensaver to the theme's own)).
+        // | "saver_idle" (minutes, 0 = never) | "saver_anim" (0..7, -1 = shuffle) | "theme" (0 Drift,
+        // 1 Cherry blossom, 2 Space; the pad also switches its screensaver to the theme's own)).
         // Resolves with the device's normalised value from the reply.
         async setSetting(field, value) {
             const spec = {

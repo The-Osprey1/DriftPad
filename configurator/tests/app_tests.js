@@ -354,7 +354,7 @@
         await connected();
         app().setView("device", false);
         const options = [...$("animSelect").options].map(o => o.textContent);
-        assertEq(options, ["Shuffle all", "Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura"]);
+        assertEq(options, ["Shuffle all", "Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura", "Orbit"]);
         const before = countVerb("ANIM");
         $("animSelect").value = "2";
         $("animSelect").dispatchEvent(new Event("change", { bubbles: true }));
@@ -477,6 +477,11 @@
         theme.dispatchEvent(new Event("change", { bubbles: true }));
         assert(await waitUntil(() => sim().device.state.theme === 1), "theme sent");
         assert(await waitUntil(() => $("saverAnim").value === "6"), `screensaver follows: ${$("saverAnim").value}`);
+        // Space brings Orbit
+        theme.value = "2";
+        theme.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.theme === 2), "Space sent");
+        assert(await waitUntil(() => $("saverAnim").value === "7"), `screensaver follows: ${$("saverAnim").value}`);
         theme.value = "0";
         theme.dispatchEvent(new Event("change", { bubbles: true }));
         assert(await waitUntil(() => sim().device.state.theme === 0));

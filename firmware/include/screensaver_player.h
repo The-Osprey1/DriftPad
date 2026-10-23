@@ -5,7 +5,7 @@
 
 namespace screensaver {
 
-constexpr int8_t COUNT = 7;
+constexpr int8_t COUNT = 8;
 constexpr uint32_t DWELL_MS = 20000;
 constexpr uint32_t TRANSITION_MS = 1500;
 

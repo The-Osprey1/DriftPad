@@ -300,6 +300,7 @@ int8_t configThemeScreensaver(uint8_t theme) {
     static const int8_t kThemeSaver[limits::THEME_COUNT] = {
         -1,   // Drift: every animation in turn
         6,    // Cherry blossom: Sakura
+        7,    // Space: Orbit
     };
     return theme < limits::THEME_COUNT ? kThemeSaver[theme] : -1;
 }

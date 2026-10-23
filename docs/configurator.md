@@ -13,7 +13,7 @@ button in place of Back to Studio (`scripts/build-site.cjs`). `keymap.html` only
 | Keys | The pad as it sits on the desk, with a live knob line under it (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), tick Ctrl, Shift, Alt or Win to hold them with it (Ctrl + C), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
 | Sensitivity | Actuation and Rapid Trigger sensitivity (limits come from the pad's `INFO`), Rapid Trigger on/off, live key travel |
 | Device | Firmware version and build, keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
-| Screen | **Theme**: Drift (the original look) or Cherry blossom; choosing a theme also sets its screensaver. **Screensaver**: when it starts by itself (Never, 1, 2, 5, 10 or 30 minutes idle) and which animation it plays, with Play now and Save. **Screen Lab** (a preview; nothing is sent to the pad): load a GIF or picture, convert it to the 128 × 64 black-and-white screen and see it in three possible places. See below |
+| Screen | **Theme**: Drift (the original look), Cherry blossom or Space; choosing a theme also sets its screensaver. **Screensaver**: when it starts by itself (Never, 1, 2, 5, 10 or 30 minutes idle) and which animation it plays, with Play now and Save. **Screen Lab** (a preview; nothing is sent to the pad): load a GIF or picture, convert it to the 128 × 64 black-and-white screen and see it in three possible places. See below |
 
 ## What it promises
 
@@ -50,7 +50,7 @@ in each marked key's accessible label.
 ## Display controls
 
 In **Device → Advanced diagnostics → Display**, choose **Shuffle all** or a single animation:
-Starfield, Plasma, Tesseract, Drift grid, Magnetic pulse, Lava lamp, or Sakura. Choosing an option changes
+Starfield, Plasma, Tesseract, Drift grid, Magnetic pulse, Lava lamp, Sakura, or Orbit. Choosing an option changes
 only the browser selection; **Play screensaver** sends the request. **Stop screensaver** returns
 to the selected screen. **Display off** turns the OLED off. None of these commands changes keymaps,
 calibration, keyboard output, or saved sensitivity settings.

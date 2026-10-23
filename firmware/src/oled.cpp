@@ -6,6 +6,7 @@
 #include "build_info.h"
 #include "screensaver_player.h"
 #include "theme_sakura.h"
+#include "theme_space.h"
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -193,18 +194,23 @@ const char* layerName(uint8_t layer) {
     return layer < 3 ? LAYER_NAMES[layer] : "?";
 }
 
-// The theme in the settings (0 Drift, 1 Cherry blossom); Drift until core 0 has published one.
-// A theme this firmware does not have draws as Drift.
+// The theme in the settings (0 Drift, 1 Cherry blossom, 2 Space); Drift until core 0 has published
+// one. A theme this firmware does not have draws as Drift.
 constexpr uint8_t THEME_DRIFT = 0;
 constexpr uint8_t THEME_SAKURA = 1;
+constexpr uint8_t THEME_SPACE = 2;
 uint8_t activeTheme() {
     return s_haveView && s_view.theme < limits::THEME_COUNT ? s_view.theme : THEME_DRIFT;
 }
 bool sakuraTheme() { return activeTheme() == THEME_SAKURA; }
+bool spaceTheme() { return activeTheme() == THEME_SPACE; }
+// Every theme but Drift letters its labels and values plainly; the slit italic is Drift's
+bool plainLettering() { return activeTheme() != THEME_DRIFT; }
 
 // Cherry blossom: petals thrown up by key presses and dropped by the standby sprig
 sakura::Petals s_keyPetals;
 sakura::Scene s_sakuraScene;    // the Sakura screensaver (animation 6)
+space::Scene s_spaceScene;      // the Orbit screensaver (animation 7)
 uint32_t s_keyPetalsAt = 0;
 uint32_t s_sprigDropAt = 0;
 
@@ -595,8 +601,8 @@ void printTracked(const char* text, int16_t x, int16_t y, int16_t pitch) {
 }
 
 const char* const MENU_TITLES[] = {"Sensitivity", "Actuation point", "Rapid Trigger", "Active layer", "Screen theme"};
-const char* const THEME_NAMES[] = {"Drift", "Sakura"};
-const char* const THEME_CAPTIONS[] = {"The original look", "Cherry blossom"};
+const char* const THEME_NAMES[] = {"Drift", "Sakura", "Space"};
+const char* const THEME_CAPTIONS[] = {"The original look", "Cherry blossom", "Planets and stars"};
 
 // A big value in italic slit lettering, with its unit in small capitals sharing the baseline; the
 // pair is centred. Values are size 3 (18 x 24 px cells), which needs a 28 row region.
@@ -749,11 +755,14 @@ void renderMenuOverlay() {
             const uint8_t cur = s_view.theme < limits::THEME_COUNT ? s_view.theme : 0;
             const char* name = THEME_NAMES[cur];
             const int16_t w = textWidth(name, 2);
-            if (cur == THEME_SAKURA) {
-                sakura::drawSeal(s_display, 64 - (w + 6 + sakura::SEAL_SIZE) / 2, 18);
+            if (cur == THEME_SAKURA || cur == THEME_SPACE) {
+                // The theme's badge beside its name: the seal, or a ringed planet
+                const int16_t left = 64 - (w + 6 + sakura::SEAL_SIZE) / 2;
+                if (cur == THEME_SAKURA) sakura::drawSeal(s_display, left, 18);
+                else space::drawBadge(s_display, left, 18);
                 s_display.setTextColor(OLED_COLOR_WHITE);
                 s_display.setTextSize(2);
-                s_display.setCursor(64 - (w + 6 + sakura::SEAL_SIZE) / 2 + sakura::SEAL_SIZE + 6, 21);
+                s_display.setCursor(left + sakura::SEAL_SIZE + 6, 21);
                 s_display.print(name);
                 s_display.setTextSize(1);
             } else {
@@ -881,7 +890,7 @@ void drawPanelValue(const char* value, const char* unit, int16_t top) {
     const int16_t unitW = unit ? 5 + fontWidth(unit, unitFont) : 0;
     const int16_t left = PANEL_CENTER_X - ((int16_t)w + unitW) / 2 - x1;
     const int16_t baseline = top - y1;
-    if (sakuraTheme()) {   // plain upright lettering; the slit italic is Drift's
+    if (plainLettering()) {   // plain upright lettering; the slit italic is Drift's
         s_display.setTextColor(OLED_COLOR_WHITE);
         s_display.setFont(valueFont);
         s_display.setCursor(left, baseline);
@@ -969,9 +978,9 @@ void drawKeyBox(const char* label, bool actuated, uint8_t punch) {
         }
     }
 
-    // Cherry blossom draws every label plainly inside a seal-like card; the slit lettering is Drift's
-    const bool sakuraCard = sakuraTheme();
-    const bool usePlain = sakuraCard || isPunctuationOrSmall(label, w, h);
+    // The other themes draw every label plainly inside their own card; the slit lettering is Drift's
+    const bool themedCard = plainLettering();
+    const bool usePlain = themedCard || isPunctuationOrSmall(label, w, h);
 
     int16_t tx = KEY_BOX_X + (KEY_BOX_W - (int16_t)w + 1) / 2 - x1;
     int16_t ty;
@@ -987,8 +996,10 @@ void drawKeyBox(const char* label, bool actuated, uint8_t punch) {
         ty = KEY_BOX_Y + (KEY_BOX_H - (int16_t)capH + 1) / 2 + (int16_t)capH;
     }
 
-    if (sakuraCard) {
+    if (sakuraTheme()) {
         sakura::drawCardFrame(s_display, KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, actuated);
+    } else if (spaceTheme()) {
+        space::drawCardFrame(s_display, KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, actuated);
     } else if (actuated) {
         s_display.fillRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
         if (punch > 0) {
@@ -1060,6 +1071,18 @@ void drawTravelScale(float travelMm, float releaseMm = -1.0f) {
 
 }
 
+// Space: the target lock of each fresh press closes in on its map cell for space::LOCK_STEPS
+// frames, held or not; s_keyFlash counts it down
+void drawSpaceLocks() {
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        if (s_keyFlash[i] == 0) continue;
+        const int16_t x = MAP_X + (i % 4) * (MAP_CELL + MAP_GAP);
+        const int16_t y = MAP_Y + (i / 4) * (MAP_CELL + MAP_GAP);
+        space::drawLockOn(s_display, x, y, MAP_CELL, (uint8_t)(space::LOCK_STEPS - s_keyFlash[i]));
+        s_keyFlash[i]--;
+    }
+}
+
 // Keypad map. Resting: outline. Travelling: outline with a level that rises toward the
 // actuation point (a full cell is about to fire). Actuated: solid, with a ring around it for two
 // frames, then a dithered afterglow that thins out over GLOW_FRAMES. Focus is marked by row and column pointers outside the grid, so
@@ -1078,10 +1101,12 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus, bool legends) {
                     s_keyPetals.burst(x + MAP_CELL / 2.0f, y + 1.0f, 6);
                     s_keyFlash[i] = 0;
                 }
+                // Space: a target lock closes in instead (drawSpaceLocks, which counts it down)
+                if (spaceTheme()) s_keyFlash[i] = space::LOCK_STEPS;
             }
             s_prevActuated[i] = true;
             s_display.fillRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
-            if (s_keyFlash[i] > 0) {
+            if (s_keyFlash[i] > 0 && !spaceTheme()) {
                 // A ring that leaves the cell: solid at once, then further out and breaking into dots
                 if (s_keyFlash[i] == FLASH_FRAMES) {
                     s_display.drawRect(x - 1, y - 1, MAP_CELL + 2, MAP_CELL + 2, OLED_COLOR_WHITE);
@@ -1200,6 +1225,10 @@ void drawLayerFlash(uint32_t now, uint8_t layer) {
     if (elapsed >= LAYER_FLASH_MS) { s_layerFlashActive = false; return; }
     if (sakuraTheme()) {   // paper doors slide shut on the new layer and open again
         sakura::drawShoji(s_display, elapsed, LAYER_FLASH_MS, layer, layerName(layer));
+        return;
+    }
+    if (spaceTheme()) {    // a window onto stars rushing past opens, names the layer and closes
+        space::drawWarp(s_display, elapsed, LAYER_FLASH_MS, layer, layerName(layer));
         return;
     }
     const int32_t age = (int32_t)elapsed;
@@ -1357,6 +1386,9 @@ void renderKeysFrame(uint32_t now) {
                 s_sprigDropAt = now;
                 s_keyPetals.drop(6 + 68 * (0.18f + 0.32f * (float)((now / 2600) % 3)), 55.0f);
             }
+        } else if (spaceTheme()) {
+            // A small planet and its moon in place of the empty scale
+            space::drawOrbit(s_display, 6, 58, 68, now);
         } else {
             drawTravelScale(0.0f);
         }
@@ -1379,6 +1411,7 @@ void renderKeysFrame(uint32_t now) {
         s_keyPetals.clear();
     }
     s_keyPetalsAt = now;
+    if (spaceTheme()) drawSpaceLocks();
 
     drawSettingsState(now);
 
@@ -1922,6 +1955,9 @@ void resetScreensaverAnimation(uint8_t anim) {
         case 6:
             s_sakuraScene.reset(animationRandom(0xFFFFFFFFUL) | 1u);
             break;
+        case 7:
+            s_spaceScene.reset(animationRandom(0xFFFFFFFFUL) | 1u);
+            break;
     }
     s_animationInitialized[anim] = true;
 }
@@ -2020,12 +2056,19 @@ void advanceScreensaverAnimation(uint8_t anim, uint32_t elapsedMs) {
             case 6:
                 s_sakuraScene.advance(RENDER_INTERVAL_MS);
                 break;
+            case 7:
+                s_spaceScene.advance(RENDER_INTERVAL_MS);
+                break;
         }
     }
 }
 
 void renderAnimSakura() {
     s_sakuraScene.render(s_display);
+}
+
+void renderAnimOrbit() {
+    s_spaceScene.render(s_display);
 }
 
 struct ScreensaverAnim {
@@ -2041,6 +2084,7 @@ const ScreensaverAnim kScreensaverAnims[NUM_SCREENSAVER_ANIMS] = {
     {renderAnimRipples,      "MAG PULSE"},
     {renderAnimLava,         "LAVA LAMP"},
     {renderAnimSakura,       "SAKURA"},
+    {renderAnimOrbit,        "ORBIT"},
 };
 
 // Blends two frames with a dithered diagonal wipe sweeping from top-left to bottom-right.
@@ -2344,6 +2388,10 @@ void renderIntroFrame(uint32_t t) {
     if (s_introTheme < 0 && s_haveView) s_introTheme = (int8_t)activeTheme();
     if (s_introTheme == THEME_SAKURA) {
         sakura::drawIntro(s_display, t, introStatus());
+        return;
+    }
+    if (s_introTheme == THEME_SPACE) {
+        space::drawIntro(s_display, t, introStatus());
         return;
     }
 

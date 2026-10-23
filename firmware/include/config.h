@@ -99,8 +99,8 @@ ConfigStatus configSetKey(uint8_t layer, uint8_t key, uint8_t code, const char* 
 void         configSetBootOutput(bool enabled);
 ConfigStatus configSetSaverIdle(uint8_t minutes);   // OutOfRange above limits::SAVER_IDLE_MAX_MIN
 ConfigStatus configSetSaverAnim(int8_t anim);       // -1 shuffles; OutOfRange outside -1..SAVER_ANIM_COUNT - 1
-// Selects a theme and its own screensaver (Drift: shuffle all, Cherry blossom: Sakura); a later
-// configSetSaverAnim() picks another. OutOfRange at or above limits::THEME_COUNT.
+// Selects a theme and its own screensaver (Drift: shuffle all, Cherry blossom: Sakura, Space:
+// Orbit); a later configSetSaverAnim() picks another. OutOfRange at or above limits::THEME_COUNT.
 ConfigStatus configSetTheme(uint8_t theme);
 int8_t       configThemeScreensaver(uint8_t theme);
 ConfigStatus configSetCalibration(const CalibrationData& data);  // must evaluate Valid (or be Missing)

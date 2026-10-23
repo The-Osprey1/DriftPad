@@ -20,7 +20,7 @@ screensaver_idle themes`). Firmware before 2.1.0 spoke protocol 1
 | Key code | 0 | 255 | |
 | Line length | | 160 bytes | |
 | Screensaver idle start (`SET_SAVER_IDLE`) | 0 minutes (never) | 60 minutes | 2 minutes |
-| Screen theme (`SET_THEME`) | 0 (Drift) | 1 (Cherry blossom) | 0 |
+| Screen theme (`SET_THEME`) | 0 (Drift) | 2 (Space) | 0 |
 | Request id | | 12 characters | |
 | Stream rate | | 60 Hz | 30 Hz |
 
@@ -83,8 +83,8 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 | `SET_LAYER <0-2>` | `active_layer` + applied/persisted/dirty |
 | `SET_KEY <layer> <key> <code> [label] [mods]` | `layer, key, code, label` (normalised), `mods` + applied/persisted/dirty. `mods` (feature `key_modifiers`, 0 to 15) are modifiers held with the key: 1 Ctrl, 2 Shift, 4 Alt, 8 Win, so `SET_KEY 0 3 99 COPY 1` makes key 3 send Ctrl+C. Omitted means 0, a plain key; `mods` needs `label` before it. With code 0 the key sends only the modifiers |
 | `SET_SAVER_IDLE <minutes>` | `saver_idle` + applied/persisted/dirty. Feature `screensaver_idle`: the screensaver starts by itself after this many idle minutes, 0 to 60; 0 = never (see below) |
-| `SET_SAVER_ANIM <0-6\|SHUFFLE>` | `saver_anim` (`-1` for shuffle) + applied/persisted/dirty. The animation the idle screensaver plays, numbered as for `ANIM` |
-| `SET_THEME <0-1>` | `theme`, `saver_anim` + applied/persisted/dirty. Feature `themes`: the screen's look, 0 Drift or 1 Cherry blossom (title, key card, press effect, layer change, standby art). It also sets the idle screensaver to the theme's own (Drift: shuffle, `-1`; Cherry blossom: Sakura, `6`); a later `SET_SAVER_ANIM` picks another. Behaviour is the same in every theme |
+| `SET_SAVER_ANIM <0-7\|SHUFFLE>` | `saver_anim` (`-1` for shuffle) + applied/persisted/dirty. The animation the idle screensaver plays, numbered as for `ANIM` |
+| `SET_THEME <0-2>` | `theme`, `saver_anim` + applied/persisted/dirty. Feature `themes`: the screen's look, 0 Drift, 1 Cherry blossom or 2 Space (title, key card, press effect, layer change, standby art). It also sets the idle screensaver to the theme's own (Drift: shuffle, `-1`; Cherry blossom: Sakura, `6`; Space: Orbit, `7`); a later `SET_SAVER_ANIM` picks another. Behaviour is the same in every theme |
 | `SET_HID <bool> [FORCE]` (aliases `HID`, `OUTPUT`) | `hid_output, output{...}` (runtime only, never saved) |
 | `SAVE` | `persisted:true, dirty:false, duration_ms`, or error `flash_error`/`flash_verify_failed` with `persisted:false` |
 | `REVERT` | `applied, persisted, dirty` — reloads the saved settings; `not_allowed` when nothing is saved |
@@ -96,7 +96,7 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 | `RAW <key>` | `key, samples:1000, rate_hz`; then `{"type":"raw","key","rate_hz","offset","total","samples"[<=100]}` events |
 | `FULLSCREEN [bool]` | `fullscreen` — immediate request acknowledgment |
 | `SCREENSAVER` | `screensaver:true` — starts a new session using the last animation selection; immediate request acknowledgment |
-| `ANIM [0-6]` | `anim` — selected fixed animation, or `-1` when the argument is omitted to shuffle all seven; starts a new session; immediate request acknowledgment |
+| `ANIM [0-7]` | `anim` — selected fixed animation, or `-1` when the argument is omitted to shuffle all eight; starts a new session; immediate request acknowledgment |
 | `SLEEP`, `WAKE` | `sleep:true` or `wake:true` — immediate request acknowledgment |
 | `OLED_TEST`, `OLED_SCAN` | `OLED_TEST` replies with `display:"test_pattern"` after the display core serves it (normally shown for up to 2 s; a later mode request supersedes it). `OLED_SCAN` replies with `devices[]` (at most 8) and `more` when others answered, after the scan. Error `display_timeout` after 1.5 s. Other commands are answered meanwhile; a second deferred command gets `busy`. |
 | `BOOTSEL` | `bootsel:true`, then the device reboots into its USB bootloader |
@@ -136,9 +136,10 @@ older protocol-2 firmware without `display_status` or the optional object.
 | `3` | Drift grid |
 | `4` | Magnetic pulse |
 | `5` | Lava lamp |
-| `6` | Sakura (petals falling under a night sky, seen from a slowly drifting viewpoint; the Cherry blossom theme's own) |
+| `6` | Sakura (petals falling under a crescent moon, as the camera zooms in on the blossoms and back out; the Cherry blossom theme's own) |
+| `7` | Orbit (a ringed planet turning slowly while its moon circles it; the Space theme's own) |
 
-Omitting the argument shuffles a complete bag of seven animations, using every animation once before
+Omitting the argument shuffles a complete bag of eight animations, using every animation once before
 refilling it. Adjacent animations never repeat, including across bag boundaries. Each animation
 has a 20-second full-screen dwell followed by a 1.5-second wipe to the next one. A fixed index keeps
 that animation until another request or input ends the session. The reply value `-1` identifies

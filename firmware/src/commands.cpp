@@ -689,7 +689,7 @@ HandlerResult cmdSetSaverAnim(const Args& a, Reply& r, void*) {
     if (!proto::keywordIs(a[0], "shuffle")) {
         uint32_t v;
         ParseResult pr = proto::parseUint(a[0], 0, limits::SAVER_ANIM_COUNT - 1, v);
-        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 6, or SHUFFLE");
+        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 7, or SHUFFLE");
         anim = (int32_t)v;
     }
     ConfigStatus st = configSetSaverAnim((int8_t)anim);
@@ -704,7 +704,7 @@ HandlerResult cmdSetTheme(const Args& a, Reply& r, void*) {
     wakeDisplay();
     uint32_t theme;
     ParseResult pr = proto::parseUint(a[0], 0, limits::THEME_COUNT - 1, theme);
-    if (pr != ParseResult::Ok) return badValue(r, pr, "theme must be 0 (Drift) or 1 (Cherry blossom)");
+    if (pr != ParseResult::Ok) return badValue(r, pr, "theme must be 0 (Drift), 1 (Cherry blossom) or 2 (Space)");
     ConfigStatus st = configSetTheme((uint8_t)theme);
     if (st != ConfigStatus::Ok) return configError(r, st, "theme rejected");
     JsonWriter& w = r.ok();
@@ -819,7 +819,7 @@ HandlerResult cmdAnim(const Args& a, Reply& r, void*) {
     if (a.count == 1) {
         uint32_t v;
         ParseResult pr = proto::parseUint(a[0], 0, OLED_ANIM_COUNT - 1, v);
-        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 6 (omit it to shuffle)");
+        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 7 (omit it to shuffle)");
         idx = (int32_t)v;
     }
     oledSetScreensaverAnim((int8_t)idx);

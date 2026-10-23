@@ -68,7 +68,7 @@ sensitivity, calibration, output, and display controls.
 - A 4×4 key matrix with three mapping layers and productivity profile presets.
 - Actuation and Rapid Trigger controls, including per-key actuation overrides.
 - Profile backup import/export, a usage heatmap, and rotary encoder controls.
-- A 128×64 OLED with two themes (Drift and Cherry blossom), seven screensaver animations that start
+- A 128×64 OLED with three themes (Drift, Cherry blossom and Space), eight screensaver animations that start
   by itself after an idle time, and a Screen Lab to preview your own GIFs.
 - USB WebSerial communication and a browser-side DSP simulator.
 - RP2040 firmware for Hall sensors, a multiplexer, an encoder, and an OLED display. The knob is

@@ -16,7 +16,7 @@ static void forget_state_history() {
     s_menuRequested = false;
 }
 
-// The theme every scene and intro frame is drawn in (0 Drift, 1 Cherry blossom)
+// The theme every scene and intro frame is drawn in (0 Drift, 1 Cherry blossom, 2 Space)
 static uint8_t g_sceneTheme = 0;
 
 // No key has been pressed or focused before this frame (for scenes that are not a press sequence)
@@ -34,7 +34,7 @@ void host_clock_advance_us(uint64_t);
 // Scenes: 0 standby, 1 key travelling, 2 two keys actuated, 3 ENT bottomed out, 4 standby with
 // calibration missing, 5 key travelling with output off, 6/7 held key backing off with Rapid Trigger
 // on/off,
-// 10..14 tuning menu pages, 20 splash, 30..36 screensaver animation N (its frame 40),
+// 10..14 tuning menu pages, 20 splash, 30..37 screensaver animation N (its frame 40),
 // 40/41 layer change (40: the middle of it, 41: 150 ms in), 42 a key press 150 ms ago
 void oled_scene_theme(int theme) {
     g_sceneTheme = (uint8_t)theme;
@@ -48,6 +48,15 @@ void oled_sakura_view(float* out) {
     const sakura::View v = s_sakuraScene.branchView();
     out[0] = v.x; out[1] = v.y; out[2] = v.scale; out[3] = v.angle;
     s_sakuraScene.camera().project(sakura::Scene::MOON_X, sakura::Scene::MOON_Y, sakura::Scene::DEPTH_MOON, &out[4], &out[5]);
+}
+// The Orbit screensaver now: the moon's centre x, y, 1 if it is in front of the planet, the storm's x
+// (below -1000 on the far side) and the scene time in ms
+void oled_space_view(float* out) {
+    bool front;
+    s_spaceScene.moonAt(&out[0], &out[1], &front);
+    out[2] = front ? 1.0f : 0.0f;
+    out[3] = s_spaceScene.stormX();
+    out[4] = (float)s_spaceScene.time();
 }
 int oled_scene(int id, uint8_t* out) {
     forget_state_history();
@@ -156,7 +165,7 @@ int oled_scene(int id, uint8_t* out) {
         s_layerFlashActive = true;
         s_layerFlashAt = millis() - (id == 40 ? 650 : 150);
     }
-    if (id >= 30 && id <= 36) {
+    if (id >= 30 && id < 30 + OLED_ANIM_COUNT) {
         startScreensaver(millis(), (int8_t)(id - 30));
         s_ssPlayer.start(millis(), (int8_t)(id - 30), 1);
         resetScreensaverAnimations(1);

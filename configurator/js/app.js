@@ -384,8 +384,8 @@
     }
 
     // Screen tab: when the screensaver starts by itself and what it plays (stored settings)
-    const SAVER_ANIMS = ["Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura"];
-    const THEME_NAMES = ["Drift", "Cherry blossom"];
+    const SAVER_ANIMS = ["Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura", "Orbit"];
+    const THEME_NAMES = ["Drift", "Cherry blossom", "Space"];
     function minutesText(n) { return `${n} minute${n === 1 ? "" : "s"}`; }
     function renderSaver(isConn) {
         const s = session;

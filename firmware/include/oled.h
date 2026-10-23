@@ -44,8 +44,8 @@ bool oledIsScreensaverActive();
 void oledWake();
 void oledSleep();
 bool oledIsSleeping();
-void oledSetScreensaverAnim(int8_t animIdx);   // -1 shuffles all seven; 0..6 selects one
-constexpr int8_t OLED_ANIM_COUNT = 7;
+void oledSetScreensaverAnim(int8_t animIdx);   // -1 shuffles all eight; 0..7 selects one
+constexpr int8_t OLED_ANIM_COUNT = 8;
 
 // Requests with a result, served by core 1
 enum class OledRequest : uint8_t { TestPattern, BusScan };

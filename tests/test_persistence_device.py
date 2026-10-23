@@ -387,6 +387,8 @@ class TestPersistence(unittest.TestCase):
         cfg = self.reboot().config()
         self.assertEqual((cfg["theme"], cfg["saver_anim"]), (1, 2))
         self.assertEqual(self.sector(0)[32 + OFF_THEME], 1)
+        r = self.one("SET_THEME 2")
+        self.assertEqual((r["theme"], r["saver_anim"]), (2, 7), "Space plays Orbit")
         r = self.one("SET_THEME 0")
         self.assertEqual((r["theme"], r["saver_anim"]), (0, -1), "Drift shuffles every animation")
 

@@ -11,6 +11,17 @@ work with this firmware and says so.
 
 ### Changed
 
+- A third screen theme, **Space**. Its title drops out of light speed (every star streaks out from
+  the centre and settles), a ringed planet rises and the name appears over an orbit line. The key
+  card is a viewfinder (corner brackets joined by dotted edges; pressed, a solid panel with cut
+  corners). Each key press locks on to its cell on the key map. The standby screen shows a small
+  ringed planet with its moon and twinkling stars. A layer change opens a window on stars rushing
+  past and names the layer in a viewfinder. The new **Orbit** screensaver (animation 7) shows a
+  large ringed planet lit from the upper left that turns slowly: its cloud belts waver and a storm
+  crosses it. A moon circles the planet, passing behind and in front of it, and now and then a
+  meteor streaks past. The stars stay still, so the motion is easy to follow. Every piece is
+  worked out from the time each frame, so the theme adds almost nothing to the memory used. Choosing
+  Space also picks Orbit as the screensaver (`SET_THEME 2`).
 - Screen themes: **Cherry blossom** joins the original **Drift** look. It has its own title (a
   branch grows and blossoms, a 桜 seal stamps in), a seal-like key card with plain lettering,
   petals thrown up by each key press, a blossoming sprig on the standby screen, paper doors that

@@ -706,5 +706,138 @@ class CherryBlossomTheme(unittest.TestCase):
         self.assertEqual((span(4), span(5)), (0, 0), "the moon moves")
 
 
+class SpaceTheme(unittest.TestCase):
+    """Theme 2 restyles the screens; every screen keeps its place and its information."""
+
+    @classmethod
+    def setUpClass(cls):
+        import ctypes
+        cls.lib = oh.load()
+        cls.lib.oled_intro_frame.argtypes = [ctypes.c_uint32, ctypes.c_char_p]
+        cls.lib.oled_animation_reset.argtypes = [ctypes.c_uint32]
+        cls.lib.oled_animation_step.argtypes = [ctypes.c_int, ctypes.c_uint32, ctypes.c_char_p]
+
+    def setUp(self):
+        self.lib.oled_scene_theme(2)
+
+    def tearDown(self):
+        self.lib.oled_scene_theme(0)
+
+    def both(self, scene):
+        self.lib.oled_scene_theme(0)
+        drift = oh.frame(self.lib, scene)
+        self.lib.oled_scene_theme(2)
+        return drift, oh.frame(self.lib, scene)
+
+    def intro(self, ms):
+        import ctypes
+        buf = ctypes.create_string_buffer(1024)
+        self.lib.oled_intro_frame(ms, buf)
+        return bytes(buf.raw)
+
+    @staticmethod
+    def lit(fb, x0, y0, x1, y1):
+        return sum(oh.pixel(fb, x, y) for x in range(x0, x1) for y in range(y0, y1))
+
+    def test_every_screen_is_restyled_but_the_key_map_and_header_stay(self):
+        for scene in ("standby", "travelling", "actuated", "menu_theme"):
+            with self.subTest(scene=scene):
+                drift, space = self.both(scene)
+                self.assertNotEqual(drift, space, "the theme changes nothing")
+                if scene != "menu_theme":
+                    self.assertEqual(self.lit(drift, 0, 0, 80, 9), self.lit(space, 0, 0, 80, 9))
+                    if scene == "travelling":
+                        self.assertEqual(self.lit(drift, 85, 10, 128, 52), self.lit(space, 85, 10, 128, 52))
+
+    def test_the_key_card_is_a_viewfinder_and_a_pressed_key_a_panel_with_cut_corners(self):
+        fb = oh.frame(self.lib, "travelling")
+        self.assertEqual([oh.pixel(fb, 2, y) for y in range(19, 25)], [1] * 6, "a corner bracket")
+        self.assertEqual([oh.pixel(fb, x, 19) for x in range(2, 8)], [1] * 6)
+        edge = [oh.pixel(fb, 2, y) for y in range(26, 39)]
+        self.assertTrue(0 < sum(edge) < len(edge), "the edge between the brackets is dotted")
+        pressed = oh.frame(self.lib, "actuated")
+        self.assertEqual([oh.pixel(pressed, x, 19) for x in (2, 3, 4, 5)], [0, 0, 0, 1], "a cut corner")
+        self.assertEqual(oh.pixel(pressed, 2, 30), 1, "a solid panel")
+        self.assertEqual([oh.pixel(pressed, x, 22) for x in (4, 5, 9, 10)], [1, 0, 0, 1], "a dark bracket inside it")
+
+    def test_a_key_press_locks_on_to_its_cell(self):
+        # key 5's cell is x 96..104, y 21..29; 150 ms in, the brackets have closed to 1 px outside it
+        fb = oh.frame(self.lib, "key_press")
+        for x, y in ((95, 20), (105, 20), (95, 30), (105, 30)):
+            self.assertEqual(oh.pixel(fb, x, y), 1, f"no bracket corner at {x},{y}")
+        self.lib.oled_scene_theme(0)
+        drift = oh.frame(self.lib, "key_press")
+        self.assertEqual(oh.pixel(drift, 95, 20), 0, "Drift's ring is long gone by then")
+
+    def test_standby_shows_a_planet_and_its_moon_in_place_of_the_empty_scale(self):
+        drift, space = self.both("standby")
+        self.assertGreater(self.lit(space, 4, 49, 30, 62), 30, "no planet")
+        region = lambda fb: [oh.pixel(fb, x, y) for x in range(4, 78) for y in range(49, 62)]
+        self.assertNotEqual(region(space), region(drift), "the scale is still there")
+        self.assertEqual(self.lit(space, 0, 62, 80, 64), 0, "the strip stays above the bottom rows")
+
+    def test_a_layer_change_opens_a_window_on_rushing_stars(self):
+        start = oh.frame(self.lib, "layer_change_start")
+        middle = oh.frame(self.lib, "layer_change")
+        under = oh.frame(self.lib, "standby")
+        # 150 ms in, the window is still opening: the key screen shows in the corners
+        self.assertGreater(self.lit(start, 0, 0, 10, 8), 0, "the corner (the layer number) is covered")
+        self.assertGreater(self.lit(start, 120, 52, 128, 64), 0, "the corner (the key map) is covered")
+        # in the middle it covers the screen: the key map is gone, the layer is named
+        self.assertLess(self.lit(middle, 85, 10, 128, 52), self.lit(under, 85, 10, 128, 52) // 4)
+        self.assertGreater(self.lit(middle, 30, 30, 98, 46), 80, "no layer name")
+
+    def test_the_title_drops_out_of_light_speed_raises_a_planet_and_says_the_status(self):
+        early, planet, end = self.intro(300), self.intro(3000), self.intro(5000)
+        self.assertLess(self.lit(early, 0, 0, 128, 64), self.lit(planet, 0, 0, 128, 64) // 3, "the jump is a few streaks")
+        self.assertGreater(self.lit(planet, 0, 22, 50, 54), 150, "no planet at the lower left")
+        self.assertGreater(self.lit(end, 60, 20, 124, 28), 40, "the name is missing")
+        self.assertGreater(self.lit(end, 0, 54, 128, 63), 40, "the status line is not typed in")
+
+    def orbit(self, seed, frames, step_ms=33):
+        """The Orbit screensaver's frames and its view (moon x, y, in front, storm x, time) after each"""
+        import ctypes
+        self.lib.oled_animation_reset(seed)
+        buf = ctypes.create_string_buffer(1024)
+        out = (ctypes.c_float * 5)()
+        shots = []
+        for _ in range(frames):
+            self.lib.oled_animation_step(7, step_ms, buf)
+            self.lib.oled_space_view(out)
+            shots.append((bytes(buf.raw), tuple(out)))
+        return shots
+
+    def test_orbit_screensaver_moves_and_always_shows_its_planet(self):
+        frames = [fb for fb, _ in self.orbit(5, 4 * 15, 33)][14::15]
+        self.assertEqual(len(set(frames)), 4, "the scene stands still")
+        for fb in frames:
+            self.assertGreater(self.lit(fb, 61, 19, 96, 54), 150, "the planet is missing")
+
+    def test_orbit_moon_goes_behind_and_in_front_of_the_planet_smoothly(self):
+        shots = self.orbit(9, int(24000 / 33) + 2)
+        views = [v for _, v in shots]
+        self.assertEqual({v[2] for v in views}, {0.0, 1.0}, "the moon never passes behind or in front")
+        for a, b in zip(views, views[1:]):
+            self.assertLess(abs(b[0] - a[0]) + abs(b[1] - a[1]), 1.5, "the moon jumped")
+        xs = [v[0] for v in views]
+        self.assertGreater(max(xs) - min(xs), 80, "the orbit is too small to see")
+
+    def test_orbit_planet_turns_its_storm_across_the_disc(self):
+        views = [v for _, v in self.orbit(3, int(30000 / 33) + 2)]
+        seen = [v[3] for v in views if v[3] > -1000]
+        self.assertTrue(seen and len(seen) < len(views), "the storm never goes round to the far side")
+        self.assertGreater(max(seen) - min(seen), 24, "the storm does not cross the planet")
+
+    def test_orbit_stars_stay_still(self):
+        # The lower left holds only stars (no moon, no meteors pass there): what is lit stays lit,
+        # apart from the few that twinkle
+        frames = [fb for fb, _ in self.orbit(11, 30 * 30, 33)][::30]
+        region = [(x, y) for x in range(0, 28) for y in range(40, 64)]
+        always = {p for p in region if all(oh.pixel(fb, *p) for fb in frames)}
+        ever = {p for p in region if any(oh.pixel(fb, *p) for fb in frames)}
+        self.assertGreaterEqual(len(always), 2, "no steady stars")
+        self.assertLessEqual(len(ever - always), 10, "the stars move")
+
+
 if __name__ == "__main__":
     unittest.main()

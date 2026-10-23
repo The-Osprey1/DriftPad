@@ -514,8 +514,8 @@
             "unassignable code": variant(d => { d.layers[1][1].code = 137; }),
             "short layer": variant(d => { d.layers[2].pop(); }),
             "idle too long": variant(d => { d.settings.saver_idle = 61; }),
-            "unknown animation": variant(d => { d.settings.saver_anim = 7; }),
-            "unknown theme": variant(d => { d.settings.theme = 2; }),
+            "unknown animation": variant(d => { d.settings.saver_anim = 8; }),
+            "unknown theme": variant(d => { d.settings.theme = 3; }),
         };
         for (const [name, text] of Object.entries(cases)) {
             const r = DP.backup.parse(text, lim);
@@ -771,7 +771,7 @@
         await session.save();
         const cfg = await session.refreshConfig();
         assertEq([cfg.saver_idle, cfg.saver_anim, cfg.dirty], [10, -1, false]);
-        assertEq([session.limits.saver_idle_max, session.limits.saver_anims], [60, 7]);
+        assertEq([session.limits.saver_idle_max, session.limits.saver_anims], [60, 8]);
     });
 
     test("screensaver: firmware without screensaver_idle reports no choices and backups skip them", async () => {
@@ -792,7 +792,9 @@
     test("themes: choosing a theme also picks its screensaver, and backups keep both", async () => {
         const { session, device } = await rig();
         assertEq(session.confirmed.theme, 0, "factory: Drift");
-        assertEq(session.limits.themes, 2);
+        assertEq(session.limits.themes, 3);
+        assertEq(await session.setSetting("theme", 2), 2);
+        assertEq(session.confirmed.saver_anim, 7, "Space brings Orbit");
         assertEq(await session.setSetting("theme", 1), 1);
         assertEq(session.confirmed.saver_anim, 6, "Cherry blossom brings Sakura");
         assertEq(await session.setSetting("saver_anim", 3), 3);

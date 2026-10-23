@@ -48,9 +48,9 @@
                       "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status",
                       "key_modifiers", "screensaver_idle", "themes"];
     const SAVER_IDLE = { max: 60, def: 2 };   // firmware limits::SAVER_IDLE_MAX_MIN, SAVER_IDLE_DEFAULT_MIN
-    const SAVER_ANIMS = 7;                    // firmware limits::SAVER_ANIM_COUNT
-    const THEMES = 2;                         // firmware limits::THEME_COUNT
-    const THEME_SAVER = [-1, 6];              // firmware configThemeScreensaver(): Drift shuffles, Cherry blossom plays Sakura
+    const SAVER_ANIMS = 8;                    // firmware limits::SAVER_ANIM_COUNT
+    const THEMES = 3;                         // firmware limits::THEME_COUNT
+    const THEME_SAVER = [-1, 6, 7];           // firmware configThemeScreensaver(): Drift shuffles, Cherry blossom plays Sakura, Space plays Orbit
     const TIMING_OPS = ["command", "telemetry", "save", "calibration", "publish", "display_request", "tx_drain"];
     const GAP_LIMITS_US = [1100, 1500, 2000, 5000, 10000, 50000];
 
@@ -560,13 +560,13 @@
                         s.saverAnim = -1;
                     } else {
                         p = parseUint(a[0], 0, SAVER_ANIMS - 1);
-                        if (p.err) return { error: p.err, msg: "animation must be 0 to 6, or SHUFFLE" };
+                        if (p.err) return { error: p.err, msg: "animation must be 0 to 7, or SHUFFLE" };
                         s.saverAnim = p.value;
                     }
                     return this._applied({ saver_anim: s.saverAnim });
                 case "SET_THEME":
                     p = parseUint(a[0], 0, THEMES - 1);
-                    if (p.err) return { error: p.err, msg: "theme must be 0 (Drift) or 1 (Cherry blossom)" };
+                    if (p.err) return { error: p.err, msg: "theme must be 0 (Drift), 1 (Cherry blossom) or 2 (Space)" };
                     s.theme = p.value;
                     s.saverAnim = THEME_SAVER[p.value];
                     return this._applied({ theme: s.theme, saver_anim: s.saverAnim });
@@ -684,7 +684,7 @@
                     let idx = -1;
                     if (a.length === 1) {
                         p = parseUint(a[0], 0, SAVER_ANIMS - 1);
-                        if (p.err) return { error: p.err, msg: "animation must be 0 to 6 (omit it to shuffle)" };
+                        if (p.err) return { error: p.err, msg: "animation must be 0 to 7 (omit it to shuffle)" };
                         idx = p.value;
                     }
                     this.displaySelection = idx;

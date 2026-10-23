@@ -49,9 +49,9 @@ SCRIPT = [
     # screensaver idle start and animation (stored settings)
     "SET_SAVER_IDLE 5", "SET_SAVER_IDLE 0", "SET_SAVER_IDLE 60", "SET_SAVER_IDLE 61", "SET_SAVER_IDLE x",
     "SET_SAVER_IDLE", "SET_SAVER_ANIM 3", "SET_SAVER_ANIM shuffle", "SET_SAVER_ANIM SHUFFLE", "SET_SAVER_ANIM 6",
-    "SET_SAVER_ANIM -1", "SET_SAVER_ANIM 2", "SET_SAVER_ANIM 7", "GET_CONFIG",
+    "SET_SAVER_ANIM -1", "SET_SAVER_ANIM 2", "SET_SAVER_ANIM 7", "SET_SAVER_ANIM 8", "GET_CONFIG",
     # screen themes: choosing one also picks its screensaver
-    "SET_THEME 1", "GET_CONFIG", "SET_THEME 2", "SET_THEME x", "SET_THEME", "SET_SAVER_ANIM 4", "SET_THEME 0",
+    "SET_THEME 1", "GET_CONFIG", "SET_THEME 2", "GET_CONFIG", "SET_THEME 3", "SET_THEME x", "SET_THEME", "SET_SAVER_ANIM 4", "SET_THEME 0",
     "GET_CONFIG",
     # output gating
     "SET_HID 1", "SET_HID 1 FORCE", "HID 0", "SET_HID 1 NOPE", "OUTPUT 0",
