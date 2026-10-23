@@ -30,9 +30,12 @@ enum class MenuMode {
 
 // Core 0 state only (menu page, requests); core 1 initialises the display itself.
 void oledInit();
+// Opens the settings menu, or moves to the next page; past the last page it closes
 void oledCycleMenu();
 // Returns true if a setting changed (false when the input only woke the display)
 bool oledAdjustCurrentSetting(int32_t delta);
+bool oledMenuOpen();
+void oledCloseMenu();
 void oledSetFullScreen(bool enabled);
 bool oledIsFullScreen();
 void oledTriggerScreensaver();

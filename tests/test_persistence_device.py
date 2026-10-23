@@ -149,6 +149,10 @@ class TestPersistenceRegressions(unittest.TestCase):
 
 
 RECORD_MAGIC = 0x32535044
+# Current settings schema (settings_store.h SCHEMA_CURRENT) and its payload length; schema 2 is the
+# same payload without the 48 per-key modifier bytes at the end
+SCHEMA, PAYLOAD_LEN = 3, 444
+SCHEMA_V2, PAYLOAD_V2_LEN = 2, 396
 COMMIT_MAGIC = 0x4B4F5044
 
 
@@ -290,9 +294,9 @@ class TestPersistence(unittest.TestCase):
     def test_semantically_invalid_record_is_skipped(self):
         self.one("SET_ACTUATION 2.00")
         self.one("SAVE")                                # slot a, seq 1 (valid)
-        payload = bytearray(self.sector(0)[32:32 + 396])
+        payload = bytearray(self.sector(0)[32:32 + PAYLOAD_LEN])
         struct.pack_into("<H", payload, 0, 5)           # actuation 0.05 mm: CRC-valid, out of range
-        self.write_sector(1, ab_record(2, 9, bytes(payload)))
+        self.write_sector(1, ab_record(SCHEMA, 9, bytes(payload)))
         info = self.reboot().replies("INFO")[0]
         self.assertEqual(info["settings"]["source"], "slot_a")
         self.assertIn("slot_b_invalid", info["settings"]["load_errors"])
@@ -301,7 +305,7 @@ class TestPersistence(unittest.TestCase):
     def test_newer_schema_record_is_protected_until_the_second_save(self):
         self.one("SET_ACTUATION 2.00")
         self.one("SAVE")                                # slot a, seq 1
-        newer = ab_record(3, 7, b"\x01" * 400)          # written by some future firmware
+        newer = ab_record(SCHEMA + 1, 7, b"\x01" * 400)   # written by some future firmware
         self.write_sector(1, newer)
         info = self.reboot().replies("INFO")[0]
         self.assertEqual(info["settings"]["source"], "slot_a")
@@ -314,7 +318,41 @@ class TestPersistence(unittest.TestCase):
         self.one("SET_ACTUATION 3.00")
         self.assertEqual(self.one("SAVE")["slot"], "slot_b")  # ...until the user saves a second time
 
+    def test_key_modifiers_survive_a_save_and_reboot(self):
+        self.assertEqual(self.one("SET_KEY 1 4 99 COPY 1")["mods"], 1)      # Ctrl+c
+        self.one("SAVE")
+        key = self.reboot().config()["layers"][1][4]
+        self.assertEqual((key["code"], key["label"], key["mods"]), (99, "COPY", 1))
+
     # -- migration ----------------------------------------------------------------------------
+
+    def test_schema_2_settings_load_without_modifiers_and_are_saved_as_schema_3(self):
+        self.one("SET_ACTUATION 2.00")
+        self.one("SET_KEY 0 5 98 B 3")                  # Ctrl+Shift+b, dropped by the schema 2 copy
+        self.one("SAVE")
+        saved = self.sector(0)
+        self.assertEqual(struct.unpack_from("<H", saved, 6)[0], SCHEMA)
+        self.write_sector(0, ab_record(SCHEMA_V2, 1, bytes(saved[32:32 + PAYLOAD_V2_LEN])))
+        info = self.reboot().replies("INFO")[0]
+        self.assertEqual(info["settings"]["source"], "slot_a")
+        self.assertTrue(info["settings"]["dirty"], "a migrated record stays dirty until saved")
+        cfg = self.d.config()
+        self.assertEqual(cfg["actuation"], 2.0)
+        self.assertEqual((cfg["layers"][0][5]["code"], cfg["layers"][0][5]["mods"]), (98, 0))
+        r = self.one("SAVE")
+        slot = 0 if r["slot"] == "slot_a" else 1
+        self.assertEqual(struct.unpack_from("<H", self.sector(slot), 6)[0], SCHEMA, "saved in the current schema")
+
+    def test_a_record_with_unknown_modifier_bits_is_invalid(self):
+        self.one("SET_ACTUATION 2.00")
+        self.one("SAVE")                                # slot a, seq 1 (valid)
+        payload = bytearray(self.sector(0)[32:32 + PAYLOAD_LEN])
+        payload[PAYLOAD_V2_LEN] = 0x10                  # layer 0 key 0: a bit outside Ctrl/Shift/Alt/Win
+        self.write_sector(1, ab_record(SCHEMA, 9, bytes(payload)))
+        info = self.reboot().replies("INFO")[0]
+        self.assertEqual(info["settings"]["source"], "slot_a")
+        self.assertIn("slot_b_invalid", info["settings"]["load_errors"])
+
 
     def test_v1_settings_migrate_once_and_the_legacy_sector_is_never_written(self):
         layers = [[(0x61 + (k + l) % 26, "L%dK%d" % (l, k) if k < 10 else "L%d%d" % (l, k)) for k in range(16)]
@@ -349,12 +387,12 @@ class TestPersistence(unittest.TestCase):
 
     def test_quick_rest_update_cannot_make_the_saved_range_implausible(self):
         self.one("SAVE")
-        payload = bytearray(self.sector(0)[32:32 + 396])
+        payload = bytearray(self.sector(0)[32:32 + PAYLOAD_LEN])
         payload[296] = 1                               # valid calibration at the upper ADC limit
         for k in range(16):
             struct.pack_into("<HHbB", payload, 300 + 6 * k, 3000, 1095, 1, 0)
             self.lib.set_travel(k, (3000 - REST) / 250)
-        self.write_sector(0, ab_record(2, 1, bytes(payload)))
+        self.write_sector(0, ab_record(SCHEMA, 1, bytes(payload)))
         self.reboot()
         self.lib.set_travel(7, (3001 - REST) / 250)       # tiny rest drift, but bottom would be 4096
         self.d.run(100)
@@ -372,14 +410,14 @@ class TestPersistence(unittest.TestCase):
         self.one("SET_ACTUATION 2.50")
         self.one("SET_BOOT_OUTPUT 1")
         self.one("SAVE")
-        saved = bytearray(self.sector(0)[32:32 + 396])
+        saved = bytearray(self.sector(0)[32:32 + PAYLOAD_LEN])
         for counts in (300, 599, 600):
             with self.subTest(range_counts=counts):
                 payload = bytearray(saved)
                 payload[296] = 1
                 for k in range(16):
                     struct.pack_into("<HHbB", payload, 300 + 6 * k, REST, counts, 1, 0)
-                self.write_sector(0, ab_record(2, 1, bytes(payload)))
+                self.write_sector(0, ab_record(SCHEMA, 1, bytes(payload)))
                 info = self.reboot().replies("INFO")[0]
                 expected = "valid" if counts == 600 else "invalid"
                 self.assertEqual(info["calibration"]["state"], expected)

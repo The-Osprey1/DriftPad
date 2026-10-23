@@ -12,6 +12,7 @@ constexpr uint16_t COMMIT_BYTES = 8;   // commit magic + sequence
 static_assert(FlashIo::SECTOR_SIZE % FlashIo::PAGE_SIZE == 0, "sector must be whole pages");
 static_assert(PAYLOAD_MAX <= PAYLOAD_LIMIT, "payload buffer larger than a slot can hold");
 static_assert(PAYLOAD_V2_SIZE <= PAYLOAD_MAX, "schema 2 payload must fit the buffer");
+static_assert(PAYLOAD_V3_SIZE <= PAYLOAD_MAX, "schema 3 payload must fit the buffer");
 
 // Scratch pages for write/verify (core 0 only; saves are not re-entrant)
 uint8_t s_page[FlashIo::PAGE_SIZE];
@@ -190,6 +191,30 @@ bool decodeV2(const uint8_t* p, uint16_t len, DeviceSettings& out) {
     return true;
 }
 
+// ---- schema 3 codec: schema 2 + per-key modifiers ----------------------------------------------
+
+static_assert(PAYLOAD_V3_SIZE == PAYLOAD_V2_SIZE + NUM_LAYERS * NUM_KEYS, "schema 3 size");
+
+void encodeV3(const DeviceSettings& s, uint8_t* p) {
+    encodeV2(s, p);
+    for (uint8_t l = 0; l < NUM_LAYERS; ++l) {
+        for (uint8_t k = 0; k < NUM_KEYS; ++k) {
+            p[PAYLOAD_V2_SIZE + l * NUM_KEYS + k] = s.keymaps[l][k].modifiers;
+        }
+    }
+}
+
+bool decodeV3(const uint8_t* p, uint16_t len, DeviceSettings& out) {
+    if (len != PAYLOAD_V3_SIZE) return false;
+    if (!decodeV2(p, PAYLOAD_V2_SIZE, out)) return false;
+    for (uint8_t l = 0; l < NUM_LAYERS; ++l) {
+        for (uint8_t k = 0; k < NUM_KEYS; ++k) {
+            out.keymaps[l][k].modifiers = p[PAYLOAD_V2_SIZE + l * NUM_KEYS + k];
+        }
+    }
+    return true;
+}
+
 struct SchemaDecoder {
     uint16_t schema;
     bool (*decode)(const uint8_t* p, uint16_t len, DeviceSettings& out);
@@ -197,7 +222,8 @@ struct SchemaDecoder {
 
 // Migration table: one row per schema this firmware can read
 const SchemaDecoder kDecoders[] = {
-    { SCHEMA_V2, decodeV2 },
+    { SCHEMA_V2, decodeV2 },   // modifiers stay 0 (decodeV2 clears the record)
+    { SCHEMA_V3, decodeV3 },
 };
 
 } // namespace
@@ -218,9 +244,9 @@ uint32_t crc32Update(uint32_t crc, const uint8_t* data, uint32_t len) {
 // ---- codec ----------------------------------------------------------------------------------
 
 uint16_t encode(const DeviceSettings& s, uint8_t* out, uint16_t cap) {
-    if (cap < PAYLOAD_V2_SIZE) return 0;
-    encodeV2(s, out);
-    return PAYLOAD_V2_SIZE;
+    if (cap < PAYLOAD_V3_SIZE) return 0;
+    encodeV3(s, out);
+    return PAYLOAD_V3_SIZE;
 }
 
 bool schemaSupported(uint16_t schema) {

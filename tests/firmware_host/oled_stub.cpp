@@ -8,6 +8,7 @@
 
 namespace {
 MenuMode s_page = MenuMode::ADJUST_RT;
+bool     s_menuOpen = false;
 bool     s_fullscreen = true;
 bool     s_sleeping = false;
 bool     s_screensaver = false;
@@ -28,11 +29,22 @@ void publishState() {
 }
 }
 
-void oledInit() { s_page = MenuMode::ADJUST_RT; s_fullscreen = true; s_sleeping = false; s_screensaver = false; s_anim = -1; publishState(); }
+void oledInit() { s_page = MenuMode::ADJUST_RT; s_menuOpen = false; s_fullscreen = true; s_sleeping = false; s_screensaver = false; s_anim = -1; publishState(); }
+// Same page order as oled.cpp: closed -> first page -> ... -> last page -> closed
 void oledCycleMenu() {
-    s_page = (MenuMode)(((uint8_t)s_page + 1) % (uint8_t)MenuMode::COUNT);
+    if (!s_menuOpen) {
+        s_menuOpen = true;
+        s_page = MenuMode::ADJUST_RT;
+    } else if ((uint8_t)s_page + 1 == (uint8_t)MenuMode::COUNT) {
+        s_menuOpen = false;
+        s_page = MenuMode::ADJUST_RT;
+    } else {
+        s_page = (MenuMode)((uint8_t)s_page + 1);
+    }
 }
-bool oledAdjustCurrentSetting(int32_t delta) { return encoderMenuApply(s_page, delta); }
+bool oledAdjustCurrentSetting(int32_t delta) { s_menuOpen = true; return encoderMenuApply(s_page, delta); }
+bool oledMenuOpen() { return s_menuOpen; }
+void oledCloseMenu() { s_menuOpen = false; s_page = MenuMode::ADJUST_RT; }
 void oledSetFullScreen(bool enabled) { s_fullscreen = enabled; }
 bool oledIsFullScreen() { return s_fullscreen; }
 void oledTriggerScreensaver() { s_screensaver = true; s_sleeping = false; publishState(); }
@@ -58,6 +70,7 @@ uint8_t oledBusScanResult(uint8_t* found, uint8_t max) {
 
 extern "C" {
 int oled_stub_page() { return (int)s_page; }
+int oled_stub_menu_open() { return s_menuOpen ? 1 : 0; }
 uint32_t oled_stub_wakes() { return s_wakes; }
 int oled_stub_anim() { return s_anim; }
 int oled_stub_sleeping() { return s_sleeping ? 1 : 0; }

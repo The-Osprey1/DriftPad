@@ -4,7 +4,7 @@
  *
  *  Draft          keymap edits kept in localStorage under a versioned key (works offline).
  *  KeymapSync     compares the draft with DeviceSession.confirmed and writes the differences.
- *                 A write snapshots {code,label} before sending; the ack stores the device's
+ *                 A write snapshots {code,label,mods} before sending; the ack stores the device's
  *                 normalised reply values as confirmed. A key edited again while its write was
  *                 in flight therefore stays pending (draft != confirmed), and a device that stored
  *                 something else than what was sent is reported as a mismatch.
@@ -22,10 +22,12 @@
     const NUM_KEYS = C.NUM_KEYS;
 
     const keyId = (l, k) => `${l}:${k}`;
-    const sameKey = (a, b) => !!a && !!b && a.code === b.code && a.label === b.label;
-    const cloneLayers = layers => layers.map(l => l.map(k => ({ code: k.code, label: k.label })));
+    const modsOf = key => key.mods || 0;   // drafts and backups from before key combinations have none
+    const sameKey = (a, b) => !!a && !!b && a.code === b.code && a.label === b.label && modsOf(a) === modsOf(b);
+    const cloneLayers = layers => layers.map(l => l.map(k => ({ code: k.code, label: k.label, mods: modsOf(k) })));
+    const validMods = m => Number.isInteger(m) && m >= 0 && m <= C.LIMITS_CMM.MODIFIERS_MASK;
 
-    // Validates 3 x 16 {code,label}. strict: labels must already satisfy the rule; otherwise
+    // Validates 3 x 16 {code,label,mods} (mods optional, 0 when absent). strict: labels must already satisfy the rule; otherwise
     // invalid labels are replaced by the catalog label for the code (legacy data) and reported.
     function checkLayers(layers, { strict }) {
         const problems = [];
@@ -46,6 +48,8 @@
                 const code = key.code;
                 if (!Number.isInteger(code) || code < 0 || code > 255) { problems.push(`${where}.code must be an integer 0..255`); continue; }
                 if (!K.isAssignable(code)) { problems.push(`${where}.code ${code} does not produce a key on the pad`); continue; }
+                const mods = key.mods === undefined ? 0 : key.mods;
+                if (!validMods(mods)) { problems.push(`${where}.mods must be an integer 0..15`); continue; }
                 let label = C.normalizeLabel(key.label);
                 if (label === null) {
                     const why = C.labelProblem(typeof key.label === "string" ? key.label : "") || "invalid";
@@ -53,7 +57,7 @@
                     label = K.defaultLabel(code);
                     warnings.push(`${where}.label ${JSON.stringify(key.label)} replaced by "${label}" (${why})`);
                 }
-                row.push({ code, label });
+                row.push({ code, label, mods });
             }
             out.push(row);
         }
@@ -125,17 +129,20 @@
         isCustom(l, k) { return !sameKey(this.layers[l][k], this.defaults[l][k]); }
 
         // Sets one key. `label` must satisfy the label rule; the code must be assignable.
-        set(l, k, code, label) {
+        // `mods` (Ctrl/Shift/Alt/Win bits) keeps the key's current modifiers when omitted.
+        set(l, k, code, label, mods) {
             const lbl = C.normalizeLabel(label);
             if (lbl === null) throw new Error(C.labelProblem(label) || "Invalid label");
             if (!K.isAssignable(code)) throw new Error(`Code ${code} does not produce a key on the pad`);
-            this.layers[l][k] = { code, label: lbl };
+            const m = mods === undefined ? modsOf(this.layers[l][k]) : mods;
+            if (!validMods(m)) throw new Error("Modifiers must be Ctrl, Shift, Alt and Win only");
+            this.layers[l][k] = { code, label: lbl, mods: m };
             this.touched = true;
             this.save();
             this.emit("change", { l, k });
         }
 
-        resetKey(l, k) { this.set(l, k, this.defaults[l][k].code, this.defaults[l][k].label); }
+        resetKey(l, k) { this.set(l, k, this.defaults[l][k].code, this.defaults[l][k].label, modsOf(this.defaults[l][k])); }
 
         resetLayer(l) {
             this.layers[l] = cloneLayers(this.defaults)[l];
@@ -168,7 +175,7 @@
             super();
             this.draft = draft;
             this.session = session;
-            this.inFlight = new Map();     // keyId -> snapshot {l,k,code,label}
+            this.inFlight = new Map();     // keyId -> snapshot {l,k,code,label,mods}
             this.errors = new Map();       // keyId -> message from the last failed write
             this.mismatches = new Map();   // keyId -> {sent, stored}
             this.writing = false;
@@ -237,7 +244,7 @@
             // Snapshot the outgoing values now; later edits do not change what this write sends.
             const items = this.pendingList().map(({ l, k }) => {
                 const d = this.draft.get(l, k);
-                return { l, k, code: d.code, label: d.label };
+                return { l, k, code: d.code, label: d.label, mods: modsOf(d) };
             });
             this.writing = true;
             this.emit("change");
@@ -254,9 +261,9 @@
                         this.mismatches.delete(id);
                         this.emit("change");
                         try {
-                            const stored = await this.session.setKey(it.l, it.k, it.code, it.label);
-                            if (stored.code !== it.code || stored.label !== it.label) {
-                                this.mismatches.set(id, { sent: { code: it.code, label: it.label }, stored });
+                            const stored = await this.session.setKey(it.l, it.k, it.code, it.label, it.mods);
+                            if (!sameKey(stored, it)) {
+                                this.mismatches.set(id, { sent: { code: it.code, label: it.label, mods: it.mods }, stored });
                                 result.mismatched.push({ ...it, stored });
                             } else {
                                 result.written.push(it);
@@ -284,7 +291,7 @@
                             result.failed = result.failed.filter(f => {
                                 if (!sameKey(cfg.layers[f.l][f.k], f)) return true;
                                 this.errors.delete(keyId(f.l, f.k));
-                                result.written.push({ l: f.l, k: f.k, code: f.code, label: f.label, confirmedBy: "readback" });
+                                result.written.push({ l: f.l, k: f.k, code: f.code, label: f.label, mods: f.mods, confirmedBy: "readback" });
                                 return false;
                             });
                         }

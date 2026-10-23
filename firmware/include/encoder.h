@@ -55,6 +55,20 @@ bool encoderIsPressed();
 bool encoderWasClicked();
 
 /**
+ * @brief Checks for a short press: released before the long-press time.
+ *
+ * Fires on release and clears once read.
+ */
+bool encoderTakeShortPress();
+
+/**
+ * @brief Checks for a long press: held for one second.
+ *
+ * Fires once while still held (the release then fires nothing) and clears once read.
+ */
+bool encoderTakeLongPress();
+
+/**
  * @brief Raw pin levels from the last update, for wiring checks.
  *
  * @return Bit 0 = A, bit 1 = B, bit 2 = switch; a set bit means the pin reads HIGH

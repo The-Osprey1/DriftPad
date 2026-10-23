@@ -63,13 +63,13 @@
                     <div class="oled-main" id="oledMain">ESC</div>
                     <div class="oled-sub" id="oledSub">KEY 0 · Esc</div>
                 </div>
-                <div class="knob" id="knob" aria-hidden="true" title="The knob drives the on-device menu and is not remappable">
+                <div class="knob" id="knob" aria-hidden="true" title="Turn: volume. Press: mute. Hold one second: settings menu on the pad.">
                     <div class="knob-dial"></div><span>KNOB</span>
                 </div>
                 <!-- 16 key caps are created once by app.js and updated in place -->
             </div>
             <p id="knobState" class="small knob-note">Connect the pad to check the knob.</p>
-            <p id="knobHint" class="muted small knob-note">Turning the knob should switch A and B between high and low and count steps (4 per click); pressing it should show the switch closed. If nothing changes, check the knob's ground wire and its A, B and switch wires (GP20, GP21, GP2).</p>
+            <p id="knobHint" class="muted small knob-note">Turn the knob for volume and press it to mute (keyboard output must be on); hold it for one second for the settings menu on the pad's screen. Turning should switch A and B between high and low and count steps (4 per click), and pressing should show the switch closed. If nothing changes, check the knob's ground wire and its A, B and switch wires (GP20, GP21, GP2).</p>
 
             <div class="legend">
                 <span><i class="flag-custom" aria-hidden="true">●</i> Changed from the default layout</span>
@@ -113,6 +113,14 @@
                     <input type="number" id="codeInput" min="0" max="255">
                 </div>
             </div>
+            <fieldset class="mods" id="modsField" aria-describedby="modsHint">
+                <legend class="field-label">Hold with the key</legend>
+                <label><input type="checkbox" data-mod="1"> Ctrl</label>
+                <label><input type="checkbox" data-mod="2"> Shift</label>
+                <label><input type="checkbox" data-mod="4"> Alt</label>
+                <label><input type="checkbox" data-mod="8"> Win</label>
+                <span id="modsHint" class="hint">Held together with the key, e.g. Ctrl + C.</span>
+            </fieldset>
             <div class="row">
                 <button id="captureBtn" class="btn capture-btn" type="button" aria-pressed="false">Press a key to assign</button>
                 <span class="muted" id="captureHint">Or pick one below.</span>
@@ -264,7 +272,7 @@
                 <button id="screensaverStopBtn" class="btn btn-sm" type="button" disabled>Stop screensaver</button>
                 <button id="displayOffBtn" class="btn btn-sm" type="button" disabled>Display off</button>
                 <button id="displayRefreshBtn" class="btn btn-sm" type="button" disabled>Refresh display status</button>
-                <p id="displayHint" class="hint">Choose an animation, then Play. Idle leaves your selected screen in place. Turn or press the rotary to wake a hidden display; the first input only wakes it.</p>
+                <p id="displayHint" class="hint">Choose an animation, then Play. Idle leaves your selected screen in place. Turn or press the knob to wake a hidden display; in the settings menu the first input only wakes it.</p>
                 <p id="displayState" class="hint"></p>
                 <p id="displayRequestState" class="hint" role="status" aria-live="polite"></p>
             </fieldset>

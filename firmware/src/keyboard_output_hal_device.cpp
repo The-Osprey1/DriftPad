@@ -16,7 +16,8 @@ bool     s_linkWasUp = false;
 }
 
 // TinyUSB weak callbacks (pico-sdk lib/tinyusb src/class/hid/hid_device.c). The core does not
-// define them. DriftPad sends no other HID reports, so every input report is a keyboard report.
+// define them. Keyboard and media reports share the endpoint and are both counted: KeyboardOutput
+// expects one delivery for a report already in flight when it starts, whichever kind it is.
 extern "C" void tud_hid_report_complete_cb(uint8_t, uint8_t const*, uint16_t) {
     s_delivered = s_delivered + 1;
 }
@@ -39,6 +40,14 @@ bool hidRelease(uint8_t code) {
 
 void hidReleaseAll() {
     Keyboard.releaseAll();
+}
+
+bool hidConsumerPress(uint16_t usage) {
+    return Keyboard.consumerPress(usage) != 0;
+}
+
+bool hidConsumerRelease() {
+    return Keyboard.consumerRelease() != 0;
 }
 
 bool hidLinkUp() {

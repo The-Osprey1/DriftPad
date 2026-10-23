@@ -32,9 +32,11 @@ the actual screen confirms rendering. See [hardware.md](hardware.md) for firmwar
 
 ## Check each sensor before calibration
 
-Standby stays on the layer/key screen. The encoder button selects Rapid Trigger sensitivity,
-actuation, Rapid Trigger on/off, layer, then the key screen again. Turning the encoder adjusts
-the selected setting and opens its screen if needed. Selected settings screens stay visible;
+Standby stays on the layer/key screen. There the knob is a volume control: turning sends volume
+up or down and a press sends mute, both only while keyboard output is on. Holding the knob for one
+second opens the settings menu: a press then selects Rapid Trigger sensitivity, actuation, Rapid
+Trigger on/off, layer, then the key screen again, turning adjusts the selected setting, and
+holding again closes the menu. Selected settings screens stay visible;
 they do not time out or cycle automatically.
 Idle does not start a screensaver or put the display to sleep. Those display modes remain
 available through explicit configurator/serial commands.

@@ -71,12 +71,18 @@ constexpr uint16_t PAYLOAD_LIMIT  = (uint16_t)(FlashIo::SECTOR_SIZE - HEADER_SIZ
 //    300 16 x { u16 rest_raw, u16 range_counts, i8 polarity, u8 flags }
 //    396 end
 //
-// Migration table (decode()): schema 2 -> current RAM model. The legacy v1 EEPROM image is not
+// Schema 3 payload (PAYLOAD_V3_SIZE bytes): the schema 2 payload unchanged, then
+//    396 u8 modifiers[3][16], layer-major (limits::MODIFIERS_MASK bits held with each key)
+//    444 end
+//
+// Migration table (decode()): schema 2 (no modifiers) and schema 3 -> current RAM model. The legacy v1 EEPROM image is not
 // an A/B record; config.cpp migrates it separately (legacy_settings_v1.h). A new schema adds an
 // encoder, bumps SCHEMA_CURRENT and keeps a decoder row for every older schema.
 constexpr uint16_t SCHEMA_V2       = 2;
-constexpr uint16_t SCHEMA_CURRENT  = SCHEMA_V2;
+constexpr uint16_t SCHEMA_V3       = 3;
+constexpr uint16_t SCHEMA_CURRENT  = SCHEMA_V3;
 constexpr uint16_t PAYLOAD_V2_SIZE = 396;
+constexpr uint16_t PAYLOAD_V3_SIZE = PAYLOAD_V2_SIZE + 3 * 16;
 constexpr uint16_t PAYLOAD_MAX     = 512;   // largest supported-schema payload this firmware buffers
 
 // Encodes `s` with SCHEMA_CURRENT. Returns the payload length, or 0 if `cap` is too small.

@@ -49,7 +49,7 @@ static const HallKeyConfig DEFAULT_CONFIGS[NUM_KEYS] = {
 };
 
 HallKey::HallKey()
-    : _keyIndex(0), _muxChannel(0), _hidKeyCode(0), _label(""),
+    : _keyIndex(0), _muxChannel(0), _hidKeyCode(0), _hidModifiers(0), _label(""),
       _currentRaw(2048), _filteredRaw(2048.0f), _restBaseline(2048.0f),
       _bottomRaw(3048.0f), _dynamicRange(1000.0f), _polarityDetected(false),
       _voltageIncreasesOnPress(true), _travelMm(0.0f),
@@ -71,6 +71,7 @@ void HallKey::init(uint8_t index, uint8_t channel, uint8_t keycode, const char* 
     _keyIndex = index;
     _muxChannel = channel;
     _hidKeyCode = keycode;
+    _hidModifiers = 0;
     _label = label;
     _currentRaw = 2048;
     _filteredRaw = 2048.0f;
@@ -558,7 +559,7 @@ void HallManager::updateAll() {
         bool pressed = key.isPressed();
         if (pressed && !(s_routedMask & bit)) {
             s_routedMask |= bit;
-            KeyboardOutput::onPress(i, key.getHidKeyCode());
+            KeyboardOutput::onPress(i, key.getHidKeyCode(), key.getHidModifiers());
         } else if (!pressed && (s_routedMask & bit)) {
             s_routedMask &= (uint16_t)~bit;
             KeyboardOutput::onRelease(i);

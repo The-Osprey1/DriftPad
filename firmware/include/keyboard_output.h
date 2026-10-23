@@ -72,7 +72,9 @@ const char* reasonName(Reason r);
 
 // Physical key edges from HallManager. `code` is the Arduino key code mapped to the key at the
 // moment of the press; it is captured and used again on release.
-void onPress(uint8_t physKey, uint8_t code);
+// extraModifiers (HID modifier bits) are held with the key's own action: a combination such as
+// Ctrl+C. With code 0 (None) they make a modifiers-only key.
+void onPress(uint8_t physKey, uint8_t code, uint8_t extraModifiers = 0);
 void onRelease(uint8_t physKey);
 
 // The key produces no output until it is released. pressedNow = true (held at boot, leaving SIM):

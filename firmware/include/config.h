@@ -19,6 +19,7 @@ constexpr uint8_t NUM_LAYERS = limits::NUM_LAYERS;
 struct LayerKey {
     uint8_t hidCode;                       // Arduino Keyboard code, 0 = none
     char    label[limits::LABEL_MAX_LEN + 1];  // normalised, NUL terminated
+    uint8_t modifiers;                     // extra modifiers held with the key (limits::MODIFIERS_MASK)
 };
 
 struct DeviceSettings {
@@ -88,8 +89,9 @@ ConfigStatus configSetActuationCmm(uint16_t cmm);
 ConfigStatus configSetRtSensCmm(uint16_t cmm);
 void         configSetRtEnabled(bool enabled);
 ConfigStatus configSetActiveLayer(uint8_t layer);
-// label == nullptr keeps the current label; otherwise it is normalised (configNormalizeLabel)
-ConfigStatus configSetKey(uint8_t layer, uint8_t key, uint8_t code, const char* label);
+// label == nullptr keeps the current label; otherwise it is normalised (configNormalizeLabel).
+// modifiers: limits::MODIFIERS_MASK bits held with the key; 0 makes it a plain key.
+ConfigStatus configSetKey(uint8_t layer, uint8_t key, uint8_t code, const char* label, uint8_t modifiers = 0);
 void         configSetBootOutput(bool enabled);
 ConfigStatus configSetCalibration(const CalibrationData& data);  // must evaluate Valid (or be Missing)
 

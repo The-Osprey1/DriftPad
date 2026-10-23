@@ -10,7 +10,7 @@ button in place of Back to Studio (`scripts/build-site.cjs`). `keymap.html` only
 
 | Tab | What it does |
 |---|---|
-| Keys | The pad as it sits on the desk, with a live knob line under it (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
+| Keys | The pad as it sits on the desk, with a live knob line under it (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), tick Ctrl, Shift, Alt or Win to hold them with it (Ctrl + C), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
 | Sensitivity | Actuation and Rapid Trigger sensitivity (limits come from the pad's `INFO`), Rapid Trigger on/off, live key travel |
 | Device | Firmware version and build, keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
 
@@ -56,8 +56,8 @@ calibration, keyboard output, or saved sensitivity settings.
 
 Idle leaves the selected screen in place. Screensaver playback starts only when explicitly
 requested; Shuffle all changes animations during that requested playback. A fixed selection keeps
-its animation. Turn or press the rotary to wake the display: the first input only wakes it, so it
-does not also adjust a setting or advance a page.
+its animation. Turn or press the knob to wake the display. In the settings menu the first input only wakes it, so it
+does not also adjust a setting or advance a page; outside the menu, volume and mute still apply.
 
 Controls stay disabled while a display request is pending. New firmware reports the display core's
 applied mode through `INFO` and `STATUS`; the page reads it back after a command before confirming

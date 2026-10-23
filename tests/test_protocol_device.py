@@ -273,7 +273,7 @@ class TestProtocolDevice(unittest.TestCase):
                 self.assertTrue(self.lib.engine_rt_enabled())
 
     def test_argument_counts_are_exact(self):
-        for line in ("SET_LAYER", "SET_LAYER 1 2", "SET_KEY 0 0", "SET_KEY 0 0 4 AB CD", "PING x",
+        for line in ("SET_LAYER", "SET_LAYER 1 2", "SET_KEY 0 0", "SET_KEY 0 0 4 AB 1 X", "PING x",
                      "SAVE now", "SET_ACTUATION 1 2", "SET_RT_SENS"):
             with self.subTest(line=line):
                 self.assertEqual(self.one(line)["code"], "bad_arguments")
@@ -499,6 +499,172 @@ class TestProtocolDevice(unittest.TestCase):
         self.assertEqual(self._host(), (0, frozenset()))
         self.one("SIM OFF")
         self.one("SET_HID 0")
+
+
+class TestKeyCombinations(unittest.TestCase):
+    """SET_KEY's optional mods value: modifiers the key holds with its own action (Ctrl+C)."""
+
+    CTRL, SHIFT = 0x01, 0x02
+    USAGE_C, USAGE_V = 0x06, 0x19
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = dh.current_device()
+
+    def setUp(self):
+        self.lib.reset_flash()
+        for k in range(16):
+            self.lib.set_travel(k, 0.0)
+        self.d = dh.Device(self.lib)
+
+    def one(self, line: str) -> dict:
+        replies = self.d.replies(line)
+        self.assertEqual(len(replies), 1, f"{line!r} produced {replies}")
+        return replies[0]
+
+    def host(self) -> Tuple[int, list]:
+        out = (ctypes.c_uint8 * 7)()
+        self.lib.usbfake_host_state(out)
+        return out[0], [u for u in list(out)[1:] if u]
+
+    def press(self, key: int, down: bool) -> None:
+        self.lib.set_travel(key, 3.0 if down else 0.0)
+        self.d.run(500)
+
+    def test_mods_are_stored_reported_and_default_to_a_plain_key(self):
+        r = self.one("SET_KEY 0 3 99 COPY 1")
+        self.assertEqual((r["status"], r["code"], r["label"], r["mods"]), ("ok", 99, "COPY", 1))
+        self.assertEqual(self.d.config()["layers"][0][3]["mods"], 1)
+        self.assertEqual(self.one("SET_KEY 0 3 99 C")["mods"], 0, "no mods value sets a plain key")
+        self.assertIn("key_modifiers", self.one("INFO")["features"])
+
+    def test_mods_outside_ctrl_shift_alt_win_are_rejected(self):
+        for value in ("16", "-1", "x"):
+            with self.subTest(mods=value):
+                r = self.one(f"SET_KEY 0 3 99 C {value}")
+                self.assertEqual(r["status"], "error")
+        self.assertEqual(self.d.config()["layers"][0][3]["mods"], 0)
+
+    def test_a_combination_holds_its_modifiers_with_the_key(self):
+        self.one("SET_HID 1 FORCE")
+        self.one("SET_KEY 0 3 99 C 3")                 # Ctrl+Shift+c on key 3
+        self.press(3, True)
+        self.assertEqual(self.host(), (self.CTRL | self.SHIFT, [self.USAGE_C]))
+        self.press(3, False)
+        self.assertEqual(self.host(), (0, []), "releasing the key releases its modifiers")
+
+    def test_a_shared_modifier_stays_down_until_its_last_key_is_released(self):
+        self.one("SET_HID 1 FORCE")
+        self.one("SET_KEY 0 3 99 C 1")                 # Ctrl+c
+        self.one("SET_KEY 0 7 118 V 1")                # Ctrl+v
+        self.press(3, True)
+        self.press(7, True)
+        self.assertEqual(self.host(), (self.CTRL, [self.USAGE_C, self.USAGE_V]))
+        self.press(3, False)
+        self.assertEqual(self.host(), (self.CTRL, [self.USAGE_V]), "Ctrl is still held for Ctrl+v")
+        self.press(7, False)
+        self.assertEqual(self.host(), (0, []))
+
+    def test_modifiers_with_no_key_make_a_modifier_key(self):
+        self.one("SET_HID 1 FORCE")
+        self.one("SET_KEY 0 3 0 CS 3")                 # None + Ctrl+Shift
+        self.press(3, True)
+        self.assertEqual(self.host(), (self.CTRL | self.SHIFT, []))
+        self.press(3, False)
+        self.assertEqual(self.host(), (0, []))
+
+
+class TestKnobActions(unittest.TestCase):
+    """Outside the settings menu the knob is volume (turn) and mute (press); holding it opens the
+    menu, where it adjusts settings and sends no media keys."""
+
+    A, B, SW = 20, 21, 2   # firmware/include/pins.h
+    VOLUME_UP, VOLUME_DOWN, MUTE = 0xE9, 0xEA, 0xE2
+    LOOPS_PER_MS = 10      # vd_loop: one loop() per 100 us of fake time
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = dh.current_device()
+        cls.reversed = "REVERSE_DIRECTION = true" in (TESTS_DIR.parent / "firmware" / "src" / "encoder.cpp").read_text()
+
+    def setUp(self):
+        self.lib.reset_flash()
+        for k in range(16):
+            self.lib.set_travel(k, 0.0)
+        for pin in (self.A, self.B, self.SW):
+            self.lib.pin_fake_set(pin, 1)
+        self.d = dh.Device(self.lib)
+
+    def ms(self, n: int) -> None:
+        self.d.run(n * self.LOOPS_PER_MS)
+
+    def turn(self, clockwise: bool) -> None:
+        """One detent. The pin order that counts up depends on encoder.cpp REVERSE_DIRECTION."""
+        up = [(0, 1), (0, 0), (1, 0), (1, 1)]
+        down = [(1, 0), (0, 0), (0, 1), (1, 1)]
+        for a, b in (up if clockwise != self.reversed else down):
+            self.lib.pin_fake_set(self.A, a)
+            self.lib.pin_fake_set(self.B, b)
+            self.d.run(20)
+        self.ms(20)
+
+    def hold(self, ms: int) -> None:
+        self.lib.pin_fake_set(self.SW, 0)
+        self.ms(ms)
+        self.lib.pin_fake_set(self.SW, 1)
+        self.ms(50)
+
+    def media(self) -> list:
+        return [self.lib.usbfake_media_log_entry(i) for i in range(self.lib.usbfake_media_log_len())]
+
+    def output_on(self) -> None:
+        self.assertEqual(self.d.replies("SET_HID 1 FORCE")[0]["status"], "ok")
+
+    def test_turning_sends_volume_up_and_down(self):
+        self.output_on()
+        wakes = self.lib.oled_stub_wakes()
+        self.turn(clockwise=True)
+        self.assertGreater(self.lib.oled_stub_wakes(), wakes, "a volume turn wakes a hidden display")
+        self.turn(clockwise=False)
+        self.assertEqual(self.media(), [self.VOLUME_UP, 0, self.VOLUME_DOWN, 0], "each click is one tap")
+        self.assertEqual(self.lib.usbfake_media_held(), 0, "no media key left held")
+
+    def test_a_short_press_mutes(self):
+        self.output_on()
+        self.hold(100)
+        self.assertEqual(self.media(), [self.MUTE, 0])
+        self.assertEqual(self.lib.oled_stub_menu_open(), 0)
+
+    def test_nothing_is_sent_while_keyboard_output_is_off(self):
+        self.turn(clockwise=True)
+        self.hold(100)
+        self.assertEqual(self.media(), [])
+
+    def test_holding_opens_and_closes_the_settings_menu(self):
+        self.output_on()
+        before = self.d.config()["rt_sens"]
+        self.hold(1100)
+        self.assertEqual(self.lib.oled_stub_menu_open(), 1, "a one-second hold opens the menu")
+        self.turn(clockwise=True)
+        self.assertNotEqual(self.d.config()["rt_sens"], before, "in the menu, turning adjusts the setting")
+        self.hold(1100)
+        self.assertEqual(self.lib.oled_stub_menu_open(), 0, "holding again closes it")
+        self.assertEqual(self.media(), [], "no volume or mute while opening, using or closing the menu")
+
+    def test_volume_never_displaces_a_keystroke(self):
+        self.output_on()
+        self.lib.set_travel(3, 3.0)        # a key goes down while the knob turns
+        for _ in range(3):
+            self.turn(clockwise=True)
+        host = (ctypes.c_uint8 * 7)()
+        self.lib.usbfake_host_state(host)
+        self.assertIn(38, list(host)[1:], "the held key (usage 38) stayed down on the host through the volume taps")
+        self.lib.set_travel(3, 0.0)
+        self.ms(50)
+        counters = (ctypes.c_uint32 * 5)()
+        self.lib.usbfake_counters(counters)
+        self.assertEqual(counters[3], 0, "a report was refused: something sent while the endpoint was busy")
+        self.assertEqual(self.media(), [self.VOLUME_UP, 0] * 3)
 
 
 if __name__ == "__main__":

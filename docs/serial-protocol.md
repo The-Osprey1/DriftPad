@@ -6,7 +6,7 @@ DriftPad speaks a line-based text protocol over its USB serial port (CDC, 115200
 [`firmware/src/commands.cpp`](../firmware/src/commands.cpp); `tests/test_contract_consistency.py`
 fails when this document and the table disagree. Detect capabilities with `INFO`: `protocol` is 2 and
 `features[]` lists what this firmware has (`keymap layers rapid_trigger telemetry timing raw sim
-display guided_calibration boot_output settings_ab display_status encoder_status`). Firmware before 2.1.0 spoke protocol 1
+display guided_calibration boot_output settings_ab display_status encoder_status key_modifiers`). Firmware before 2.1.0 spoke protocol 1
 (replies without `cmd` or `id`); the configurator refuses it and says so.
 
 ## Limits
@@ -71,14 +71,14 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 |---|---|
 | `PING` | `type:"pong"` |
 | `INFO` (alias `HELLO`) | `type:"info", device:"DriftPad", hw, fw, protocol:2, build, build_date, features[], limits{actuation{min,max,default,step}, rt_sens{...}, layers, keys, label_max, label_chars, code_max, line_max, stream_hz_max}, calibration{state}, output{enabled, reason, active_keys[], suppressed_keys[], overflow, delivery}, settings{dirty, source, seq, load_errors[]}, uptime_ms`, plus optional `display{available, mode, animation, shuffle, dimmed}` when `display_status` is advertised |
-| `GET_CONFIG` | `type:"config", actuation, rt_sens, rt_enabled, active_layer, boot_output, dirty, settings_seq, layers[3][16]{idx, code, label}` |
+| `GET_CONFIG` | `type:"config", actuation, rt_sens, rt_enabled, active_layer, boot_output, dirty, settings_seq, layers[3][16]{idx, code, label, mods}` (`mods` with feature `key_modifiers`) |
 | `STATUS` | `type:"status", active_layer, last_key, keys[16]{idx, pressed, travel, label}, output{...}, calibration{state}, sim_mask, dirty`, plus optional `display{...}` when `display_status` is advertised |
 | `STREAM <0|1> [hz]` | `streaming, hz`; then `{"type":"telemetry","seq","t","layer","pressed"(bitmask),"active"(bitmask),"sim"(bitmask),"travel"[16 × cmm ints],"knob"{a,b,sw,steps,presses},"dirty"}` at `hz` (default 30, max 60). `knob` (feature `encoder_status`) gives the raw encoder pin levels (1 = HIGH, contact open) and the quadrature steps and debounced presses counted since boot, for wiring checks. Streaming stops when the host closes the port. |
 | `SET_ACTUATION <mm>` | `actuation` + applied/persisted/dirty |
 | `SET_RT_SENS <mm>` | `rt_sens` + applied/persisted/dirty |
 | `SET_RT_ENABLE <bool>` | `rt_enabled` + applied/persisted/dirty |
 | `SET_LAYER <0-2>` | `active_layer` + applied/persisted/dirty |
-| `SET_KEY <layer> <key> <code> [label]` | `layer, key, code, label` (normalised) + applied/persisted/dirty |
+| `SET_KEY <layer> <key> <code> [label] [mods]` | `layer, key, code, label` (normalised), `mods` + applied/persisted/dirty. `mods` (feature `key_modifiers`, 0 to 15) are modifiers held with the key: 1 Ctrl, 2 Shift, 4 Alt, 8 Win, so `SET_KEY 0 3 99 COPY 1` makes key 3 send Ctrl+C. Omitted means 0, a plain key; `mods` needs `label` before it. With code 0 the key sends only the modifiers |
 | `SET_HID <bool> [FORCE]` (aliases `HID`, `OUTPUT`) | `hid_output, output{...}` (runtime only, never saved) |
 | `SAVE` | `persisted:true, dirty:false, duration_ms`, or error `flash_error`/`flash_verify_failed` with `persisted:false` |
 | `REVERT` | `applied, persisted, dirty` — reloads the saved settings; `not_allowed` when nothing is saved |
@@ -141,7 +141,8 @@ shuffle mode; sending `ANIM -1` is not valid syntax.
 power-up default is shuffle. Restarting playback restores full panel levels and starts a new
 three-minute dim timer. After three minutes of uninterrupted playback the panel dims; `WAKE` or
 trusted key/rotary activity restores full brightness and returns to the selected screen. The first
-rotary input while hidden only wakes the display, preserving the selected menu and settings.
+menu input from the knob while hidden only wakes the display, preserving the selected menu and settings;
+volume and mute (the knob outside the menu, while keyboard output is on) still apply.
 Idle never starts a screensaver, puts the display to sleep, or changes the selected standby page.
 Wake, sleep, screensaver and test-pattern requests are applied in posting order: a later `WAKE`,
 `SLEEP` or `SCREENSAVER` cancels an older test pattern, whether it was active or still queued.

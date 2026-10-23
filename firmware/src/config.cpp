@@ -103,7 +103,8 @@ bool sameKeymaps(const DeviceSettings& a, const DeviceSettings& b) {
         for (uint8_t k = 0; k < NUM_KEYS; ++k) {
             const LayerKey& x = a.keymaps[l][k];
             const LayerKey& y = b.keymaps[l][k];
-            if (x.hidCode != y.hidCode || strncmp(x.label, y.label, sizeof(x.label)) != 0) return false;
+            if (x.hidCode != y.hidCode || x.modifiers != y.modifiers ||
+                strncmp(x.label, y.label, sizeof(x.label)) != 0) return false;
         }
     }
     return true;
@@ -145,6 +146,7 @@ void applyLayerToKeys() {
     for (uint8_t i = 0; i < NUM_KEYS; ++i) {
         HallKey& k = HallManager::getKey(i);
         k.setHidKeyCode(s_settings.keymaps[layer][i].hidCode);
+        k.setHidModifiers(s_settings.keymaps[layer][i].modifiers);
         k.setLabel(s_settings.keymaps[layer][i].label);
     }
 }
@@ -255,19 +257,22 @@ ConfigStatus configSetActiveLayer(uint8_t layer) {
     return ConfigStatus::Ok;
 }
 
-ConfigStatus configSetKey(uint8_t layer, uint8_t key, uint8_t code, const char* label) {
+ConfigStatus configSetKey(uint8_t layer, uint8_t key, uint8_t code, const char* label, uint8_t modifiers) {
     if (layer >= NUM_LAYERS) return ConfigStatus::InvalidLayer;
     if (key >= NUM_KEYS) return ConfigStatus::InvalidKey;
     if (!keycodeIsAssignable(code)) return ConfigStatus::InvalidCode;
+    if (modifiers & (uint8_t)~limits::MODIFIERS_MASK) return ConfigStatus::OutOfRange;
     char norm[limits::LABEL_MAX_LEN + 1];
     if (label != nullptr && !configNormalizeLabel(label, norm)) return ConfigStatus::InvalidLabel;
 
     LayerKey& lk = s_settings.keymaps[layer][key];
     lk.hidCode = code;
+    lk.modifiers = modifiers;
     if (label != nullptr) memcpy(lk.label, norm, sizeof(lk.label));
     if (layer == s_settings.activeLayer) {
         HallKey& k = HallManager::getKey(key);
         k.setHidKeyCode(lk.hidCode);
+        k.setHidModifiers(lk.modifiers);
         k.setLabel(lk.label);
     }
     updateDirty();

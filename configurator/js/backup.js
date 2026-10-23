@@ -5,7 +5,7 @@
  *   {"format":"driftpad-backup","format_version":1,"created":"<ISO>",
  *    "source":{"fw","protocol","build"},
  *    "settings":{"actuation_mm","rt_sens_mm","rt_enabled","active_layer","boot_output"},
- *    "layers":[3][16]{"code","label"}}
+ *    "layers":[3][16]{"code","label","mods"}}   ("mods" optional, 0 when absent: Ctrl/Shift/Alt/Win bits)
  * Calibration is specific to one pad's sensors and magnets, so it is never part of a backup.
  *
  * Also accepted for import: the keymap-only export of the old keymap editor
@@ -39,7 +39,7 @@
                 active_layer: c.active_layer,
                 boot_output: !!c.boot_output,
             },
-            layers: c.layers.map(l => l.map(k => ({ code: k.code, label: k.label }))),
+            layers: c.layers.map(l => l.map(k => ({ code: k.code, label: k.label, mods: k.mods || 0 }))),
         };
     }
 
@@ -119,7 +119,7 @@
             for (let l = 0; l < parsed.layers.length; l++) {
                 for (let k = 0; k < parsed.layers[l].length; k++) {
                     const key = parsed.layers[l][k];
-                    steps.push({ what: `layer ${l} key ${k}`, run: () => session.setKey(l, k, key.code, key.label) });
+                    steps.push({ what: `layer ${l} key ${k}`, run: () => session.setKey(l, k, key.code, key.label, key.mods || 0) });
                 }
             }
             for (let i = 0; i < steps.length; i++) {
@@ -150,7 +150,7 @@
                 for (let k = 0; k < parsed.layers[l].length; k++) {
                     const want = parsed.layers[l][k];
                     const got = cfg.layers[l][k];
-                    if (want.code !== got.code || want.label !== got.label) {
+                    if (want.code !== got.code || want.label !== got.label || (want.mods || 0) !== (got.mods || 0)) {
                         result.mismatched.push({ what: `layer ${l} key ${k}`, expected: want, actual: got });
                     }
                 }

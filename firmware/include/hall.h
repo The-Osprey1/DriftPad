@@ -45,6 +45,8 @@ public:
     uint8_t getMuxChannel() const { return _muxChannel; }
     uint8_t getHidKeyCode() const { return _hidKeyCode; }
     void setHidKeyCode(uint8_t code) { _hidKeyCode = code; }
+    uint8_t getHidModifiers() const { return _hidModifiers; }
+    void setHidModifiers(uint8_t modifiers) { _hidModifiers = modifiers; }
     const char* getLabel() const { return _label; }
     void setLabel(const char* label) { _label = label; }
     bool isPressed() const { return _isPressed; }
@@ -114,6 +116,7 @@ private:
     uint8_t _keyIndex;
     uint8_t _muxChannel;
     uint8_t _hidKeyCode;
+    uint8_t _hidModifiers;
     const char* _label;
 
     uint16_t _currentRaw;

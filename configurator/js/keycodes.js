@@ -192,6 +192,19 @@
         return `Code ${code}`;
     }
 
+    // Extra modifiers held with a key (SET_KEY mods): HID left-modifier bits
+    const MODIFIERS = Object.freeze([
+        Object.freeze({ bit: 1, name: "Ctrl" }), Object.freeze({ bit: 2, name: "Shift" }),
+        Object.freeze({ bit: 4, name: "Alt" }), Object.freeze({ bit: 8, name: "Win" }),
+    ]);
+
+    // "Ctrl + Shift + T"; the key's own name without modifiers; only the modifiers for code 0 (None)
+    function comboName(code, mods) {
+        const held = MODIFIERS.filter(m => (mods || 0) & m.bit).map(m => m.name);
+        if (!held.length) return keyName(code);
+        return (code === 0 ? held : [...held, keyName(code)]).join(" + ");
+    }
+
     // Suggested OLED label for a code: the catalog label, else something that fits the rule.
     function defaultLabel(code) {
         const k = BY_CODE.get(code);
@@ -201,7 +214,7 @@
     }
 
     function defaultKeymaps() {
-        return DEFAULT_KEYMAPS_ROWS.map(layer => layer.map(([code, label]) => ({ code, label })));
+        return DEFAULT_KEYMAPS_ROWS.map(layer => layer.map(([code, label]) => ({ code, label, mods: 0 })));
     }
 
     function searchCatalog(query, category) {
@@ -219,6 +232,8 @@
         byEventCode: ev => BY_EVENT.get(ev) || null,
         isAssignable,
         keyName,
+        MODIFIERS,
+        comboName,
         defaultLabel,
         defaultKeymaps,
         searchCatalog,

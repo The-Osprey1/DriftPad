@@ -84,6 +84,31 @@
         assert(await waitUntil(() => /Wrote 1 key/.test(text("liveStatus"))), text("liveStatus"));
     });
 
+    test("app: the Ctrl/Shift/Alt/Win boxes make a combination that is named and written", async () => {
+        await connected();
+        app().setLayer(0);
+        app().selectKey(6, false);
+        const K = g.DriftPad.keycodes;
+        const original = sim().device.state.layers[0][6];
+        app().assign(99);                                    // c
+        const box = mod => document.querySelector(`#modsField input[data-mod="${mod}"]`);
+        box(1).click();                                      // Ctrl
+        await sleep(10);
+        assertEq(text("sendsName"), "Ctrl + " + K.keyName(99));
+        assert(document.querySelectorAll("#pad .cap")[6].getAttribute("aria-label").includes("Ctrl + "), "the key cap names the combination");
+        $("writeBtn").click();
+        assert(await waitUntil(() => /Matches the pad/.test(text("syncSummary"))), text("syncSummary"));
+        assertEq([sim().device.state.layers[0][6].code, sim().device.state.layers[0][6].mods], [99, 1]);
+        box(1).click();                                      // untick: a plain key again
+        await sleep(10);
+        assertEq(text("sendsName"), K.keyName(99));
+        assert(/not written/.test(text("syncSummary")), text("syncSummary"));
+        app().assign(original.code);                         // leave the key as it was, for later tests
+        $("writeBtn").click();
+        assert(await waitUntil(() => /Matches the pad/.test(text("syncSummary"))), text("syncSummary"));
+        assertEq([sim().device.state.layers[0][6].code, sim().device.state.layers[0][6].mods], [original.code, 0]);
+    });
+
     test("app: the simulator keeps its draft in memory and never touches the stored draft", async () => {
         let stored = "unavailable";
         try { stored = g.localStorage.getItem(g.DriftPad.draft.STORAGE_KEY); } catch (e) { /* storage blocked */ }

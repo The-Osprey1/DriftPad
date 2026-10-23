@@ -33,7 +33,7 @@
         return { sim, device: sim.device, port: sim.port, session, draft, keymap, settings, states, verbs, countVerb };
     }
     const settle = p => p.then(v => ({ ok: true, v }), e => ({ ok: false, e }));
-    const key = (code, label) => ({ code, label });
+    const key = (code, label, mods = 0) => ({ code, label, mods });
 
     // ============================================================ the reviewed defects, new app
     test("defect keymap_edit_during_write: an edit made while its write is pending stays pending", async () => {
@@ -683,5 +683,74 @@
         const b = await rig({ before: (dev, draft) => draft.set(0, 9, 98, "MINE") });
         assertEq(b.draft.get(0, 9), key(98, "MINE"));
         assertEq(b.keymap.pendingList(), [{ l: 0, k: 9 }]);
+    });
+
+    // ============================================================ key combinations (mods)
+    test("combinations: editing a code or label keeps the key's modifiers", () => {
+        const d = new DP.draft.Draft({ storage: null });
+        d.set(0, 3, 99, "COPY", 1);
+        d.set(0, 3, 99, "CP");                       // label only
+        assertEq(d.get(0, 3), key(99, "CP", 1));
+        d.set(0, 3, 118, "CP");                      // code only
+        assertEq(d.get(0, 3), key(118, "CP", 1));
+        d.set(0, 3, 118, "CP", 0);
+        assertEq(d.get(0, 3), key(118, "CP", 0), "explicit 0 clears them");
+        let refused = null;
+        try { d.set(0, 3, 118, "CP", 16); } catch (e) { refused = e.message; }
+        assert(refused && refused.includes("Ctrl, Shift, Alt and Win"), `bit 16 refused: ${refused}`);
+        d.set(0, 4, 99, "C", 3);
+        d.resetKey(0, 4);
+        assertEq(d.get(0, 4).mods, 0, "reset gives the factory key, without modifiers");
+    });
+
+    test("combinations: names read like a shortcut", () => {
+        assertEq(DP.keycodes.comboName(116, 3), "Ctrl + Shift + T");
+        assertEq(DP.keycodes.comboName(116, 0), DP.keycodes.keyName(116));
+        assertEq(DP.keycodes.comboName(0, 9), "Ctrl + Win", "a modifiers-only key names just the modifiers");
+    });
+
+    test("combinations: a draft saved before modifiers existed loads them as 0; bad modifiers are refused", () => {
+        const layers = DP.keycodes.defaultKeymaps().map(l => l.map(k => ({ code: k.code, label: k.label })));
+        const ok = DP.draft.checkLayers(layers, { strict: true });
+        assertEq([ok.problems, ok.layers[0][0].mods], [[], 0]);
+        layers[1][2] = { code: 99, label: "C", mods: 16 };
+        const bad = DP.draft.checkLayers(layers, { strict: true });
+        assertEq(bad.layers, null);
+        assert(bad.problems[0].includes("layers[1][2].mods"), bad.problems[0]);
+    });
+
+    test("combinations: a written combination is what the pad confirms and stores", async () => {
+        const { device, draft, keymap, session } = await rig();
+        draft.set(0, 3, 99, "COPY", 1);
+        assertEq(keymap.pendingList(), [{ l: 0, k: 3 }]);
+        await keymap.writeChanges();
+        assertEq(device.state.layers[0][3], key(99, "COPY", 1));
+        assertEq(session.confirmed.layers[0][3], key(99, "COPY", 1));
+        assertEq(keymap.syncState(), "in_sync");
+        assert(device.received.some(l => /^(@\S+ )?SET_KEY 0 3 99 COPY 1$/.test(l)), device.received.join(" | "));
+    });
+
+    test("combinations: firmware without key_modifiers refuses that key and still writes the others", async () => {
+        const { device, draft, keymap } = await rig({ before: dev => { dev.features = dev.features.filter(f => f !== "key_modifiers"); } });
+        draft.set(0, 3, 99, "COPY", 1);
+        draft.set(0, 4, 98, "B");
+        const r = await settle(keymap.writeChanges());
+        assertEq(r.ok, false);
+        assertEq(device.state.layers[0][4].code, 98, "the plain key was written");
+        assertEq(device.state.layers[0][3].code, 57, "the combination was not");
+        assert(keymap.keyState(0, 3).error.includes("cannot store key combinations"), keymap.keyState(0, 3).error);
+        assert(!device.received.some(l => /SET_KEY 0 4 98 B \d/.test(l)), "no mods value sent to firmware that lacks them");
+    });
+
+    test("combinations: a backup carries modifiers and the restore verifies them", async () => {
+        const a = await rig();
+        a.draft.set(1, 5, 116, "TAB", 3);
+        await a.keymap.writeChanges();
+        const file = DP.backup.create(a.session);
+        assertEq(file.layers[1][5], key(116, "TAB", 3));
+        const b = await rig();
+        const res = await DP.backup.restore(b.session, DP.backup.parse(JSON.stringify(file), b.session.limits));
+        assertEq([res.failed, res.mismatched], [[], []]);
+        assertEq(b.device.state.layers[1][5], key(116, "TAB", 3));
     });
 })(window);

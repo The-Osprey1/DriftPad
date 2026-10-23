@@ -26,13 +26,17 @@ void hidInit();                  // Keyboard.begin()
 bool hidPress(uint8_t code);
 bool hidRelease(uint8_t code);
 void hidReleaseAll();
+// Media keys (consumer control usages, e.g. 0xE9 volume up). Same endpoint and blocking rules as
+// the keyboard calls; only MediaKeys calls them, and only while hidEndpointFree().
+bool hidConsumerPress(uint16_t usage);
+bool hidConsumerRelease();
 
 // Non-blocking transport state
 bool hidLinkUp();                // mounted and not suspended (tud_ready())
 bool hidEndpointFree();          // link up and no report waiting for the host (tud_hid_ready())
 
 // Monotonic counters
-uint32_t hidDeliveredCount();    // reports the host collected (tud_hid_report_complete_cb)
+uint32_t hidDeliveredCount();    // reports the host collected, keyboard and media (tud_hid_report_complete_cb)
 uint32_t hidFailedCount();       // input reports whose transfer failed (tud_hid_report_failed_cb)
 uint32_t hidLinkDownCount();     // link up -> down transitions seen by this function's polling
 

@@ -42,6 +42,9 @@ SCRIPT = [
     # keys and labels
     "SET_KEY 0 5 241 F14", "SET_KEY 0 5 241 n/", "SET_KEY 0 5 98", "SET_KEY 0 5 98 A@", "SET_KEY 0 5 98 ABCDE",
     'SET_KEY 0 5 98 A"', "SET_KEY 0 5 137 X", "SET_KEY 3 0 98", "SET_KEY 0 16 98", "SET_KEY 0 5 256", "SET_KEY 0 5",
+    # key combinations (mods: 1 Ctrl, 2 Shift, 4 Alt, 8 Win)
+    "SET_KEY 0 5 99 COPY 1", "GET_CONFIG", "SET_KEY 0 5 99 C 15", "SET_KEY 0 5 99 C 16", "SET_KEY 0 5 99 C x",
+    "SET_KEY 0 5 99 C -1", "SET_KEY 0 5 99 C 1 2", "SET_KEY 0 5 0 CS 3", "SET_KEY 0 5 99 C", "SET_KEY 0 5 1 C 1",
     "SET_BOOT_OUTPUT 1", "SET_BOOT_OUTPUT 0", "SET_BOOT_OUTPUT x",
     # output gating
     "SET_HID 1", "SET_HID 1 FORCE", "HID 0", "SET_HID 1 NOPE", "OUTPUT 0",

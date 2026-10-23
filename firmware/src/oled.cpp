@@ -2703,6 +2703,18 @@ void oledCycleMenu() {
     display_link::post(Request::Wake);
 }
 
+bool oledMenuOpen() {
+    return s_menuRequested;
+}
+
+void oledCloseMenu() {
+    if (!s_menuRequested) return;
+    s_menuRequested = false;
+    s_currentMenu = MenuMode::ADJUST_RT;
+    s_menuLastActive = millis();
+    display_link::post(Request::Wake);
+}
+
 bool oledAdjustCurrentSetting(int32_t delta) {
     if (delta == 0) return false;
     if (consumeEncoderWake()) return false;

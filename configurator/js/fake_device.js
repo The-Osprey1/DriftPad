@@ -31,6 +31,7 @@
     const HW = "DriftPad V2 (RP2040)";
     const NUM_KEYS = 16;
     const NUM_LAYERS = 3;
+    const MODIFIERS_MASK = 15;   // firmware limits::MODIFIERS_MASK
     const LINE_MAX = 160;
     const ACT = { min: 25, max: 380, def: 120 };
     const RT = { min: 10, max: 200, def: 20 };
@@ -44,7 +45,8 @@
     const CAL_TRAVEL_MIN_CMM = 300;
     // INFO.features of the current firmware (firmware/src/commands.cpp, cmdInfo).
     const FEATURES = ["keymap", "layers", "rapid_trigger", "telemetry", "timing", "raw", "sim", "display",
-                      "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status"];
+                      "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status",
+                      "key_modifiers"];
     const TIMING_OPS = ["command", "telemetry", "save", "calibration", "publish", "display_request", "tx_drain"];
     const GAP_LIMITS_US = [1100, 1500, 2000, 5000, 10000, 50000];
 
@@ -163,7 +165,7 @@
     const TABLE = [
         ["PING", [], 0, 0], ["INFO", ["HELLO"], 0, 0], ["GET_CONFIG", [], 0, 0], ["STATUS", [], 0, 0],
         ["STREAM", [], 1, 2], ["SET_ACTUATION", [], 1, 1], ["SET_RT_SENS", [], 1, 1], ["SET_RT_ENABLE", [], 1, 1],
-        ["SET_LAYER", [], 1, 1], ["SET_KEY", [], 3, 4], ["SET_HID", ["HID", "OUTPUT"], 1, 2], ["SAVE", [], 0, 0],
+        ["SET_LAYER", [], 1, 1], ["SET_KEY", [], 3, 5], ["SET_HID", ["HID", "OUTPUT"], 1, 2], ["SAVE", [], 0, 0],
         ["REVERT", [], 0, 0], ["RESET", [], 0, 0], ["CALIBRATE", [], 0, 0], ["SIM", [], 1, 2], ["SCAN_RATE", [], 0, 0],
         ["TIMING", [], 0, 1], ["RAW", [], 1, 1], ["FULLSCREEN", [], 0, 1], ["SCREENSAVER", [], 0, 0], ["ANIM", [], 0, 1],
         ["SLEEP", [], 0, 0], ["WAKE", [], 0, 0], ["OLED_TEST", [], 0, 0], ["OLED_SCAN", [], 0, 0], ["BOOTSEL", [], 0, 0],
@@ -254,7 +256,7 @@
         _factory() {
             return {
                 actuationCmm: ACT.def, rtSensCmm: RT.def, rtEnabled: true, activeLayer: 0, bootOutput: false,
-                layers: DEFAULT_ROWS.map(l => l.map(([code, label]) => ({ code, label }))),
+                layers: DEFAULT_ROWS.map(l => l.map(([code, label]) => ({ code, label, mods: 0 }))),
             };
         }
 
@@ -402,6 +404,7 @@
             const args = tokens;
             let [, , minArgs, maxArgs] = def;
             if (verb === "RESET" && this.has("guided_calibration")) maxArgs = 1;
+            if (verb === "SET_KEY" && !this.has("key_modifiers")) maxArgs = 4;
             const f = this.faults;
             if (f.unplugOn === verb) {
                 f.unplugOn = null;
@@ -513,6 +516,12 @@
                     if (k.err) return { error: k.err, msg: "key must be 0 to 15" };
                     const c = parseUint(a[2], 0, 255);
                     if (c.err) return { error: c.err, msg: "code must be 0 to 255" };
+                    let mods = 0;   // omitted: a plain key (firmware cmdSetKey)
+                    if (a.length > 4) {
+                        const m = parseUint(a[4], 0, MODIFIERS_MASK);
+                        if (m.err) return { error: m.err, msg: "mods must be 0 to 15 (1 Ctrl, 2 Shift, 4 Alt, 8 Win)" };
+                        mods = m.value;
+                    }
                     const injected = this.faults.setKeyError[`${l.value}:${k.value}`];
                     if (injected) return { error: injected, msg: "injected failure" };
                     if (!fwCodeOk(c.value)) return { error: "invalid_code", msg: "code produces no keyboard output" };
@@ -522,9 +531,10 @@
                         if (label === null) return { error: "invalid_label", msg: "label must be 1-4 printable ASCII characters, not \" \\ or @" };
                         if (this.faults.labelOverride) label = this.faults.labelOverride(label);
                     }
-                    s.layers[l.value][k.value] = { code: c.value, label };
+                    s.layers[l.value][k.value] = { code: c.value, label, mods };
                     const lk = s.layers[l.value][k.value];
-                    return this._applied({ layer: l.value, key: k.value, code: lk.code, label: lk.label });
+                    return this._applied({ layer: l.value, key: k.value, code: lk.code, label: lk.label,
+                        ...(this.has("key_modifiers") ? { mods: lk.mods } : {}) });
                 }
                 case "SET_BOOT_OUTPUT":
                     p = parseBool(a[0]);
@@ -706,7 +716,8 @@
             return {
                 type: "config", actuation: mm(s.actuationCmm), rt_sens: mm(s.rtSensCmm), rt_enabled: s.rtEnabled,
                 active_layer: s.activeLayer, boot_output: s.bootOutput, dirty: this.dirty, settings_seq: this.flash ? this.seq : 0,
-                layers: s.layers.map(l => l.map((k, i) => ({ idx: i, code: k.code, label: k.label }))),
+                layers: s.layers.map(l => l.map((k, i) => ({ idx: i, code: k.code, label: k.label,
+                    ...(this.has("key_modifiers") ? { mods: k.mods || 0 } : {}) }))),
             };
         }
 
