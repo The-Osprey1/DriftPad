@@ -153,10 +153,23 @@ class TestConfiguratorPages(unittest.TestCase):
             m = remote.search(read(f))
             self.assertIsNone(m, f"{f.relative_to(ROOT)} loads from the network: {m and m.group(0)}")
 
+    # Loaded by index.html for the Screen tab only, and tested by tests/screen.html instead
+    SCREEN_LAB = ("js/anim_codec.js", "js/gif_convert.js", "js/screen_lab.js")
+
     def test_test_page_loads_the_same_modules_in_the_same_order(self):
-        app = [s for s in self.scripts(CFG / "index.html") if s != "js/app.js"]
+        app = [s for s in self.scripts(CFG / "index.html") if s != "js/app.js" and s not in self.SCREEN_LAB]
         tests = [s.replace("../", "") for s in self.scripts(CFG / "tests" / "run.html") if s.startswith("../js/")]
         self.assertEqual(tests, app)
+
+    def test_screen_lab_pages_load_its_modules_in_the_page_order(self):
+        index = self.scripts(CFG / "index.html")
+        for module in self.SCREEN_LAB:
+            self.assertIn(module, index)
+        tests = [s.replace("../", "") for s in self.scripts(CFG / "tests" / "screen.html") if s.startswith("../js/")]
+        self.assertEqual(tests, [s for s in index if s in tests], "screen.html loads modules in index.html's order")
+        self.assertEqual([s for s in tests if s in self.SCREEN_LAB], ["js/anim_codec.js", "js/gif_convert.js"])
+        imported = re.findall(r'"([\w.]+\.js)"', re.search(r"importScripts\(([^)]*)\)", read(CFG / "js" / "gif_worker.js")).group(1))
+        self.assertEqual(imported, ["anim_codec.js", "gif_convert.js"], "the worker loads the same conversion code")
 
     def test_old_keymap_editor_url_redirects_to_the_keys_page(self):
         html = read(CFG / "keymap.html")

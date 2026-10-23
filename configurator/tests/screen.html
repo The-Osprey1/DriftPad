@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DriftPad Screen Lab tests</title>
+<style>body { font-family: monospace; white-space: pre-wrap; }</style>
+</head>
+<body>
+<p>Runs the Screen Lab's conversion modules. Open from the file system in Chrome, or run
+<code>tests/test_configurator_js.py</code>. Results appear below as JSON.</p>
+<script src="../js/keycodes.js"></script>
+<script src="../js/anim_codec.js"></script>
+<script src="../js/gif_convert.js"></script>
+<script src="harness.js"></script>
+<script src="screen_tests.js"></script>
+<script>window.addEventListener("load", () => runTests());</script>
+</body>
+</html>

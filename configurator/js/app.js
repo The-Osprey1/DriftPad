@@ -34,6 +34,7 @@
     const keymap = new DP.draft.KeymapSync(draft, session);
     const settings = new DP.draft.SettingsSync(session);
 
+    const VIEWS = ["keys", "sensitivity", "device", "screen"];
     const ui = { view: "keys", layer: 0, key: 0, category: "All", capturing: false, simActive: false };
 
     // ------------------------------------------------------------------ announcements
@@ -832,7 +833,7 @@
         document.querySelectorAll(".tab").forEach(t => {
             t.addEventListener("click", () => setView(t.dataset.view, false));
             t.addEventListener("keydown", e => {
-                const order = ["keys", "sensitivity", "device"];
+                const order = VIEWS;
                 const i = order.indexOf(t.dataset.view);
                 if (e.key === "ArrowRight") { e.preventDefault(); setView(order[(i + 1) % order.length], true); }
                 if (e.key === "ArrowLeft") { e.preventDefault(); setView(order[(i + order.length - 1) % order.length], true); }
@@ -972,7 +973,7 @@
         document.addEventListener("visibilitychange", () => session.setPageVisible(!document.hidden));
         g.addEventListener("hashchange", () => {
             const v = g.location.hash.slice(1);
-            if (["keys", "sensitivity", "device"].includes(v) && v !== ui.view) setView(v, false);
+            if (VIEWS.includes(v) && v !== ui.view) setView(v, false);
         });
         g.addEventListener("pagehide", () => { session.disconnect().catch(() => {}); });
     }
@@ -986,7 +987,7 @@
     wire();
     if (SIMULATE) $("simBanner").hidden = false;
     const start = g.location.hash.slice(1);
-    setView(["keys", "sensitivity", "device"].includes(start) ? start : "keys", false);
+    setView(VIEWS.includes(start) ? start : "keys", false);
     if (draft.loadNote) announce(draft.loadNote);
 
     g.DriftPadApp = { session, draft, keymap, settings, ui, setView, selectKey, setLayer, assign, confirmDialog, get simulation() { return simulation; } };

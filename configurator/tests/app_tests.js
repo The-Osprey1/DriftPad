@@ -446,7 +446,7 @@
 
     test("app: accessibility invariants hold in every state visited", async () => {
         await connected();
-        for (const view of ["keys", "sensitivity", "device"]) {
+        for (const view of ["keys", "sensitivity", "device", "screen"]) {
             app().setView(view, false);
             await sleep(10);
             const ids = [...document.querySelectorAll("[id]")].map(e => e.id);

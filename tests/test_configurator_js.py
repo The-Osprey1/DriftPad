@@ -65,18 +65,18 @@ class TestPreFixConfiguratorDefects(unittest.TestCase):
                     self.assertTrue(reproduced, f"{scenario} does not reproduce on the old page: {r.get('detail')}")
 
 
-def _app_page() -> Path:
-    """A copy of the shipped index.html with the harness and app_tests.js appended. A <base> makes
+def _app_page(tests: str = "app_tests.js") -> Path:
+    """A copy of the shipped index.html with the harness and `tests` appended. A <base> makes
     every relative URL (css/, js/) resolve to the real configurator directory, so the page under
     test is the shipped markup, styles and scripts."""
     src = (CONFIGURATOR / "index.html").read_text(encoding="utf-8")
     base = chrome_host.file_url(CONFIGURATOR) + "/"
     assert src.count("<head>") == 1 and src.count("</body>") == 1
-    inject = "".join(f'<script src="tests/{s}"></script>' for s in ("harness.js", "app_tests.js"))
+    inject = "".join(f'<script src="tests/{s}"></script>' for s in ("harness.js", tests))
     page = src.replace("<head>", f'<head><base href="{base}">').replace("</body>", inject + "</body>")
     out_dir = hb.CACHE_DIR / "configurator_app"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / "index_under_test.html"
+    out = out_dir / f"index_under_test_{Path(tests).stem}.html"
     out.write_text(page, encoding="utf-8")
     return out
 
@@ -104,6 +104,18 @@ class TestConfiguratorJs(unittest.TestCase):
         """index.html + app.js in simulated-device mode: what the user sees and can do."""
         self._assert_all_pass(chrome_host.run_page(chrome_host.file_url(_app_page(), query="simulate=1", fragment="keys"),
                                                    budget_ms=600000), "configurator page tests (index.html)")
+
+    # Real clock: ImageDecoder and the conversion worker run off the page's thread, which the
+    # virtual time of run_page() does not wait for.
+    def test_screen_modules(self):
+        """Screen Lab conversion: packing, shading, shapes, GIF decoding and the worker."""
+        self._assert_all_pass(chrome_host.run_page_realtime(chrome_host.file_url(CONFIGURATOR / "tests" / "screen.html"),
+                                                            timeout_s=120), "Screen Lab module tests (screen.html)")
+
+    def test_screen_page(self):
+        """The Screen tab of index.html: load a GIF, convert it, play the three mockups."""
+        page = chrome_host.file_url(_app_page("screen_app_tests.js"), query="simulate=1", fragment="screen")
+        self._assert_all_pass(chrome_host.run_page_realtime(page, timeout_s=120), "Screen Lab page tests (index.html)")
 
 
 if __name__ == "__main__":
