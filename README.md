@@ -8,16 +8,19 @@ hardware reference, and OLED design studies.
 
 ### Online (GitHub Pages)
 
-Open **https://the-osprey1.github.io/DriftPad/** in Chrome or Edge. Nothing to install.
+Open **https://the-osprey1.github.io/DriftPad/** in Chrome or Edge. Nothing to install. The page
+is the device configurator; it changes the settings stored on your pad.
 
-1. Click **Set Up Pad** and choose **Save UF2 file**. Hold BOOTSEL while plugging in the Pico,
-   then copy `DriftPad.uf2` onto the `RPI-RP2` drive. The configurator needs this firmware
-   (protocol 2); the pad restarts by itself when the copy finishes.
-2. Click **Connect USB**, then **Connect DriftPad**, and pick the pad in the browser's list.
+1. Click **Download firmware**. Hold BOOTSEL while plugging in the Pico, then copy `DriftPad.uf2`
+   onto the `RPI-RP2` drive. The configurator needs this firmware (protocol 2); the pad restarts
+   by itself when the copy finishes.
+2. Click **Connect DriftPad** and pick the pad in the browser's list.
+3. On the **Device** tab, run the calibration wizard. Keys do not type, and the screen ignores
+   them, until calibration is done.
 
-The configurator page itself is at https://the-osprey1.github.io/DriftPad/configurator/.
-The site is rebuilt from `main` by [`pages.yml`](.github/workflows/pages.yml), and the firmware
-it offers is the build that passed the full test suite in that same run.
+The site is rebuilt from `main` by [`pages.yml`](.github/workflows/pages.yml), and the firmware it
+offers is the build that passed the full test suite in that same run. The Studio simulator is in the
+Windows app and `npm run dev`, not on the site.
 
 ### Windows desktop app
 
