@@ -470,7 +470,10 @@ class TestProtocolDevice(unittest.TestCase):
             self.lib.pin_fake_set(B, b)
             self.d.run(20)
         turned = knob()
-        self.assertEqual(turned["steps"] - rest["steps"], 4, "one detent is four quadrature steps")
+        # encoder.cpp REVERSE_DIRECTION: this board counts that order as counter-clockwise
+        reversed_knob = "REVERSE_DIRECTION = true" in (TESTS_DIR.parent / "firmware" / "src" / "encoder.cpp").read_text()
+        self.assertEqual(turned["steps"] - rest["steps"], -4 if reversed_knob else 4,
+                         "one detent is four quadrature steps")
 
         self.lib.pin_fake_set(SW, 0)
         held = knob()   # 40 ms of fake time, past the 25 ms debounce

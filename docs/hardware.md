@@ -19,6 +19,13 @@ DriftPad V2 is built around a Raspberry Pi Pico (RP2040). The pin assignments be
 
 The SH1106 display driver is also supported: set `-DUSE_SH1106=1` in `build_flags` in [`firmware/platformio.ini`](../firmware/platformio.ini).
 
+### Encoder turning direction
+
+The reworked V2 board delivers the knob's A and B signals in the opposite order, so the firmware
+reverses the count (`REVERSE_DIRECTION` in [`firmware/src/encoder.cpp`](../firmware/src/encoder.cpp)).
+Turning clockwise raises the selected setting and turns the configurator's knob drawing clockwise.
+If a board counts the wrong way, set it to `false` instead of swapping wires.
+
 ### Encoder wiring test
 
 To check the encoder wiring on its own, flash the `pin_test` build from the `firmware/` folder:
