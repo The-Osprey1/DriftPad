@@ -6,6 +6,19 @@ hardware reference, and OLED design studies.
 
 ## Start the app
 
+### Online (GitHub Pages)
+
+Open **https://the-osprey1.github.io/DriftPad/** in Chrome or Edge. Nothing to install.
+
+1. Click **Set Up Pad** and choose **Save UF2 file**. Hold BOOTSEL while plugging in the Pico,
+   then copy `DriftPad.uf2` onto the `RPI-RP2` drive. The configurator needs this firmware
+   (protocol 2); the pad restarts by itself when the copy finishes.
+2. Click **Connect USB**, then **Connect DriftPad**, and pick the pad in the browser's list.
+
+The configurator page itself is at https://the-osprey1.github.io/DriftPad/configurator/.
+The site is rebuilt from `main` by [`pages.yml`](.github/workflows/pages.yml), and the firmware
+it offers is the build that passed the full test suite in that same run.
+
 ### Windows desktop app
 
 Download **Setup.exe** from a published [release](https://github.com/The-Osprey1/DriftPad/releases),

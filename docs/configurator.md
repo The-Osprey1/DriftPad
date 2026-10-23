@@ -3,7 +3,7 @@
 `configurator/index.html` is one page that talks to the pad over WebSerial (Chrome, Edge or Opera). It
 needs no install and loads nothing from the network; open the file directly, or run
 `python tools/serve_configurator.py` and use `http://127.0.0.1:8791` when a browser or tool will not
-open files. `keymap.html` only redirects to `index.html#keys`.
+open files. The same page is published at https://the-osprey1.github.io/DriftPad/configurator/. `keymap.html` only redirects to `index.html#keys`.
 
 ## Pages
 

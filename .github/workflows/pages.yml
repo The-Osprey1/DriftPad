@@ -1,0 +1,68 @@
+# Publishes the Studio, the device configurator and the verified Pico firmware to GitHub Pages
+# on every push to main. The firmware comes from the full release-mode verification
+# (firmware.yml), so the site never offers a build that failed a suite.
+#
+# One-time setup: Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push replaces a queued one but never cancels a running one
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    uses: ./.github/workflows/firmware.yml
+
+  build:
+    needs: firmware
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      # Relative asset paths, so the site works under https://<owner>.github.io/DriftPad/
+      - run: npm run build
+        env:
+          DRIFTPAD_BASE: ./
+      - uses: actions/download-artifact@v4
+        with:
+          name: pico-firmware
+          path: firmware-bin
+      # Set Up Pad (FlashFirmwareModal) offers ./driftpad.uf2, the same name the desktop app bundles
+      - name: Add the verified firmware to the site
+        run: |
+          cp firmware-bin/firmware.uf2 dist/driftpad.uf2
+          mkdir -p dist/firmware
+          cp firmware-bin/build_manifest.json dist/firmware/build_manifest.json
+          (cd dist && sha256sum driftpad.uf2 > firmware/SHA256SUMS.txt)
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

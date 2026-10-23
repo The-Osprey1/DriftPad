@@ -152,7 +152,9 @@ interface into `dist/configurator/`. Development serves the same source at
 `/configurator/index.html`.
 
 `firmware.yml` runs the full firmware suite on Windows and Linux. `desktop.yml`
-builds the locked firmware and packages it with both interfaces. Desktop smoke
+builds the locked firmware and packages it with both interfaces. `pages.yml` runs the same
+firmware suite on pushes to `main`, then publishes the web build with that run's verified
+`driftpad.uf2` to GitHub Pages. Desktop smoke
 checks exercise setup, the device page under the installed Content Security
 Policy, and return navigation without opening a physical port. See [desktop
 setup](desktop.md) for packaging commands. Browser tests against a simulated
