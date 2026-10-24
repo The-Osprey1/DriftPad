@@ -177,7 +177,7 @@
 
 <!-- ============================== DEVICE ============================== -->
 <section id="panel-device" role="tabpanel" aria-labelledby="tab-device" class="panel" hidden>
-    <div class="layout">
+    <div class="layout layout-even">
         <div class="card">
             <div class="card-header"><h2 class="card-title">This pad</h2></div>
             <dl class="identity" id="identity"><dt>Status</dt><dd>No device</dd></dl>
@@ -233,6 +233,22 @@
                 <input type="file" id="restoreFile" accept="application/json,.json" hidden>
             </div>
             <p id="restoreState" class="state-line"></p>
+        </div>
+
+        <div class="card card-wide" id="updateCard">
+            <div class="card-header"><h2 class="card-title">Firmware update</h2><span id="updateBadge" class="badge" hidden></span></div>
+            <p id="updateVersions" class="state-line"></p>
+            <ol class="steps">
+                <li>Restart the pad into update mode. It shows up on your computer as a drive called <strong>RPI-RP2</strong>. No need to open the case or hold its button.</li>
+                <li>Copy <strong>DriftPad.uf2</strong> onto that drive. The pad restarts by itself with the new firmware; its settings and calibration are kept.</li>
+                <li>This page reconnects to the pad when it comes back.</li>
+            </ol>
+            <div class="row">
+                <button id="updateBtn" class="btn btn-primary" type="button" disabled>Download and restart into update mode</button>
+                <a id="updateFileLink" class="btn" download="DriftPad.uf2" hidden>Download the firmware only</a>
+            </div>
+            <p id="updateState" class="state-line" role="status" aria-live="polite"></p>
+            <p class="hint">A new pad, or one that does not connect: unplug it, hold the Pico's BOOTSEL button while plugging it back in, then copy the file.</p>
         </div>
     </div>
 
@@ -421,6 +437,7 @@
 <script src="js/draft.js"></script>
 <script src="js/backup.js"></script>
 <script src="js/fake_device.js"></script>
+<script src="js/update.js"></script>
 <script src="js/anim_codec.js"></script>
 <script src="js/gif_convert.js"></script>
 <script src="js/app.js"></script>

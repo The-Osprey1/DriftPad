@@ -1205,15 +1205,21 @@
     // navigator.serial stand-in: requestPort() hands out the given port (or rejects like Chrome does
     // when the user closes the chooser).
     class FakeSerial {
-        constructor(port) { this.port = port; this.requests = 0; this.cancelChooser = false; }
+        constructor(port) { this.port = port; this.requests = 0; this.cancelChooser = false; this._listeners = []; }
         async requestPort() {
             this.requests++;
             if (this.cancelChooser || !this.port) throw new DOMException("No port selected by the user.", "NotFoundError");
             return this.port;
         }
         async getPorts() { return this.port ? [this.port] : []; }
-        addEventListener() {}
-        removeEventListener() {}
+        addEventListener(type, fn) { if (type === "connect") this._listeners.push(fn); }
+        removeEventListener(type, fn) { this._listeners = this._listeners.filter(f => f !== fn); }
+        // The port appears again (the pad restarted, for example after a firmware update): Chrome
+        // fires "connect" for a port the page was already allowed to use
+        plugBackIn() {
+            this.port.replug();
+            for (const fn of [...this._listeners]) fn({ type: "connect", target: this.port });
+        }
     }
 
     // One-call setup: a device, a port and a navigator.serial stand-in.

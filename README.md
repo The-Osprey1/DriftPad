@@ -13,7 +13,8 @@ is the device configurator; it changes the settings stored on your pad.
 
 1. Click **Download firmware**. Hold BOOTSEL while plugging in the Pico, then copy `DriftPad.uf2`
    onto the `RPI-RP2` drive. The configurator needs this firmware (protocol 2); the pad restarts
-   by itself when the copy finishes.
+   by itself when the copy finishes. Later updates need no button: connect the pad and use
+   **Device → Firmware update**, which restarts it into update mode over USB.
 2. Click **Connect DriftPad** and pick the pad in the browser's list.
 3. On the **Device** tab, run the calibration wizard. Keys do not type, and the screen ignores
    them, until calibration is done.

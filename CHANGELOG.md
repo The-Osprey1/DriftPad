@@ -11,6 +11,10 @@ work with this firmware and says so.
 
 ### Changed
 
+- Firmware updates no longer need the Pico's button. **Device → Firmware update** on the
+  configurator downloads `DriftPad.uf2` and restarts the pad into update mode over USB (`BOOTSEL`).
+  After you copy the file onto the RPI-RP2 drive, the page reconnects to the pad by itself when it
+  comes back. The card also shows whether the pad's build matches the one the site offers.
 - A third screen theme, **Space**. Its title drops out of light speed (every star streaks out from
   the centre and settles), a ringed planet rises and the name appears over an orbit line. The key
   card is a viewfinder (corner brackets joined by dotted edges; pressed, a solid panel with cut

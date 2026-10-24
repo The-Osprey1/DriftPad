@@ -488,6 +488,56 @@
         app().setView("keys", false);
     });
 
+    test("app: a firmware update restarts the pad into update mode and reconnects when it comes back", async () => {
+        // The pad runs an older build than the one the site offers
+        await disconnected();
+        const site = { fw: "2.2.0", build: "aaaaaaaaaaaa", date: "2026-10-24T00:00:00+00:00" };
+        Object.assign(sim().device, { build: "bbbbbbbbbbbb", buildDate: "2026-10-01T00:00:00+00:00" });
+        await connected();
+        app().update.site = site;
+        app().setView("device", false);
+        assert(await waitUntil(() => text("updateBadge") === "Update available"), text("updateBadge"));
+        assert(/Your pad: firmware .*build bbbbbbbbbbbb\. This site offers firmware 2\.2\.0, build aaaaaaaaaaaa\./.test(text("updateVersions")), text("updateVersions"));
+        assert(!$("updateFileLink").hidden, "the firmware file is offered on its own too");
+        const link = $("updateFileLink"), realClick = link.click;
+        let downloads = 0;
+        link.click = () => { downloads++; };
+        const chooserBefore = sim().serial.requests;
+        try {
+            $("updateBtn").click();
+            assert(await waitUntil(() => $("confirmDialog").open), "asks first");
+            assert(/RPI-RP2/.test(text("confirmBody")) && /settings and calibration are kept/.test(text("confirmBody")), text("confirmBody"));
+            $("confirmOk").click();
+            assert(await waitUntil(() => app().update.phase === "waiting"), app().update.phase);
+            assertEq(downloads, 1, "the file downloads as the pad restarts");
+            assertEq(countVerb("BOOTSEL"), 1);
+            assert(await waitUntil(() => !app().session.isConnected), "the pad left for its bootloader");
+            assert(/in update mode\. Copy DriftPad\.uf2/.test(text("updateState")), text("updateState"));
+            // The file was copied: the pad restarts on the site's build and its port comes back
+            Object.assign(sim().device, { build: site.build, buildDate: site.date });
+            sim().serial.plugBackIn();
+            assert(await waitUntil(() => app().update.phase === "done"), app().update.phase);
+            assert(app().session.isConnected, "reconnected by itself");
+            assertEq(sim().serial.requests, chooserBefore, "without asking for the port again");
+            assert(/Updated: the pad now runs firmware .*build aaaaaaaaaaaa/.test(text("updateState")), text("updateState"));
+            assertEq(text("updateBadge"), "Up to date");
+        } finally {
+            link.click = realClick;
+            app().update.site = null;
+            app().update.phase = "idle";
+            app().setView("keys", false);
+        }
+    });
+
+    test("app: a port that comes back without an update under way is left alone", async () => {
+        await disconnected();
+        const before = sim().serial.requests;
+        sim().serial.plugBackIn();
+        await sleep(600);
+        assert(!app().session.isConnected, "connecting is the user's choice");
+        assertEq(sim().serial.requests, before);
+    });
+
     test("app: accessibility invariants hold in every state visited", async () => {
         await connected();
         for (const view of ["keys", "sensitivity", "device", "screen"]) {
@@ -524,7 +574,7 @@
 
     test("app: controls that need a device are disabled without one", async () => {
         await disconnected();
-        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn", "themeSelect"]) {
+        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn", "themeSelect", "updateBtn"]) {
             assert($(id).disabled, `#${id} must be disabled while disconnected`);
         }
         assert(!$("captureBtn").disabled, "the draft stays editable offline");

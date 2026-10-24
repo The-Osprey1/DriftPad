@@ -93,6 +93,10 @@
             gap: 20px;
             align-items: start;
         }
+        /* Device tab: two even columns. With an auto first column, the identity list's longest line
+           (the features) took the whole width and squeezed the second column. */
+        .layout-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .card-wide { grid-column: 1 / -1; }
 
         .card {
             background: var(--bg-card);
@@ -270,7 +274,7 @@
 
         @media (max-width: 900px) {
             body { padding: 16px; }
-            .layout { grid-template-columns: 1fr; }
+            .layout, .layout-even { grid-template-columns: 1fr; }
         }
         @media (max-width: 420px) {
             .pad { --u: 66px; gap: 8px; padding: 10px; }

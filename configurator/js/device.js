@@ -159,7 +159,8 @@
     class DeviceSession extends Emitter {
         /**
          * @param {object} o
-         * @param {(handlers)=>SerialTransport} o.createTransport  handlers: {onText, onClose, log}
+         * @param {(handlers)=>SerialTransport} o.createTransport  handlers: {port, onText, onClose, log}
+         *        (port: the SerialPort to open, or null to ask the user)
          * @param {object} [o.timeouts] {request, identify, legacyProbe, save}
          */
         constructor(o) {
@@ -228,15 +229,18 @@
         }
 
         // ----------------------------------------------------------------------- connection
-        async connect() {
+        // port: a serial port the user already chose (it came back after a restart); without it, the
+        // browser asks which port to use
+        async connect(port = null) {
             if (["connecting", "identifying", "connected"].includes(this.conn.state)) return this.conn.state;
             const prev = this.conn;
             this._resetDeviceState();
             this.unsupportedProtocol = null;
             this._expectReboot = false;
-            this._setConn("connecting", "Choose the DriftPad's serial port");
+            this._setConn("connecting", port ? "Reconnecting to the DriftPad's serial port" : "Choose the DriftPad's serial port");
             let transport;
             transport = this.createTransport({
+                port,
                 onText: text => { if (this.transport === transport && this.client) this.client.handleText(text); },
                 onClose: info => this._onTransportClosed(transport, info),
                 log: (level, msg) => this.log(level, msg),

@@ -12,7 +12,7 @@ button in place of Back to Studio (`scripts/build-site.cjs`). `keymap.html` only
 |---|---|
 | Keys | The pad as it sits on the desk, with a live knob line under it (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), tick Ctrl, Shift, Alt or Win to hold them with it (Ctrl + C), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
 | Sensitivity | Actuation and Rapid Trigger sensitivity (limits come from the pad's `INFO`), Rapid Trigger on/off, live key travel |
-| Device | Firmware version and build, keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
+| Device | Firmware version and build, **Firmware update** (see below), keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
 | Screen | **Theme**: Drift (the original look), Cherry blossom or Space; choosing a theme also sets its screensaver. **Screensaver**: when it starts by itself (Never, 1, 2, 5, 10 or 30 minutes idle) and which animation it plays, with Play now and Save. **Screen Lab** (a preview; nothing is sent to the pad): load a GIF or picture, convert it to the 128 × 64 black-and-white screen and see it in three possible places. See below |
 
 ## What it promises
@@ -46,6 +46,27 @@ Blocked keyboard output names the next action: Start calibration for missing/inv
 complete the marked keys and Finish during calibration, or Turn keyboard output on when disabled.
 An incomplete calibration names the keys to press fully and release; the same instruction appears
 in each marked key's accessible label.
+
+## Firmware update
+
+**Device → Firmware update** updates a pad that already runs DriftPad firmware without opening
+the case:
+
+1. **Download and restart into update mode** downloads `DriftPad.uf2` and sends `BOOTSEL`. The
+   pad restarts into the Pico's bootloader and shows up as the **RPI-RP2** drive, as if its button
+   had been held while plugging it in.
+2. Copy `DriftPad.uf2` onto that drive. The pad restarts by itself with the new firmware. Its
+   settings and calibration are kept, since the file never reaches the settings sectors
+   ([flash-layout.md](flash-layout.md)). Unsaved changes are lost, and the page says so first.
+3. When the pad's serial port comes back, the page reconnects to it without asking. The browser
+   already has your permission for that port. The page then says whether the build changed.
+
+The card compares the pad's build with the one the site offers (`firmware/build_manifest.json`,
+published by `pages.yml` with the firmware): **Up to date**, **Update available** (the site's commit
+is newer), **Newer than the site's**, or **Different build**. A copy of the page without its own
+firmware, opened from the repository or the desktop app, only restarts the pad; copy a
+`DriftPad.uf2` you downloaded or built. A new pad, or one that does not connect, still needs the
+button: hold BOOTSEL while plugging it in.
 
 ## Display controls
 
