@@ -64,13 +64,25 @@
                     <div class="oled-main" id="oledMain">ESC</div>
                     <div class="oled-sub" id="oledSub">KEY 0 · Esc</div>
                 </div>
-                <div class="knob" id="knob" aria-hidden="true" title="Turn: volume. Press: mute. Hold one second: settings menu on the pad.">
+                <div class="knob" id="knob" aria-hidden="true" title="Turn and press: as set for this layer below (volume and mute at first). Hold one second: settings menu on the pad.">
                     <div class="knob-dial"></div><span>KNOB</span>
                 </div>
                 <!-- 16 key caps are created once by app.js and updated in place -->
             </div>
+            <div class="knob-row">
+                <label for="knobSelect">Knob on this layer</label>
+                <select id="knobSelect" disabled aria-describedby="knobModeHint">
+                    <option value="0">Volume: turn for volume, press to mute</option>
+                    <option value="1">Media: turn for previous or next track, press to play or pause</option>
+                    <option value="2">Scroll: turn to scroll, press for a middle click</option>
+                    <option value="3">Zoom: turn to zoom out or in (Ctrl − and Ctrl +), press for actual size</option>
+                    <option value="4">Arrows: turn for Left or Right, press for Enter</option>
+                    <option value="5">Undo: turn to undo or redo (Ctrl+Z, Ctrl+Y), press does nothing</option>
+                </select>
+                <span id="knobModeHint" class="hint">Applies to the pad at once; save on the Device page to keep it. Also on the pad: hold the knob, then press until Knob.</span>
+            </div>
             <p id="knobState" class="small knob-note">Connect the pad to check the knob.</p>
-            <p id="knobHint" class="muted small knob-note">Turn the knob for volume and press it to mute (keyboard output must be on); hold it for one second for the settings menu on the pad's screen. Turning should switch A and B between high and low and count steps (4 per click), and pressing should show the switch closed. If nothing changes, check the knob's ground wire and its A, B and switch wires (GP20, GP21, GP2).</p>
+            <p id="knobHint" class="muted small knob-note">Turn and press the knob as chosen above (keyboard output must be on); hold it for one second for the settings menu on the pad's screen. Turning should switch A and B between high and low and count steps (4 per click), and pressing should show the switch closed. If nothing changes, check the knob's ground wire and its A, B and switch wires (GP20, GP21, GP2).</p>
 
             <div class="legend">
                 <span><i class="flag-custom" aria-hidden="true">●</i> Changed from the default layout</span>
@@ -177,7 +189,7 @@
 
 <!-- ============================== DEVICE ============================== -->
 <section id="panel-device" role="tabpanel" aria-labelledby="tab-device" class="panel" hidden>
-    <div class="layout">
+    <div class="layout layout-even">
         <div class="card">
             <div class="card-header"><h2 class="card-title">This pad</h2></div>
             <dl class="identity" id="identity"><dt>Status</dt><dd>No device</dd></dl>
@@ -234,6 +246,22 @@
             </div>
             <p id="restoreState" class="state-line"></p>
         </div>
+
+        <div class="card card-wide" id="updateCard">
+            <div class="card-header"><h2 class="card-title">Firmware update</h2><span id="updateBadge" class="badge" hidden></span></div>
+            <p id="updateVersions" class="state-line"></p>
+            <ol class="steps">
+                <li>Restart the pad into update mode. It shows up on your computer as a drive called <strong>RPI-RP2</strong>. No need to open the case or hold its button.</li>
+                <li>Copy <strong>DriftPad.uf2</strong> onto that drive. The pad restarts by itself with the new firmware; its settings and calibration are kept.</li>
+                <li>This page reconnects to the pad when it comes back.</li>
+            </ol>
+            <div class="row">
+                <button id="updateBtn" class="btn btn-primary" type="button" disabled>Download and restart into update mode</button>
+                <a id="updateFileLink" class="btn" download="DriftPad.uf2" hidden>Download the firmware only</a>
+            </div>
+            <p id="updateState" class="state-line" role="status" aria-live="polite"></p>
+            <p class="hint">A new pad, or one that does not connect: unplug it, hold the Pico's BOOTSEL button while plugging it back in, then copy the file.</p>
+        </div>
     </div>
 
     <details class="card advanced" id="advanced">
@@ -267,7 +295,7 @@
                 <label for="animSelect">Screensaver animation</label>
                 <select id="animSelect" disabled aria-describedby="displayHint">
                     <option value="-1">Shuffle all</option><option value="0">Starfield</option><option value="1">Plasma</option>
-                    <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option><option value="6">Sakura</option>
+                    <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option><option value="6">Sakura</option><option value="7">Orbit</option>
                 </select>
                 <button id="screensaverBtn" class="btn btn-sm" type="button" disabled>Play screensaver</button>
                 <button id="screensaverStopBtn" class="btn btn-sm" type="button" disabled>Stop screensaver</button>
@@ -302,6 +330,7 @@
             <select id="themeSelect" disabled aria-describedby="themeHint">
                 <option value="0">Drift (the original look)</option>
                 <option value="1">Cherry blossom</option>
+                <option value="2">Space</option>
             </select>
             <span id="themeHint" class="hint">Changes the pad's whole look: its title, key card, press effect, layer change and screensaver. Everything works the same in every theme. Also on the pad: hold the knob, then press until Screen theme.</span>
         </div>
@@ -314,7 +343,7 @@
             <label for="saverAnim">Animation</label>
             <select id="saverAnim" disabled aria-describedby="saverHint">
                 <option value="-1">Shuffle all</option><option value="0">Starfield</option><option value="1">Plasma</option>
-                <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option><option value="6">Sakura</option>
+                <option value="2">Tesseract</option><option value="3">Drift grid</option><option value="4">Magnetic pulse</option><option value="5">Lava lamp</option><option value="6">Sakura</option><option value="7">Orbit</option>
             </select>
             <button id="saverPlayBtn" class="btn btn-sm" type="button" disabled>Play now</button>
             <button id="saverSaveBtn" class="btn btn-sm btn-primary" type="button" disabled>Save to the pad</button>
@@ -420,6 +449,7 @@
 <script src="js/draft.js"></script>
 <script src="js/backup.js"></script>
 <script src="js/fake_device.js"></script>
+<script src="js/update.js"></script>
 <script src="js/anim_codec.js"></script>
 <script src="js/gif_convert.js"></script>
 <script src="js/app.js"></script>

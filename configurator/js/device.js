@@ -75,6 +75,7 @@
             saver_idle_max: isInt(l.saver_idle_max) ? l.saver_idle_max : C.FALLBACK_LIMITS.saver_idle_max,
             saver_anims: isInt(l.saver_anims) ? l.saver_anims : C.FALLBACK_LIMITS.saver_anims,
             themes: isInt(l.themes) ? l.themes : C.FALLBACK_LIMITS.themes,
+            knob_modes: isInt(l.knob_modes) ? l.knob_modes : C.FALLBACK_LIMITS.knob_modes,
         };
     }
 
@@ -109,7 +110,9 @@
             // Screensaver idle start (minutes, 0 = never) and animation (-1 = shuffle); null without screensaver_idle
             saver_idle: isInt(r.saver_idle) ? r.saver_idle : null,
             saver_anim: isInt(r.saver_anim) ? r.saver_anim : null,
-            theme: isInt(r.theme) ? r.theme : null,   // 0 Drift, 1 Cherry blossom; null without themes
+            theme: isInt(r.theme) ? r.theme : null,   // 0 Drift, 1 Cherry blossom, 2 Space; null without themes
+            // What the knob does on each layer (0 volume .. 5 undo); null without knob_modes
+            knob: Array.isArray(r.knob) && r.knob.length === C.LIMITS_CMM.NUM_LAYERS && r.knob.every(isInt) ? r.knob.slice() : null,
             layers: r.layers.map(layer => layer.map(k => ({ code: k.code, label: k.label, mods: isInt(k.mods) ? k.mods : 0 }))),
             dirty: typeof r.dirty === "boolean" ? r.dirty : null,
             settings_seq: isInt(r.settings_seq) ? r.settings_seq : null,
@@ -159,7 +162,8 @@
     class DeviceSession extends Emitter {
         /**
          * @param {object} o
-         * @param {(handlers)=>SerialTransport} o.createTransport  handlers: {onText, onClose, log}
+         * @param {(handlers)=>SerialTransport} o.createTransport  handlers: {port, onText, onClose, log}
+         *        (port: the SerialPort to open, or null to ask the user)
          * @param {object} [o.timeouts] {request, identify, legacyProbe, save}
          */
         constructor(o) {
@@ -228,15 +232,18 @@
         }
 
         // ----------------------------------------------------------------------- connection
-        async connect() {
+        // port: a serial port the user already chose (it came back after a restart); without it, the
+        // browser asks which port to use
+        async connect(port = null) {
             if (["connecting", "identifying", "connected"].includes(this.conn.state)) return this.conn.state;
             const prev = this.conn;
             this._resetDeviceState();
             this.unsupportedProtocol = null;
             this._expectReboot = false;
-            this._setConn("connecting", "Choose the DriftPad's serial port");
+            this._setConn("connecting", port ? "Reconnecting to the DriftPad's serial port" : "Choose the DriftPad's serial port");
             let transport;
             transport = this.createTransport({
+                port,
                 onText: text => { if (this.transport === transport && this.client) this.client.handleText(text); },
                 onClose: info => this._onTransportClosed(transport, info),
                 log: (level, msg) => this.log(level, msg),
@@ -537,8 +544,8 @@
         }
 
         // Applies one setting ("actuation" | "rt_sens" | "rt_enabled" | "active_layer" | "boot_output"
-        // | "saver_idle" (minutes, 0 = never) | "saver_anim" (0..6, -1 = shuffle) | "theme" (0 Drift,
-        // 1 Cherry blossom; the pad also switches its screensaver to the theme's own)).
+        // | "saver_idle" (minutes, 0 = never) | "saver_anim" (0..7, -1 = shuffle) | "theme" (0 Drift,
+        // 1 Cherry blossom, 2 Space; the pad also switches its screensaver to the theme's own)).
         // Resolves with the device's normalised value from the reply.
         async setSetting(field, value) {
             const spec = {
@@ -561,6 +568,20 @@
             this._noteDirty(r);
             this._changed();
             return r[field];
+        }
+
+        // SET_KNOB (feature knob_modes): what the knob does on `layer`. Resolves with the mode the
+        // device reports.
+        async setKnob(layer, mode) {
+            if (!this.hasFeature("knob_modes")) {
+                throw new ProtocolError("bad_request", "This firmware has no knob modes; update it (Device → Firmware update)");
+            }
+            const r = await this.request("SET_KNOB", [String(layer), String(mode)],
+                { validate: rep => (isInt(rep.knob) && rep.layer === layer ? null : "knob missing from the reply") });
+            if (this.confirmed && this.confirmed.knob) this.confirmed.knob[layer] = r.knob;
+            this._noteDirty(r);
+            this._changed();
+            return r.knob;
         }
 
         // SET_KEY; resolves with the normalised {code, label, mods} the device reports. `mods`

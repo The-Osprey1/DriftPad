@@ -27,7 +27,7 @@
     }
 
     const session = new DP.device.DeviceSession({
-        createTransport: h => new DP.transport.SerialTransport({ serial: serialApi(), onText: h.onText, onClose: h.onClose, log: h.log }),
+        createTransport: h => new DP.transport.SerialTransport({ serial: serialApi(), port: h.port || undefined, onText: h.onText, onClose: h.onClose, log: h.log }),
     });
     // The simulator keeps its draft in memory: trying it must never touch the draft kept for a real pad.
     const draft = new DP.draft.Draft(SIMULATE ? { storage: null } : {});
@@ -383,9 +383,90 @@
         }
     }
 
+    // Device tab: updating the firmware without opening the case (update.js). phase: idle, restarting
+    // (BOOTSEL sent), waiting (in update mode, for the pad to come back), reconnecting, done.
+    const update = { site: null, phase: "idle", from: null, result: null };
+    DP.update.loadSiteFirmware(SIMULATE ? null : g.fetch && g.fetch.bind(g)).then(site => {
+        update.site = site;
+        requestRender();
+    });
+    const UPDATE_STATE = {
+        current: ["Up to date", "badge-ok"], update: ["Update available", "badge-warn"],
+        older: ["Newer than the site's", "badge-warn"], different: ["Different build", "badge-warn"],
+    };
+    function renderUpdate(isConn) {
+        const site = update.site, info = isConn ? session.info : null;
+        const link = $("updateFileLink");
+        link.hidden = !site;
+        if (site && link.getAttribute("href") !== DP.update.FILE) link.setAttribute("href", DP.update.FILE);
+        const btn = $("updateBtn");
+        const label = site ? "Download and restart into update mode" : "Restart into update mode";
+        if (btn.textContent !== label) btn.textContent = label;
+        btn.disabled = !isConn || update.phase === "restarting" || session.opState("bootsel") === "pending";
+        const pad = info ? `Your pad: firmware ${info.fw}, build ${info.build}.` : "Connect the pad to update it.";
+        const offer = site ? ` This site offers firmware ${site.fw}, build ${site.build}.`
+            : " This page has no firmware file of its own: use a DriftPad.uf2 you downloaded or built.";
+        setLine("updateVersions", pad + offer);
+        const verdict = info && site ? UPDATE_STATE[DP.update.compare(info, site)] : null;
+        const badge = $("updateBadge");
+        badge.hidden = !verdict;
+        if (verdict) { badge.textContent = verdict[0]; badge.className = `badge ${verdict[1]}`; }
+        const r = update.result;
+        const line = {
+            restarting: ["Restarting the pad into update mode…"],
+            waiting: [`The pad is in update mode. Copy DriftPad.uf2${site ? " (in your downloads)" : ""} onto the RPI-RP2 drive. This page reconnects when the pad comes back; if it does not within a few seconds of the drive closing, click Connect DriftPad.`],
+            reconnecting: ["The pad is back. Reconnecting…"],
+            done: r && r.changed ? [`Updated: the pad now runs firmware ${r.fw}, build ${r.build}. Settings and calibration were kept.`, "ok"]
+                : r ? [`The pad is back on the same build (${r.build}): the file was not copied, or it was this firmware already.`] : [""],
+        }[update.phase] || [""];
+        setLine("updateState", line[0], line[1]);
+    }
+    async function restartForUpdate() {
+        if (!session.isConnected || update.phase === "restarting") return;
+        const unsaved = session.dirty === true ? " Unsaved changes on the pad are lost: save them first to keep them." : "";
+        if (!await confirmDialog({
+            title: "Restart into update mode?",
+            body: `The pad disconnects and shows up as a drive called RPI-RP2.${update.site ? " DriftPad.uf2 downloads now: copy it onto that drive." : " Copy DriftPad.uf2 onto that drive."} Saved settings and calibration are kept.${unsaved}`,
+            ok: "Restart",
+        })) return;
+        if (update.site) $("updateFileLink").click();   // the download starts while the pad restarts
+        update.from = { fw: session.info.fw, build: session.info.build };
+        update.result = null;
+        update.phase = "restarting";
+        requestRender();
+        try {
+            await session.bootsel();
+            update.phase = "waiting";
+            announce("The pad is in update mode. Copy DriftPad.uf2 onto the RPI-RP2 drive.");
+        } catch (err) {
+            update.phase = "idle";
+            announceError(`Could not restart into update mode: ${err.message}`);
+        }
+        requestRender();
+    }
+    // The browser reports a serial port the user already chose when it comes back: after an update,
+    // that is the pad restarting with its new firmware, so the page reconnects without asking
+    async function padCameBack(port) {
+        if (update.phase !== "waiting" || session.transport || session.isConnected) return;
+        update.phase = "reconnecting";
+        requestRender();
+        await new Promise(resolve => setTimeout(resolve, 400));   // let the pad finish starting up
+        await session.connect(port);
+        if (!session.isConnected) {
+            update.phase = "waiting";
+            announceError("The pad is back, but reconnecting failed. Click Connect DriftPad.");
+        } else {
+            const info = session.info;
+            update.result = { changed: !update.from || info.build !== update.from.build, fw: info.fw, build: info.build };
+            update.phase = "done";
+            announce(update.result.changed ? `Updated: the pad now runs firmware ${info.fw}.` : "The pad is back on the same firmware.");
+        }
+        requestRender();
+    }
+
     // Screen tab: when the screensaver starts by itself and what it plays (stored settings)
-    const SAVER_ANIMS = ["Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura"];
-    const THEME_NAMES = ["Drift", "Cherry blossom"];
+    const SAVER_ANIMS = ["Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura", "Orbit"];
+    const THEME_NAMES = ["Drift", "Cherry blossom", "Space"];
     function minutesText(n) { return `${n} minute${n === 1 ? "" : "s"}`; }
     function renderSaver(isConn) {
         const s = session;
@@ -570,6 +651,10 @@
         const confirmed = isConn && session.confirmed;
         $("activeLayerNote").textContent = confirmed ? `The pad is using layer ${session.confirmed.active_layer}.` : "";
         $("makeActiveBtn").disabled = !confirmed || session.confirmed.active_layer === ui.layer;
+        const knobSel = $("knobSelect");
+        const knobs = confirmed && session.hasFeature("knob_modes") ? session.confirmed.knob : null;
+        knobSel.disabled = !knobs || session.opState("knob") === "pending";
+        if (knobs && document.activeElement !== knobSel) knobSel.value = String(knobs[ui.layer]);
 
         const pressed = session.telemetry.pressed;
         for (let i = 0; i < NUM_KEYS; i++) {
@@ -761,6 +846,7 @@
         setLine("bootOutputNote", bootNote, bootNote ? "error" : null);
 
         renderSaver(isConn);
+        renderUpdate(isConn);
 
         $("calCard").hidden = !calFeature;
         const calState = s.cal && s.cal.active ? "in_progress" : cal ? cal.state : "unknown";
@@ -882,6 +968,14 @@
         });
         document.querySelectorAll("#layerTabs .layer-tab").forEach(b => b.addEventListener("click", () => setLayer(Number(b.dataset.layer))));
         radioGroupKeys($("layerTabs"), ".layer-tab", b => setLayer(Number(b.dataset.layer)));
+        $("knobSelect").addEventListener("change", async e => {
+            const sel = e.target, layer = ui.layer, mode = Number(sel.value);
+            await run("Knob", () => session.runOp("knob", () => session.setKnob(layer, mode)),
+                `The knob on layer ${layer} now: ${sel.selectedOptions[0].textContent.split(":")[0]}. Save on the Device page to keep it.`);
+            // Show what the pad has, also when the change was refused
+            const knobs = session.confirmed && session.confirmed.knob;
+            if (knobs && ui.layer === layer) sel.value = String(knobs[layer]);
+        });
         $("makeActiveBtn").addEventListener("click", () => run("Active layer", () => session.setSetting("active_layer", ui.layer),
             `The pad now uses layer ${ui.layer} (applied, not saved).`));
 
@@ -1009,6 +1103,11 @@
             if (session.opState("display") === "pending" || session.opState("displayStatus") === "pending") return;
             run("Display", () => session.refreshDisplayStatus());
         });
+        $("updateBtn").addEventListener("click", () => { void restartForUpdate(); });
+        const serial = serialApi();
+        if (serial && typeof serial.addEventListener === "function") {
+            serial.addEventListener("connect", e => { void padCameBack(e.target); });
+        }
         $("bootselBtn").addEventListener("click", async () => {
             if (await confirmDialog({ title: "Restart into the bootloader?", body: "The pad disconnects and shows up as a USB drive (RPI-RP2) for a firmware update. Unsaved changes are lost.", ok: "Restart" })) {
                 run("Bootloader", () => session.bootsel(), "The pad is restarting into its bootloader.");
@@ -1052,5 +1151,5 @@
     setView(VIEWS.includes(start) ? start : "keys", false);
     if (draft.loadNote) announce(draft.loadNote);
 
-    g.DriftPadApp = { session, draft, keymap, settings, ui, setView, selectKey, setLayer, assign, confirmDialog, get simulation() { return simulation; } };
+    g.DriftPadApp = { session, draft, keymap, settings, ui, update, setView, selectKey, setLayer, assign, confirmDialog, get simulation() { return simulation; } };
 })(window);

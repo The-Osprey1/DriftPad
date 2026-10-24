@@ -41,6 +41,8 @@ FRAMEWORK_DIR = Path(os.environ.get("DRIFTPAD_ARDUINO_PICO") or
                      Path(os.path.expanduser("~")) / ".platformio" / "packages" / "framework-arduinopico")
 HID_KEYBOARD_SRC = FRAMEWORK_DIR / "libraries" / "HID_Keyboard" / "src"
 KEYBOARD_SRC = FRAMEWORK_DIR / "libraries" / "Keyboard" / "src"
+HID_MOUSE_SRC = FRAMEWORK_DIR / "libraries" / "HID_Mouse" / "src"
+MOUSE_SRC = FRAMEWORK_DIR / "libraries" / "Mouse" / "src"
 TUSB_HID_SRC = FRAMEWORK_DIR / "libraries" / "tusb-hid" / "src"
 USB_HOST_STUBS = Path(__file__).resolve().parent / "firmware_host" / "usb_host"
 NO_FRAMEWORK_REASON = (
@@ -50,16 +52,17 @@ NO_FRAMEWORK_REASON = (
 
 
 def require_keyboard_library() -> None:
-    for d in (HID_KEYBOARD_SRC, KEYBOARD_SRC, TUSB_HID_SRC):
+    for d in (HID_KEYBOARD_SRC, KEYBOARD_SRC, TUSB_HID_SRC, HID_MOUSE_SRC, MOUSE_SRC):
         if not d.is_dir():
             raise unittest.SkipTest(NO_FRAMEWORK_REASON)
 
 
 def keyboard_library_sources() -> List[Path]:
-    """The unmodified arduino-pico Keyboard stack compiled into keyboard host tests."""
+    """The unmodified arduino-pico Keyboard and Mouse stack compiled into keyboard host tests."""
     require_keyboard_library()
     return [KEYBOARD_SRC / "Keyboard.cpp", HID_KEYBOARD_SRC / "HID_Keyboard.cpp",
-            HID_KEYBOARD_SRC / "KeyboardLayout_en_US.cpp"]
+            HID_KEYBOARD_SRC / "KeyboardLayout_en_US.cpp",
+            MOUSE_SRC / "Mouse.cpp", HID_MOUSE_SRC / "HID_Mouse.cpp"]
 
 
 def keyboard_include_dirs(firmware_include: Optional[Path] = None) -> List[Path]:
@@ -67,7 +70,7 @@ def keyboard_include_dirs(firmware_include: Optional[Path] = None) -> List[Path]
     inc = [HOST_DIR, USB_HOST_STUBS]
     if firmware_include is not None:
         inc.append(firmware_include)
-    inc += [FIRMWARE_INCLUDE, KEYBOARD_SRC, HID_KEYBOARD_SRC, TUSB_HID_SRC]
+    inc += [FIRMWARE_INCLUDE, KEYBOARD_SRC, HID_KEYBOARD_SRC, TUSB_HID_SRC, MOUSE_SRC, HID_MOUSE_SRC]
     return inc
 
 NO_COMPILER_REASON = (

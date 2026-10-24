@@ -33,6 +33,13 @@ bool encoderMenuApply(MenuMode page, int32_t delta) {
             if (l >= NUM_LAYERS) l = 0;
             return configSetActiveLayer((uint8_t)l) == ConfigStatus::Ok;
         }
+        case MenuMode::KNOB: {
+            const uint8_t layer = cfg.activeLayer < NUM_LAYERS ? cfg.activeLayer : 0;
+            int8_t m = (int8_t)cfg.knobMode[layer] + (delta > 0 ? 1 : -1);
+            if (m < 0) m = limits::KNOB_MODE_COUNT - 1;
+            if (m >= (int8_t)limits::KNOB_MODE_COUNT) m = 0;
+            return configSetKnobMode(layer, (uint8_t)m) == ConfigStatus::Ok;
+        }
         case MenuMode::THEME: {
             int8_t t = (int8_t)cfg.theme + (delta > 0 ? 1 : -1);
             if (t < 0) t = limits::THEME_COUNT - 1;

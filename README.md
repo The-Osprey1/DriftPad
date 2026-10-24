@@ -13,7 +13,8 @@ is the device configurator; it changes the settings stored on your pad.
 
 1. Click **Download firmware**. Hold BOOTSEL while plugging in the Pico, then copy `DriftPad.uf2`
    onto the `RPI-RP2` drive. The configurator needs this firmware (protocol 2); the pad restarts
-   by itself when the copy finishes.
+   by itself when the copy finishes. Later updates need no button: connect the pad and use
+   **Device → Firmware update**, which restarts it into update mode over USB.
 2. Click **Connect DriftPad** and pick the pad in the browser's list.
 3. On the **Device** tab, run the calibration wizard. Keys do not type, and the screen ignores
    them, until calibration is done.
@@ -68,11 +69,12 @@ sensitivity, calibration, output, and display controls.
 - A 4×4 key matrix with three mapping layers and productivity profile presets.
 - Actuation and Rapid Trigger controls, including per-key actuation overrides.
 - Profile backup import/export, a usage heatmap, and rotary encoder controls.
-- A 128×64 OLED with two themes (Drift and Cherry blossom), seven screensaver animations that start
+- A 128×64 OLED with three themes (Drift, Cherry blossom and Space), eight screensaver animations that start
   by itself after an idle time, and a Screen Lab to preview your own GIFs.
 - USB WebSerial communication and a browser-side DSP simulator.
 - RP2040 firmware for Hall sensors, a multiplexer, an encoder, and an OLED display. The knob is
-  a volume control (turn, press to mute); holding it opens the settings menu on the display.
+  a volume control at first (turn, press to mute). Each layer can give it another job: media
+  tracks, scrolling, zoom, left/right arrows or undo/redo. Holding it opens the settings menu.
 - Key combinations: any key can hold Ctrl, Shift, Alt and Win with its key (Ctrl + C, Win + D),
   set with four checkboxes in the configurator.
 

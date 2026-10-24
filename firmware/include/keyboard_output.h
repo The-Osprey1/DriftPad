@@ -77,6 +77,15 @@ const char* reasonName(Reason r);
 void onPress(uint8_t physKey, uint8_t code, uint8_t extraModifiers = 0);
 void onRelease(uint8_t physKey);
 
+// The knob's own key, an owner beside the 16 keys with the same reference counting, for knob turns
+// that are key combinations (Ctrl+Z). knobPress takes HID modifier bits and a HID usage; it returns
+// false, sending nothing, while output is off, while the knob already holds its key, or when the
+// usage would be a 7th one. Keys and modifiers held on the pad meanwhile stay held. Disabling
+// output and releaseAll() release it too.
+bool knobPress(uint8_t modifiers, uint8_t usage);
+void knobRelease();
+bool knobHeld();
+
 // The key produces no output until it is released. pressedNow = true (held at boot, leaving SIM):
 // the suppression lasts until the key is seen at rest (onAtRest), surviving Rapid Trigger release
 // edges in mid-stroke. pressedNow = false: it ends at the key's next release edge.

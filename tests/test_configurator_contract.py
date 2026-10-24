@@ -49,9 +49,12 @@ SCRIPT = [
     # screensaver idle start and animation (stored settings)
     "SET_SAVER_IDLE 5", "SET_SAVER_IDLE 0", "SET_SAVER_IDLE 60", "SET_SAVER_IDLE 61", "SET_SAVER_IDLE x",
     "SET_SAVER_IDLE", "SET_SAVER_ANIM 3", "SET_SAVER_ANIM shuffle", "SET_SAVER_ANIM SHUFFLE", "SET_SAVER_ANIM 6",
-    "SET_SAVER_ANIM -1", "SET_SAVER_ANIM 2", "SET_SAVER_ANIM 7", "GET_CONFIG",
+    "SET_SAVER_ANIM -1", "SET_SAVER_ANIM 2", "SET_SAVER_ANIM 7", "SET_SAVER_ANIM 8", "GET_CONFIG",
     # screen themes: choosing one also picks its screensaver
-    "SET_THEME 1", "GET_CONFIG", "SET_THEME 2", "SET_THEME x", "SET_THEME", "SET_SAVER_ANIM 4", "SET_THEME 0",
+    "SET_THEME 1", "GET_CONFIG", "SET_THEME 2", "GET_CONFIG", "SET_THEME 3", "SET_THEME x",
+    # the knob's mode per layer
+    "SET_KNOB 0 2", "SET_KNOB 2 5", "GET_CONFIG", "SET_KNOB 0 6", "SET_KNOB 3 1", "SET_KNOB 1", "SET_KNOB x 1",
+    "SET_KNOB 0 0", "SET_THEME", "SET_SAVER_ANIM 4", "SET_THEME 0",
     "GET_CONFIG",
     # output gating
     "SET_HID 1", "SET_HID 1 FORCE", "HID 0", "SET_HID 1 NOPE", "OUTPUT 0",
@@ -170,7 +173,7 @@ class TestFakeDeviceMatchesFirmware(unittest.TestCase):
         seen_cmds = {r[0].get("cmd") for r in self.firmware if r}
         table = {"PING", "INFO", "GET_CONFIG", "STATUS", "STREAM", "SET_ACTUATION", "SET_RT_SENS", "SET_RT_ENABLE",
                  "SET_LAYER", "SET_KEY", "SET_HID", "SAVE", "REVERT", "RESET", "CALIBRATE", "CAL", "SET_BOOT_OUTPUT",
-                 "SET_SAVER_IDLE", "SET_SAVER_ANIM", "SET_THEME", "SIM", "SCAN_RATE", "TIMING", "RAW", "FULLSCREEN", "SCREENSAVER", "ANIM", "WAKE",
+                 "SET_SAVER_IDLE", "SET_SAVER_ANIM", "SET_THEME", "SET_KNOB", "SIM", "SCAN_RATE", "TIMING", "RAW", "FULLSCREEN", "SCREENSAVER", "ANIM", "WAKE",
                  "OLED_TEST", "OLED_SCAN"}
         self.assertEqual(table - seen_cmds, set())
         codes = {r[0].get("code") for r in self.firmware if r and r[0].get("status") == "error"}

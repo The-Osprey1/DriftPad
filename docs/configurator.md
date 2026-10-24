@@ -10,10 +10,10 @@ button in place of Back to Studio (`scripts/build-site.cjs`). `keymap.html` only
 
 | Tab | What it does |
 |---|---|
-| Keys | The pad as it sits on the desk, with a live knob line under it (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), tick Ctrl, Shift, Alt or Win to hold them with it (Ctrl + C), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
+| Keys | The pad as it sits on the desk, with **Knob on this layer** under it (volume, media tracks, scroll, zoom, left/right arrows or undo/redo; applied at once, kept by Save) and a live knob line (A, B and switch levels, steps and presses) for checking the encoder wiring. Pick a layer and a key, choose what it sends (or press it on your keyboard), tick Ctrl, Shift, Alt or Win to hold them with it (Ctrl + C), give it a 4-character label; arrows, Home and End move between keys. **Write** sends only the keys that changed. Keymaps can be exported and imported as JSON |
 | Sensitivity | Actuation and Rapid Trigger sensitivity (limits come from the pad's `INFO`), Rapid Trigger on/off, live key travel |
-| Device | Firmware version and build, keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
-| Screen | **Theme**: Drift (the original look) or Cherry blossom; choosing a theme also sets its screensaver. **Screensaver**: when it starts by itself (Never, 1, 2, 5, 10 or 30 minutes idle) and which animation it plays, with Play now and Save. **Screen Lab** (a preview; nothing is sent to the pad): load a GIF or picture, convert it to the 128 × 64 black-and-white screen and see it in three possible places. See below |
+| Device | Firmware version and build, **Firmware update** (see below), keyboard output state, **Standalone mode** (keyboard output on at power-up; needs valid calibration), calibration wizard, Save, Revert, factory reset, backup and restore. Below: Simulate a key, Raw sensor samples, Scan timing, screensaver and display commands, restart into the bootloader, serial log |
+| Screen | **Theme**: Drift (the original look), Cherry blossom or Space; choosing a theme also sets its screensaver. **Screensaver**: when it starts by itself (Never, 1, 2, 5, 10 or 30 minutes idle) and which animation it plays, with Play now and Save. **Screen Lab** (a preview; nothing is sent to the pad): load a GIF or picture, convert it to the 128 × 64 black-and-white screen and see it in three possible places. See below |
 
 ## What it promises
 
@@ -47,10 +47,33 @@ complete the marked keys and Finish during calibration, or Turn keyboard output 
 An incomplete calibration names the keys to press fully and release; the same instruction appears
 in each marked key's accessible label.
 
+## Firmware update
+
+**Device → Firmware update** updates a pad that already runs DriftPad firmware without opening
+the case:
+
+1. **Download and restart into update mode** downloads `DriftPad.uf2` and sends `BOOTSEL`. The
+   pad restarts into the Pico's bootloader and shows up as the **RPI-RP2** drive, as if its button
+   had been held while plugging it in.
+2. Copy `DriftPad.uf2` onto that drive. The pad restarts by itself with the new firmware. Its
+   settings and calibration are kept, since the file never reaches the settings sectors
+   ([flash-layout.md](flash-layout.md)). Unsaved changes are lost, and the page says so first.
+3. When the pad's serial port comes back, the page reconnects to it without asking. The browser
+   already has your permission for that port. The page then says whether the build changed. An
+   update that changes how the pad appears on USB (the one that added the mouse for the knob's
+   scroll mode) looks like a new device to the browser: click **Connect DriftPad** that once.
+
+The card compares the pad's build with the one the site offers (`firmware/build_manifest.json`,
+published by `pages.yml` with the firmware): **Up to date**, **Update available** (the site's commit
+is newer), **Newer than the site's**, or **Different build**. A copy of the page without its own
+firmware, opened from the repository or the desktop app, only restarts the pad; copy a
+`DriftPad.uf2` you downloaded or built. A new pad, or one that does not connect, still needs the
+button: hold BOOTSEL while plugging it in.
+
 ## Display controls
 
 In **Device → Advanced diagnostics → Display**, choose **Shuffle all** or a single animation:
-Starfield, Plasma, Tesseract, Drift grid, Magnetic pulse, Lava lamp, or Sakura. Choosing an option changes
+Starfield, Plasma, Tesseract, Drift grid, Magnetic pulse, Lava lamp, Sakura, or Orbit. Choosing an option changes
 only the browser selection; **Play screensaver** sends the request. **Stop screensaver** returns
 to the selected screen. **Display off** turns the OLED off. None of these commands changes keymaps,
 calibration, keyboard output, or saved sensitivity settings.
@@ -60,7 +83,7 @@ screensaver by itself; **Never** turns that off. Those two choices are stored se
 and kept by **Save to the pad**, and included in backups. The selection here only chooses what
 **Play screensaver** plays now. Shuffle all changes animations during playback. A fixed selection keeps
 its animation. Turn or press the knob to wake the display. In the settings menu the first input only wakes it, so it
-does not also adjust a setting or advance a page; outside the menu, volume and mute still apply.
+does not also adjust a setting or advance a page; outside the menu, the knob's turn or press still applies.
 
 Controls stay disabled while a display request is pending. New firmware reports the display core's
 applied mode through `INFO` and `STATUS`; the page reads it back after a command before confirming

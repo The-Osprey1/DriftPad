@@ -303,4 +303,34 @@
         try { await t.open(); } catch (e) { err = e; }
         assertEq(err && err.name, "NotFoundError");
     });
+
+    // ------------------------------------------------------------------ firmware update (update.js)
+    test("update: the site's firmware is read from its manifest, and anything else means none", async () => {
+        const U = DriftPad.update;
+        const reply = (ok, body) => async () => ({ ok, json: async () => body });
+        const manifest = { fw_version: "2.1.0", build_id: "52ac7bd7b1ff", commit_date: "2026-10-23T23:33:59+00:00" };
+        let asked = null;
+        const site = await U.loadSiteFirmware(async (url, opts) => { asked = [url, opts.cache]; return reply(true, manifest)(); });
+        assertEq(asked, ["firmware/build_manifest.json", "no-store"]);
+        assertEq(site, { fw: "2.1.0", build: "52ac7bd7b1ff", date: "2026-10-23T23:33:59+00:00" });
+        assertEq(await U.loadSiteFirmware(null), null, "no fetch (simulated pad, old browser)");
+        assertEq(await U.loadSiteFirmware(reply(false, manifest)), null, "404: a page without its own firmware");
+        assertEq(await U.loadSiteFirmware(reply(true, { fw_version: "2.1.0" })), null, "no build id");
+        assertEq(await U.loadSiteFirmware(async () => { throw new TypeError("Failed to fetch"); }), null, "offline or file://");
+        assertEq(await U.loadSiteFirmware(async () => ({ ok: true, json: async () => { throw new SyntaxError("bad"); } })), null);
+    });
+
+    test("update: the pad's build is compared with the site's by commit and date", () => {
+        const U = DriftPad.update;
+        const site = { fw: "2.1.0", build: "aaaaaaaaaaaa", date: "2026-10-23T23:00:00+00:00" };
+        const pad = (build, build_date) => ({ fw: "2.1.0", build, build_date });
+        assertEq(U.compare(pad("aaaaaaaaaaaa", "2026-10-23T23:00:00+00:00"), site), "current");
+        assertEq(U.compare(pad("bbbbbbbbbbbb", "2026-10-20T10:00:00+00:00"), site), "update");
+        assertEq(U.compare(pad("bbbbbbbbbbbb", "2026-10-24T10:00:00+00:00"), site), "older", "the pad runs a newer commit");
+        assertEq(U.compare(pad("aaaaaaaaaaaa-dirty", "2026-10-23T23:00:00+00:00"), site), "different", "same date, another build");
+        assertEq(U.compare(pad("bbbbbbbbbbbb", "unknown"), site), "different");
+        assertEq(U.compare(pad("unknown", "unknown"), site), "unknown", "a host build");
+        assertEq(U.compare(pad("aaaaaaaaaaaa", ""), null), "unknown", "the site has no firmware");
+        assertEq(U.compare(null, site), "unknown");
+    });
 })(window);

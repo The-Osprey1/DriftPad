@@ -22,6 +22,16 @@ struct LayerKey {
     uint8_t modifiers;                     // extra modifiers held with the key (limits::MODIFIERS_MASK)
 };
 
+// What the knob does, per layer: turn one way / the other way, press
+enum class KnobMode : uint8_t {
+    Volume = 0,   // volume down / up, mute
+    Media,        // previous / next track, play-pause
+    Scroll,       // scroll up / down (mouse wheel), middle click
+    Zoom,         // Ctrl+minus / Ctrl+equals (zoom out / in), Ctrl+0 (actual size)
+    Arrows,       // Left / Right arrow, Enter
+    Undo,         // Ctrl+Z / Ctrl+Y (undo / redo), nothing
+};
+
 struct DeviceSettings {
     uint16_t        actuationCmm;
     uint16_t        rtSensCmm;
@@ -32,6 +42,7 @@ struct DeviceSettings {
     int8_t          saverAnim;             // the animation it plays: 0..limits::SAVER_ANIM_COUNT - 1, -1 shuffles
     uint8_t         theme;                 // screen theme, 0..limits::THEME_COUNT - 1 (0 = Drift)
     uint8_t         screenSpeed;           // display link speed, 0 = fast when the panel keeps up, 1 = safe (stored, not used yet)
+    uint8_t         knobMode[NUM_LAYERS];  // KnobMode per layer, 0..limits::KNOB_MODE_COUNT - 1
     LayerKey        keymaps[NUM_LAYERS][NUM_KEYS];
     CalibrationData calibration;
 };
@@ -99,9 +110,11 @@ ConfigStatus configSetKey(uint8_t layer, uint8_t key, uint8_t code, const char* 
 void         configSetBootOutput(bool enabled);
 ConfigStatus configSetSaverIdle(uint8_t minutes);   // OutOfRange above limits::SAVER_IDLE_MAX_MIN
 ConfigStatus configSetSaverAnim(int8_t anim);       // -1 shuffles; OutOfRange outside -1..SAVER_ANIM_COUNT - 1
-// Selects a theme and its own screensaver (Drift: shuffle all, Cherry blossom: Sakura); a later
-// configSetSaverAnim() picks another. OutOfRange at or above limits::THEME_COUNT.
+// Selects a theme and its own screensaver (Drift: shuffle all, Cherry blossom: Sakura, Space:
+// Orbit); a later configSetSaverAnim() picks another. OutOfRange at or above limits::THEME_COUNT.
 ConfigStatus configSetTheme(uint8_t theme);
+// What the knob does on `layer`. InvalidLayer / OutOfRange (mode at or above KNOB_MODE_COUNT).
+ConfigStatus configSetKnobMode(uint8_t layer, uint8_t mode);
 int8_t       configThemeScreensaver(uint8_t theme);
 ConfigStatus configSetCalibration(const CalibrationData& data);  // must evaluate Valid (or be Missing)
 

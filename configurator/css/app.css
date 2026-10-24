@@ -93,6 +93,10 @@
             gap: 20px;
             align-items: start;
         }
+        /* Device tab: two even columns. With an auto first column, the identity list's longest line
+           (the features) took the whole width and squeezed the second column. */
+        .layout-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .card-wide { grid-column: 1 / -1; }
 
         .card {
             background: var(--bg-card);
@@ -173,6 +177,9 @@
 
         /* Wrap to the pad's width instead of widening the auto-sized layout column */
         .knob-note { width: 0; min-width: 100%; }
+        .knob-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; width: 0; min-width: 100%; margin: 12px 0 4px; font-size: 14px; }
+        .knob-row select { flex: 1 1 14em; min-width: 0; max-width: 100%; }
+        .knob-row .hint { flex-basis: 100%; }
         .knob.pressed .knob-dial { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25) inset; }
         .knob-dial::after {
             content: ""; position: absolute; top: 4px; left: 50%; width: 3px; height: 12px;
@@ -270,7 +277,7 @@
 
         @media (max-width: 900px) {
             body { padding: 16px; }
-            .layout { grid-template-columns: 1fr; }
+            .layout, .layout-even { grid-template-columns: 1fr; }
         }
         @media (max-width: 420px) {
             .pad { --u: 66px; gap: 8px; padding: 10px; }

@@ -23,6 +23,7 @@ typedef enum {
 #define HID_REPORT_ID(x) 0x85, (x),
 #define TUD_HID_REPORT_DESC_KEYBOARD(...) 0x05, 0x01, 0x09, 0x06, __VA_ARGS__ 0xC0
 #define TUD_HID_REPORT_DESC_CONSUMER(...) 0x05, 0x0C, 0x09, 0x01, __VA_ARGS__ 0xC0
+#define TUD_HID_REPORT_DESC_MOUSE(...) 0x05, 0x01, 0x09, 0x02, __VA_ARGS__ 0xC0
 
 void tud_task();
 bool tud_ready();          // mounted and not suspended
@@ -31,6 +32,7 @@ bool tud_suspended();
 bool tud_hid_ready();      // tud_ready() and the HID IN endpoint is free
 bool tud_hid_keyboard_report(uint8_t report_id, uint8_t modifier, const uint8_t keycode[6]);
 bool tud_hid_report(uint8_t report_id, const void* report, uint16_t len);
+bool tud_hid_mouse_report(uint8_t report_id, uint8_t buttons, int8_t x, int8_t y, int8_t vertical, int8_t horizontal);
 
 // Called by the fake stack when the host has collected a queued report (TinyUSB invokes it
 // from tud_task()). The firmware HAL defines it; builds without the HAL link a default.

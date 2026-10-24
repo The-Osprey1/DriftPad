@@ -354,7 +354,7 @@
         await connected();
         app().setView("device", false);
         const options = [...$("animSelect").options].map(o => o.textContent);
-        assertEq(options, ["Shuffle all", "Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura"]);
+        assertEq(options, ["Shuffle all", "Starfield", "Plasma", "Tesseract", "Drift grid", "Magnetic pulse", "Lava lamp", "Sakura", "Orbit"]);
         const before = countVerb("ANIM");
         $("animSelect").value = "2";
         $("animSelect").dispatchEvent(new Event("change", { bubbles: true }));
@@ -477,10 +477,91 @@
         theme.dispatchEvent(new Event("change", { bubbles: true }));
         assert(await waitUntil(() => sim().device.state.theme === 1), "theme sent");
         assert(await waitUntil(() => $("saverAnim").value === "6"), `screensaver follows: ${$("saverAnim").value}`);
+        // Space brings Orbit
+        theme.value = "2";
+        theme.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.theme === 2), "Space sent");
+        assert(await waitUntil(() => $("saverAnim").value === "7"), `screensaver follows: ${$("saverAnim").value}`);
         theme.value = "0";
         theme.dispatchEvent(new Event("change", { bubbles: true }));
         assert(await waitUntil(() => sim().device.state.theme === 0));
         app().setView("keys", false);
+    });
+
+    test("app: a firmware update restarts the pad into update mode and reconnects when it comes back", async () => {
+        // The pad runs an older build than the one the site offers
+        await disconnected();
+        const site = { fw: "2.2.0", build: "aaaaaaaaaaaa", date: "2026-10-24T00:00:00+00:00" };
+        Object.assign(sim().device, { build: "bbbbbbbbbbbb", buildDate: "2026-10-01T00:00:00+00:00" });
+        await connected();
+        app().update.site = site;
+        app().setView("device", false);
+        assert(await waitUntil(() => text("updateBadge") === "Update available"), text("updateBadge"));
+        assert(/Your pad: firmware .*build bbbbbbbbbbbb\. This site offers firmware 2\.2\.0, build aaaaaaaaaaaa\./.test(text("updateVersions")), text("updateVersions"));
+        assert(!$("updateFileLink").hidden, "the firmware file is offered on its own too");
+        const link = $("updateFileLink"), realClick = link.click;
+        let downloads = 0;
+        link.click = () => { downloads++; };
+        const chooserBefore = sim().serial.requests;
+        try {
+            $("updateBtn").click();
+            assert(await waitUntil(() => $("confirmDialog").open), "asks first");
+            assert(/RPI-RP2/.test(text("confirmBody")) && /settings and calibration are kept/.test(text("confirmBody")), text("confirmBody"));
+            $("confirmOk").click();
+            assert(await waitUntil(() => app().update.phase === "waiting"), app().update.phase);
+            assertEq(downloads, 1, "the file downloads as the pad restarts");
+            assertEq(countVerb("BOOTSEL"), 1);
+            assert(await waitUntil(() => !app().session.isConnected), "the pad left for its bootloader");
+            assert(/in update mode\. Copy DriftPad\.uf2/.test(text("updateState")), text("updateState"));
+            // The file was copied: the pad restarts on the site's build and its port comes back
+            Object.assign(sim().device, { build: site.build, buildDate: site.date });
+            sim().serial.plugBackIn();
+            assert(await waitUntil(() => app().update.phase === "done"), app().update.phase);
+            assert(app().session.isConnected, "reconnected by itself");
+            assertEq(sim().serial.requests, chooserBefore, "without asking for the port again");
+            assert(/Updated: the pad now runs firmware .*build aaaaaaaaaaaa/.test(text("updateState")), text("updateState"));
+            assertEq(text("updateBadge"), "Up to date");
+        } finally {
+            link.click = realClick;
+            app().update.site = null;
+            app().update.phase = "idle";
+            app().setView("keys", false);
+        }
+    });
+
+    test("app: the Keys tab sets what the knob does on the layer being viewed", async () => {
+        await connected();
+        app().setView("keys", false);
+        app().setLayer(1);
+        await sleep(10);
+        const sel = $("knobSelect");
+        assert(!sel.disabled, "enabled with a pad that has knob modes");
+        assertEq(sel.value, "0", "factory: volume");
+        assertEq([...sel.options].map(o => o.textContent.split(":")[0]), ["Volume", "Media", "Scroll", "Zoom", "Arrows", "Undo"]);
+        sel.value = "2";
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.knob[1] === 2), "SET_KNOB sent for the viewed layer");
+        assertEq(sim().device.state.knob, [0, 2, 0], "only that layer changed");
+        assert(await waitUntil(() => app().session.dirty === true), "applied, not saved yet");
+        app().setLayer(0);
+        await sleep(10);
+        assertEq(sel.value, "0", "another layer shows its own mode");
+        app().setLayer(1);
+        await sleep(10);
+        assertEq(sel.value, "2");
+        sel.value = "0";
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.knob[1] === 0));
+        app().setLayer(0);
+    });
+
+    test("app: a port that comes back without an update under way is left alone", async () => {
+        await disconnected();
+        const before = sim().serial.requests;
+        sim().serial.plugBackIn();
+        await sleep(600);
+        assert(!app().session.isConnected, "connecting is the user's choice");
+        assertEq(sim().serial.requests, before);
     });
 
     test("app: accessibility invariants hold in every state visited", async () => {
@@ -519,7 +600,7 @@
 
     test("app: controls that need a device are disabled without one", async () => {
         await disconnected();
-        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn", "themeSelect"]) {
+        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn", "themeSelect", "updateBtn", "knobSelect"]) {
             assert($(id).disabled, `#${id} must be disabled while disconnected`);
         }
         assert(!$("captureBtn").disabled, "the draft stays editable offline");

@@ -4,6 +4,7 @@
 #include "hall.h"
 #include "config.h"
 #include "keyboard_output.h"
+#include "media_keys.h"
 
 void displayBuildSnapshot(display_link::Snapshot& out) {
     memset(&out, 0, sizeof(out));
@@ -34,6 +35,9 @@ void displayBuildSnapshot(display_link::Snapshot& out) {
     out.saverIdleMin = configGet().saverIdleMin;
     out.saverAnim = configGet().saverAnim;
     out.theme = configGet().theme;
+    out.knobMode = configGet().activeLayer < NUM_LAYERS ? configGet().knobMode[configGet().activeLayer] : 0;
+    out.knobSeq = MediaKeys::knobSeq();
+    out.knobAction = MediaKeys::knobAction();
     if (KeyboardOutput::isEnabled()) {
         out.outputStatus = display_link::OUTPUT_ON;
     } else {

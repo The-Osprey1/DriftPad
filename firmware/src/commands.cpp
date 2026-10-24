@@ -239,7 +239,7 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     static const char* const FEATURES[] = { "keymap", "layers", "rapid_trigger", "telemetry", "timing",
                                             "raw", "sim", "display", "guided_calibration", "boot_output",
                                             "settings_ab", "display_status", "encoder_status",
-                                            "key_modifiers", "screensaver_idle", "themes" };
+                                            "key_modifiers", "screensaver_idle", "themes", "knob_modes" };
     for (const char* f : FEATURES) w.str(f);
     w.endArray();
     w.key("limits").beginObject();
@@ -255,6 +255,7 @@ HandlerResult cmdInfo(const Args&, Reply& r, void*) {
     w.key("saver_idle_max").u32(limits::SAVER_IDLE_MAX_MIN);
     w.key("saver_anims").u32(limits::SAVER_ANIM_COUNT);
     w.key("themes").u32(limits::THEME_COUNT);
+    w.key("knob_modes").u32(limits::KNOB_MODE_COUNT);
     w.endObject();
     writeCalibration(w);
     writeOutput(w);
@@ -276,6 +277,9 @@ HandlerResult cmdGetConfig(const Args&, Reply& r, void*) {
     w.key("saver_idle").u32(c.saverIdleMin);
     w.key("saver_anim").i32(c.saverAnim);
     w.key("theme").u32(c.theme);
+    w.key("knob").beginArray();
+    for (uint8_t l = 0; l < NUM_LAYERS; ++l) w.u32(c.knobMode[l]);
+    w.endArray();
     w.key("dirty").boolean(configIsDirty());
     w.key("settings_seq").u32(configSettingsSeq());
     w.key("layers").beginArray();
@@ -689,7 +693,7 @@ HandlerResult cmdSetSaverAnim(const Args& a, Reply& r, void*) {
     if (!proto::keywordIs(a[0], "shuffle")) {
         uint32_t v;
         ParseResult pr = proto::parseUint(a[0], 0, limits::SAVER_ANIM_COUNT - 1, v);
-        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 6, or SHUFFLE");
+        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 7, or SHUFFLE");
         anim = (int32_t)v;
     }
     ConfigStatus st = configSetSaverAnim((int8_t)anim);
@@ -704,12 +708,27 @@ HandlerResult cmdSetTheme(const Args& a, Reply& r, void*) {
     wakeDisplay();
     uint32_t theme;
     ParseResult pr = proto::parseUint(a[0], 0, limits::THEME_COUNT - 1, theme);
-    if (pr != ParseResult::Ok) return badValue(r, pr, "theme must be 0 (Drift) or 1 (Cherry blossom)");
+    if (pr != ParseResult::Ok) return badValue(r, pr, "theme must be 0 (Drift), 1 (Cherry blossom) or 2 (Space)");
     ConfigStatus st = configSetTheme((uint8_t)theme);
     if (st != ConfigStatus::Ok) return configError(r, st, "theme rejected");
     JsonWriter& w = r.ok();
     w.key("theme").u32(configGet().theme);
     w.key("saver_anim").i32(configGet().saverAnim);
+    writeApplied(w);
+    return HandlerResult::Done;
+}
+
+HandlerResult cmdSetKnob(const Args& a, Reply& r, void*) {
+    uint32_t layer, mode;
+    ParseResult pr = proto::parseUint(a[0], 0, NUM_LAYERS - 1, layer);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "layer must be 0, 1 or 2");
+    pr = proto::parseUint(a[1], 0, limits::KNOB_MODE_COUNT - 1, mode);
+    if (pr != ParseResult::Ok) return badValue(r, pr, "knob mode must be 0 to 5 (volume, media, scroll, zoom, arrows, undo)");
+    ConfigStatus st = configSetKnobMode((uint8_t)layer, (uint8_t)mode);
+    if (st != ConfigStatus::Ok) return configError(r, st, "knob mode rejected");
+    JsonWriter& w = r.ok();
+    w.key("layer").u32(layer);
+    w.key("knob").u32(configGet().knobMode[layer]);
     writeApplied(w);
     return HandlerResult::Done;
 }
@@ -819,7 +838,7 @@ HandlerResult cmdAnim(const Args& a, Reply& r, void*) {
     if (a.count == 1) {
         uint32_t v;
         ParseResult pr = proto::parseUint(a[0], 0, OLED_ANIM_COUNT - 1, v);
-        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 6 (omit it to shuffle)");
+        if (pr != ParseResult::Ok) return badValue(r, pr, "animation must be 0 to 7 (omit it to shuffle)");
         idx = (int32_t)v;
     }
     oledSetScreensaverAnim((int8_t)idx);
@@ -885,6 +904,7 @@ const proto::CommandDef TABLE[] = {
     { "SET_SAVER_IDLE", nullptr,  1, 1, cmdSetSaverIdle },
     { "SET_SAVER_ANIM", nullptr,  1, 1, cmdSetSaverAnim },
     { "SET_THEME",     nullptr,   1, 1, cmdSetTheme },
+    { "SET_KNOB",      nullptr,   2, 2, cmdSetKnob },
     { "SIM",           nullptr,   1, 2, cmdSim },
     { "SCAN_RATE",     nullptr,   0, 0, cmdScanRate },
     { "TIMING",        nullptr,   0, 1, cmdTiming },

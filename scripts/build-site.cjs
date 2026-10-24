@@ -25,6 +25,6 @@ html = replaceOnce(html,
   '<a id="firmwareLink" class="btn" href="driftpad.uf2" download="DriftPad.uf2">Download firmware</a>');
 html = replaceOnce(html,
   '<p class="conn-detail muted">Configure your physical pad here. Studio profiles and previews stay on this computer; they are not automatically written to the pad.</p>',
-  '<p class="conn-detail muted">New pad or firmware update: click <strong>Download firmware</strong>, hold BOOTSEL on the Pico while plugging it in, and copy DriftPad.uf2 onto the RPI-RP2 drive. The pad restarts by itself; then click <strong>Connect DriftPad</strong>.</p>');
+  '<p class="conn-detail muted">Updating a pad that already runs DriftPad: connect it and use <strong>Device → Firmware update</strong>, no need to open the case. A new pad: click <strong>Download firmware</strong>, hold BOOTSEL on the Pico while plugging it in, and copy DriftPad.uf2 onto the RPI-RP2 drive. The pad restarts by itself; then click <strong>Connect DriftPad</strong>.</p>');
 fs.writeFileSync(indexPath, html);
 console.log(`Built the configurator site in ${path.relative(root, target)}/`);

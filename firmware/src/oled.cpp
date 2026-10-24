@@ -6,6 +6,7 @@
 #include "build_info.h"
 #include "screensaver_player.h"
 #include "theme_sakura.h"
+#include "theme_space.h"
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -193,18 +194,23 @@ const char* layerName(uint8_t layer) {
     return layer < 3 ? LAYER_NAMES[layer] : "?";
 }
 
-// The theme in the settings (0 Drift, 1 Cherry blossom); Drift until core 0 has published one.
-// A theme this firmware does not have draws as Drift.
+// The theme in the settings (0 Drift, 1 Cherry blossom, 2 Space); Drift until core 0 has published
+// one. A theme this firmware does not have draws as Drift.
 constexpr uint8_t THEME_DRIFT = 0;
 constexpr uint8_t THEME_SAKURA = 1;
+constexpr uint8_t THEME_SPACE = 2;
 uint8_t activeTheme() {
     return s_haveView && s_view.theme < limits::THEME_COUNT ? s_view.theme : THEME_DRIFT;
 }
 bool sakuraTheme() { return activeTheme() == THEME_SAKURA; }
+bool spaceTheme() { return activeTheme() == THEME_SPACE; }
+// Every theme but Drift letters its labels and values plainly; the slit italic is Drift's
+bool plainLettering() { return activeTheme() != THEME_DRIFT; }
 
 // Cherry blossom: petals thrown up by key presses and dropped by the standby sprig
 sakura::Petals s_keyPetals;
 sakura::Scene s_sakuraScene;    // the Sakura screensaver (animation 6)
+space::Scene s_spaceScene;      // the Orbit screensaver (animation 7)
 uint32_t s_keyPetalsAt = 0;
 uint32_t s_sprigDropAt = 0;
 
@@ -594,9 +600,67 @@ void printTracked(const char* text, int16_t x, int16_t y, int16_t pitch) {
     }
 }
 
-const char* const MENU_TITLES[] = {"Sensitivity", "Actuation point", "Rapid Trigger", "Active layer", "Screen theme"};
-const char* const THEME_NAMES[] = {"Drift", "Sakura"};
-const char* const THEME_CAPTIONS[] = {"The original look", "Cherry blossom"};
+const char* const MENU_TITLES[] = {"Sensitivity", "Actuation point", "Rapid Trigger", "Active layer", "Screen theme", "Knob"};
+
+// What the knob does in each mode (KnobMode): its name, then what turning anticlockwise,
+// clockwise and pressing send
+const char* const KNOB_NAMES[] = {"Volume", "Media", "Scroll", "Zoom", "Arrows", "Undo"};
+const char* const KNOB_ACTIONS[][3] = {
+    {"Volume down", "Volume up", "Mute"},
+    {"Previous track", "Next track", "Play / pause"},
+    {"Scroll up", "Scroll down", "Middle click"},
+    {"Zoom out", "Zoom in", "Actual size"},
+    {"Left", "Right", "Enter"},
+    {"Undo", "Redo", "Nothing"},
+};
+static_assert(sizeof(KNOB_NAMES) / sizeof(KNOB_NAMES[0]) == limits::KNOB_MODE_COUNT, "a name per knob mode");
+static_assert(sizeof(KNOB_ACTIONS) / sizeof(KNOB_ACTIONS[0]) == limits::KNOB_MODE_COUNT, "actions per knob mode");
+
+// A 14 x 14 icon for a knob mode, top-left at (x, y)
+void drawKnobIcon(uint8_t mode, int16_t x, int16_t y) {
+    const uint16_t W = OLED_COLOR_WHITE;
+    switch (mode) {
+        case 1:   // media: play and pause
+            s_display.fillTriangle(x, y + 2, x, y + 11, x + 6, y + 6, W);
+            s_display.fillRect(x + 9, y + 2, 2, 10, W);
+            s_display.fillRect(x + 12, y + 2, 2, 10, W);
+            break;
+        case 2:   // scroll: a mouse with its wheel
+            s_display.drawRoundRect(x + 3, y, 8, 14, 3, W);
+            s_display.drawFastVLine(x + 7, y + 2, 3, W);
+            s_display.drawFastHLine(x + 3, y + 6, 8, W);
+            break;
+        case 3:   // zoom: a magnifier
+            s_display.drawCircle(x + 5, y + 5, 4, W);
+            s_display.drawLine(x + 8, y + 8, x + 12, y + 12, W);
+            s_display.drawLine(x + 9, y + 8, x + 13, y + 12, W);
+            s_display.drawFastHLine(x + 3, y + 5, 5, W);
+            s_display.drawFastVLine(x + 5, y + 3, 5, W);
+            break;
+        case 4:   // arrows: left and right
+            s_display.drawFastHLine(x + 1, y + 7, 12, W);
+            s_display.drawLine(x + 1, y + 7, x + 4, y + 4, W);
+            s_display.drawLine(x + 1, y + 7, x + 4, y + 10, W);
+            s_display.drawLine(x + 12, y + 7, x + 9, y + 4, W);
+            s_display.drawLine(x + 12, y + 7, x + 9, y + 10, W);
+            break;
+        case 5:   // undo: an arrow turning back
+            s_display.drawFastHLine(x + 3, y + 4, 6, W);
+            s_display.drawCircleHelper(x + 9, y + 7, 3, 0x2 | 0x4, W);
+            s_display.drawFastHLine(x + 4, y + 10, 6, W);
+            s_display.drawLine(x + 3, y + 4, x + 6, y + 1, W);
+            s_display.drawLine(x + 3, y + 4, x + 6, y + 7, W);
+            break;
+        default:  // volume: a speaker and its sound
+            s_display.fillRect(x + 1, y + 5, 3, 4, W);
+            s_display.fillTriangle(x + 3, y + 7, x + 7, y + 2, x + 7, y + 11, W);
+            s_display.drawFastVLine(x + 10, y + 5, 4, W);
+            s_display.drawFastVLine(x + 12, y + 3, 8, W);
+            break;
+    }
+}
+const char* const THEME_NAMES[] = {"Drift", "Sakura", "Space"};
+const char* const THEME_CAPTIONS[] = {"The original look", "Cherry blossom", "Planets and stars"};
 
 // A big value in italic slit lettering, with its unit in small capitals sharing the baseline; the
 // pair is centred. Values are size 3 (18 x 24 px cells), which needs a 28 row region.
@@ -676,11 +740,16 @@ void renderMenuOverlay() {
     // Header: the page's name in capitals, four page pips at the right, a hairline beneath
     const uint8_t page = static_cast<uint8_t>(s_currentMenu);
     s_display.setTextColor(OLED_COLOR_WHITE);
-    if (page < static_cast<uint8_t>(MenuMode::COUNT)) {
+    if (s_currentMenu == MenuMode::KNOB) {
+        char title[20];
+        snprintf(title, sizeof(title), "Knob on layer %u", (unsigned)s_view.activeLayer + 1);
+        printTracked(title, 10, 4, 6);
+    } else if (page < static_cast<uint8_t>(MenuMode::COUNT)) {
         printTracked(MENU_TITLES[page], 10, 4, 6);
     }
     for (uint8_t i = 0; i < static_cast<uint8_t>(MenuMode::COUNT); ++i) {
-        const int16_t px = 108 + i * 4;
+        // Right-aligned, clear of the longest title ("Actuation point" ends at x 99)
+        const int16_t px = 126 - static_cast<uint8_t>(MenuMode::COUNT) * 4 + i * 4;
         if (i == page) s_display.fillRect(px, 4, 3, 5, OLED_COLOR_WHITE);
         else s_display.drawRect(px, 4, 3, 5, OLED_COLOR_WHITE);
     }
@@ -749,11 +818,14 @@ void renderMenuOverlay() {
             const uint8_t cur = s_view.theme < limits::THEME_COUNT ? s_view.theme : 0;
             const char* name = THEME_NAMES[cur];
             const int16_t w = textWidth(name, 2);
-            if (cur == THEME_SAKURA) {
-                sakura::drawSeal(s_display, 64 - (w + 6 + sakura::SEAL_SIZE) / 2, 18);
+            if (cur == THEME_SAKURA || cur == THEME_SPACE) {
+                // The theme's badge beside its name: the seal, or a ringed planet
+                const int16_t left = 64 - (w + 6 + sakura::SEAL_SIZE) / 2;
+                if (cur == THEME_SAKURA) sakura::drawSeal(s_display, left, 18);
+                else space::drawBadge(s_display, left, 18);
                 s_display.setTextColor(OLED_COLOR_WHITE);
                 s_display.setTextSize(2);
-                s_display.setCursor(64 - (w + 6 + sakura::SEAL_SIZE) / 2 + sakura::SEAL_SIZE + 6, 21);
+                s_display.setCursor(left + sakura::SEAL_SIZE + 6, 21);
                 s_display.print(name);
                 s_display.setTextSize(1);
             } else {
@@ -770,6 +842,29 @@ void renderMenuOverlay() {
             // One dot per theme, the current one solid
             for (uint8_t i = 0; i < limits::THEME_COUNT; ++i) {
                 const int16_t bx = 64 - (limits::THEME_COUNT * 8 - 3) / 2 + i * 8;
+                if (i == cur) s_display.fillRect(bx, 54, 5, 5, OLED_COLOR_WHITE);
+                else s_display.drawRect(bx, 54, 5, 5, OLED_COLOR_WHITE);
+            }
+            break;
+        }
+        case MenuMode::KNOB: {
+            // The mode's icon and name (the turn speaks for itself), then what a press does; one dot
+            // per mode
+            const uint8_t cur = s_view.knobMode < limits::KNOB_MODE_COUNT ? s_view.knobMode : 0;
+            const char* name = KNOB_NAMES[cur];
+            const int16_t w = textWidth(name, 2);
+            const int16_t left = 64 - (w + 20) / 2;
+            drawKnobIcon(cur, left, 20);
+            s_display.setTextColor(OLED_COLOR_WHITE);
+            s_display.setTextSize(2);
+            s_display.setCursor(left + 20, 20);
+            s_display.print(name);
+            s_display.setTextSize(1);
+            char caption[24];
+            snprintf(caption, sizeof(caption), "Press: %s", KNOB_ACTIONS[cur][2]);
+            printCentered(caption, 64, 43);
+            for (uint8_t i = 0; i < limits::KNOB_MODE_COUNT; ++i) {
+                const int16_t bx = 64 - (limits::KNOB_MODE_COUNT * 8 - 3) / 2 + i * 8;
                 if (i == cur) s_display.fillRect(bx, 54, 5, 5, OLED_COLOR_WHITE);
                 else s_display.drawRect(bx, 54, 5, 5, OLED_COLOR_WHITE);
             }
@@ -881,7 +976,7 @@ void drawPanelValue(const char* value, const char* unit, int16_t top) {
     const int16_t unitW = unit ? 5 + fontWidth(unit, unitFont) : 0;
     const int16_t left = PANEL_CENTER_X - ((int16_t)w + unitW) / 2 - x1;
     const int16_t baseline = top - y1;
-    if (sakuraTheme()) {   // plain upright lettering; the slit italic is Drift's
+    if (plainLettering()) {   // plain upright lettering; the slit italic is Drift's
         s_display.setTextColor(OLED_COLOR_WHITE);
         s_display.setFont(valueFont);
         s_display.setCursor(left, baseline);
@@ -969,9 +1064,9 @@ void drawKeyBox(const char* label, bool actuated, uint8_t punch) {
         }
     }
 
-    // Cherry blossom draws every label plainly inside a seal-like card; the slit lettering is Drift's
-    const bool sakuraCard = sakuraTheme();
-    const bool usePlain = sakuraCard || isPunctuationOrSmall(label, w, h);
+    // The other themes draw every label plainly inside their own card; the slit lettering is Drift's
+    const bool themedCard = plainLettering();
+    const bool usePlain = themedCard || isPunctuationOrSmall(label, w, h);
 
     int16_t tx = KEY_BOX_X + (KEY_BOX_W - (int16_t)w + 1) / 2 - x1;
     int16_t ty;
@@ -987,8 +1082,10 @@ void drawKeyBox(const char* label, bool actuated, uint8_t punch) {
         ty = KEY_BOX_Y + (KEY_BOX_H - (int16_t)capH + 1) / 2 + (int16_t)capH;
     }
 
-    if (sakuraCard) {
+    if (sakuraTheme()) {
         sakura::drawCardFrame(s_display, KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, actuated);
+    } else if (spaceTheme()) {
+        space::drawCardFrame(s_display, KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, actuated);
     } else if (actuated) {
         s_display.fillRoundRect(KEY_BOX_X, KEY_BOX_Y, KEY_BOX_W, KEY_BOX_H, 3, OLED_COLOR_WHITE);
         if (punch > 0) {
@@ -1060,6 +1157,18 @@ void drawTravelScale(float travelMm, float releaseMm = -1.0f) {
 
 }
 
+// Space: the target lock of each fresh press closes in on its map cell for space::LOCK_STEPS
+// frames, held or not; s_keyFlash counts it down
+void drawSpaceLocks() {
+    for (uint8_t i = 0; i < NUM_KEYS; ++i) {
+        if (s_keyFlash[i] == 0) continue;
+        const int16_t x = MAP_X + (i % 4) * (MAP_CELL + MAP_GAP);
+        const int16_t y = MAP_Y + (i / 4) * (MAP_CELL + MAP_GAP);
+        space::drawLockOn(s_display, x, y, MAP_CELL, (uint8_t)(space::LOCK_STEPS - s_keyFlash[i]));
+        s_keyFlash[i]--;
+    }
+}
+
 // Keypad map. Resting: outline. Travelling: outline with a level that rises toward the
 // actuation point (a full cell is about to fire). Actuated: solid, with a ring around it for two
 // frames, then a dithered afterglow that thins out over GLOW_FRAMES. Focus is marked by row and column pointers outside the grid, so
@@ -1078,10 +1187,12 @@ void drawKeypadMap(const bool actuated[NUM_KEYS], int8_t focus, bool legends) {
                     s_keyPetals.burst(x + MAP_CELL / 2.0f, y + 1.0f, 6);
                     s_keyFlash[i] = 0;
                 }
+                // Space: a target lock closes in instead (drawSpaceLocks, which counts it down)
+                if (spaceTheme()) s_keyFlash[i] = space::LOCK_STEPS;
             }
             s_prevActuated[i] = true;
             s_display.fillRect(x, y, MAP_CELL, MAP_CELL, OLED_COLOR_WHITE);
-            if (s_keyFlash[i] > 0) {
+            if (s_keyFlash[i] > 0 && !spaceTheme()) {
                 // A ring that leaves the cell: solid at once, then further out and breaking into dots
                 if (s_keyFlash[i] == FLASH_FRAMES) {
                     s_display.drawRect(x - 1, y - 1, MAP_CELL + 2, MAP_CELL + 2, OLED_COLOR_WHITE);
@@ -1202,6 +1313,10 @@ void drawLayerFlash(uint32_t now, uint8_t layer) {
         sakura::drawShoji(s_display, elapsed, LAYER_FLASH_MS, layer, layerName(layer));
         return;
     }
+    if (spaceTheme()) {    // a window onto stars rushing past opens, names the layer and closes
+        space::drawWarp(s_display, elapsed, LAYER_FLASH_MS, layer, layerName(layer));
+        return;
+    }
     const int32_t age = (int32_t)elapsed;
     const int32_t remaining = (int32_t)LAYER_FLASH_MS - age;
     const int32_t edge = age < remaining ? age : remaining;              // ms from the nearer end
@@ -1229,6 +1344,58 @@ void drawLayerFlash(uint32_t now, uint8_t layer) {
 }
 
 // Draws the key screen into the frame buffer (no display() call); consumes the edge latches.
+// The knob pop-up: what a turn or press just sent, for KNOB_POPUP_MS after the last one, over the
+// key screen. Turns show chevrons sliding the way the knob went; with keyboard output off it says
+// that nothing was sent.
+constexpr uint32_t KNOB_POPUP_MS = 900;
+bool     s_knobSeqKnown = false;
+uint8_t  s_knobSeqSeen = 0;
+uint32_t s_knobPopupAt = 0;
+bool     s_knobPopupActive = false;
+
+void drawKnobPopup(uint32_t now) {
+    if (!s_haveView) return;
+    if (!s_knobSeqKnown || s_view.knobSeq != s_knobSeqSeen) {
+        // Not at power-up: only a change seen while running is a knob action
+        if (s_knobSeqKnown) {
+            s_knobPopupAt = now;
+            s_knobPopupActive = true;
+        }
+        s_knobSeqKnown = true;
+        s_knobSeqSeen = s_view.knobSeq;
+    }
+    if (!s_knobPopupActive) return;
+    const uint32_t age = now - s_knobPopupAt;
+    if (age >= KNOB_POPUP_MS) { s_knobPopupActive = false; return; }
+
+    const uint8_t action = s_view.knobAction;
+    const uint8_t mode = (uint8_t)((action >> 3) & 0x07) < limits::KNOB_MODE_COUNT ? (uint8_t)((action >> 3) & 0x07) : 0;
+    const uint8_t what = (uint8_t)(action & 0x07) <= 2 ? (uint8_t)(action & 0x07) : 2;
+    const bool sent = !(action & 0x80);
+    constexpr int16_t BX = 8, BY = 20, BW = 112, BH = 25;
+    s_display.fillRoundRect(BX - 1, BY - 1, BW + 2, BH + 2, 4, OLED_COLOR_BLACK);
+    s_display.drawRoundRect(BX, BY, BW, BH, 3, OLED_COLOR_WHITE);
+    drawKnobIcon(mode, BX + 6, BY + 5);
+    s_display.setTextColor(OLED_COLOR_WHITE);
+    s_display.setTextSize(1);
+    s_display.setCursor(BX + 26, BY + 4);
+    s_display.print(KNOB_ACTIONS[mode][what]);
+    if (!sent) {
+        s_display.setCursor(BX + 26, BY + 14);
+        s_display.print("Output is off");
+    } else if (what < 2) {
+        // Three chevrons sliding the way the knob turned
+        const int16_t travel = (int16_t)((age % 450) * 18 / 450);
+        for (uint8_t i = 0; i < 3; ++i) {
+            const int16_t cx = what == 1 ? BX + 28 + travel + i * 7 : BX + 28 + 18 - travel + i * 7;
+            const int16_t cy = BY + 17;
+            const int16_t d = what == 1 ? 1 : -1;
+            s_display.drawLine(cx - 2 * d, cy - 3, cx + d, cy, OLED_COLOR_WHITE);
+            s_display.drawLine(cx + d, cy, cx - 2 * d, cy + 3, OLED_COLOR_WHITE);
+        }
+    }
+}
+
 void renderKeysFrame(uint32_t now) {
     noteSettingsState(now);
     if (!s_view.keyInputValid || s_keyInputWasValid != s_view.keyInputValid) {
@@ -1357,6 +1524,9 @@ void renderKeysFrame(uint32_t now) {
                 s_sprigDropAt = now;
                 s_keyPetals.drop(6 + 68 * (0.18f + 0.32f * (float)((now / 2600) % 3)), 55.0f);
             }
+        } else if (spaceTheme()) {
+            // A small planet and its moon in place of the empty scale
+            space::drawOrbit(s_display, 6, 58, 68, now);
         } else {
             drawTravelScale(0.0f);
         }
@@ -1379,6 +1549,7 @@ void renderKeysFrame(uint32_t now) {
         s_keyPetals.clear();
     }
     s_keyPetalsAt = now;
+    if (spaceTheme()) drawSpaceLocks();
 
     drawSettingsState(now);
 
@@ -1392,6 +1563,7 @@ void renderKeysFrame(uint32_t now) {
     // Expire a suppressed notice too, so it never resurfaces at a later clock wrap.
     if (s_layerFlashActive && now - s_layerFlashAt >= LAYER_FLASH_MS) s_layerFlashActive = false;
     if (focus < 0 && s_view.outputStatus == display_link::OUTPUT_ON) drawLayerFlash(now, layer);
+    drawKnobPopup(now);
 }
 
 void blendWipe(uint8_t* outgoing, const uint8_t* incoming, int16_t front);
@@ -1922,6 +2094,9 @@ void resetScreensaverAnimation(uint8_t anim) {
         case 6:
             s_sakuraScene.reset(animationRandom(0xFFFFFFFFUL) | 1u);
             break;
+        case 7:
+            s_spaceScene.reset(animationRandom(0xFFFFFFFFUL) | 1u);
+            break;
     }
     s_animationInitialized[anim] = true;
 }
@@ -2020,12 +2195,19 @@ void advanceScreensaverAnimation(uint8_t anim, uint32_t elapsedMs) {
             case 6:
                 s_sakuraScene.advance(RENDER_INTERVAL_MS);
                 break;
+            case 7:
+                s_spaceScene.advance(RENDER_INTERVAL_MS);
+                break;
         }
     }
 }
 
 void renderAnimSakura() {
     s_sakuraScene.render(s_display);
+}
+
+void renderAnimOrbit() {
+    s_spaceScene.render(s_display);
 }
 
 struct ScreensaverAnim {
@@ -2041,6 +2223,7 @@ const ScreensaverAnim kScreensaverAnims[NUM_SCREENSAVER_ANIMS] = {
     {renderAnimRipples,      "MAG PULSE"},
     {renderAnimLava,         "LAVA LAMP"},
     {renderAnimSakura,       "SAKURA"},
+    {renderAnimOrbit,        "ORBIT"},
 };
 
 // Blends two frames with a dithered diagonal wipe sweeping from top-left to bottom-right.
@@ -2344,6 +2527,10 @@ void renderIntroFrame(uint32_t t) {
     if (s_introTheme < 0 && s_haveView) s_introTheme = (int8_t)activeTheme();
     if (s_introTheme == THEME_SAKURA) {
         sakura::drawIntro(s_display, t, introStatus());
+        return;
+    }
+    if (s_introTheme == THEME_SPACE) {
+        space::drawIntro(s_display, t, introStatus());
         return;
     }
 

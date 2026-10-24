@@ -12,7 +12,7 @@ if str(TESTS_DIR) not in sys.path:
 import host_build as hb
 
 
-COUNT = 7
+COUNT = 8
 DWELL = 20000
 WIPE = 1500
 U32 = 0xFFFFFFFF

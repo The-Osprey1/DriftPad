@@ -11,6 +11,34 @@ work with this firmware and says so.
 
 ### Changed
 
+- The knob does a different job on each layer. Besides **volume** (turn, press to mute) there is:
+  - **media**: previous or next track, press to play or pause;
+  - **scroll**: the mouse wheel, press for a middle click;
+  - **zoom**: Ctrl − and Ctrl +, press for actual size;
+  - **arrows**: Left and Right, press for Enter;
+  - **undo**: Ctrl+Z and Ctrl+Y.
+
+  Choose it with `SET_KNOB` (feature `knob_modes`), on the configurator's Keys tab, or on the
+  knob menu's new Knob page. It is stored per layer and kept in backups, in bytes of the settings
+  record that earlier firmware left at 0, which reads as volume. A pop-up on the pad's screen says
+  what each turn or press sent, with chevrons sliding the way the knob turned, or that nothing went
+  out because keyboard output is off. Key combinations from the knob leave keys held on the pad
+  down. The pad now also appears to the computer as a mouse, for the scroll mode.
+- Firmware updates no longer need the Pico's button. **Device → Firmware update** on the
+  configurator downloads `DriftPad.uf2` and restarts the pad into update mode over USB (`BOOTSEL`).
+  After you copy the file onto the RPI-RP2 drive, the page reconnects to the pad by itself when it
+  comes back. The card also shows whether the pad's build matches the one the site offers.
+- A third screen theme, **Space**. Its title drops out of light speed (every star streaks out from
+  the centre and settles), a ringed planet rises and the name appears over an orbit line. The key
+  card is a viewfinder (corner brackets joined by dotted edges; pressed, a solid panel with cut
+  corners). Each key press locks on to its cell on the key map. The standby screen shows a small
+  ringed planet with its moon and twinkling stars. A layer change opens a window on stars rushing
+  past and names the layer in a viewfinder. The new **Orbit** screensaver (animation 7) shows a
+  large ringed planet lit from the upper left that turns slowly: its cloud belts waver and a storm
+  crosses it. A moon circles the planet, passing behind and in front of it, and now and then a
+  meteor streaks past. The stars stay still, so the motion is easy to follow. Every piece is
+  worked out from the time each frame, so the theme adds almost nothing to the memory used. Choosing
+  Space also picks Orbit as the screensaver (`SET_THEME 2`).
 - Screen themes: **Cherry blossom** joins the original **Drift** look. It has its own title (a
   branch grows and blossoms, a 桜 seal stamps in), a seal-like key card with plain lettering,
   petals thrown up by each key press, a blossoming sprig on the standby screen, paper doors that

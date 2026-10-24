@@ -44,7 +44,8 @@ class Snapshot(ctypes.Structure):
                 ("rapidTrigger", ctypes.c_bool), ("saverIdleMin", ctypes.c_uint8), ("actuationMm", ctypes.c_float),
                 ("rtSensMm", ctypes.c_float), ("outputStatus", ctypes.c_uint8), ("settingsDirty", ctypes.c_bool),
                 ("saveSeq", ctypes.c_uint8), ("keyInputValid", ctypes.c_bool), ("faultMask", ctypes.c_uint16),
-                ("saverAnim", ctypes.c_int8), ("theme", ctypes.c_uint8)]
+                ("saverAnim", ctypes.c_int8), ("theme", ctypes.c_uint8), ("knobMode", ctypes.c_uint8),
+                ("knobSeq", ctypes.c_uint8), ("knobAction", ctypes.c_uint8)]
 
 
 def fresh(lib) -> dh.Device:
@@ -132,6 +133,15 @@ class TestSnapshot(unittest.TestCase):
         run_ms(self.d, 5)
         s = self.snap()
         self.assertEqual((s.saverIdleMin, s.saverAnim), (5, 4))
+
+    def test_carries_the_active_layers_knob_mode(self):
+        self.assertEqual(self.snap().knobMode, 0, "factory: volume")
+        self.one("SET_KNOB 1 2")
+        run_ms(self.d, 5)
+        self.assertEqual(self.snap().knobMode, 0, "layer 1 is not the active one")
+        self.one("SET_LAYER 1")
+        run_ms(self.d, 5)
+        self.assertEqual(self.snap().knobMode, 2, "scroll, on the layer now active")
 
     def test_follows_keys_and_settings(self):
         s = self.snap()
