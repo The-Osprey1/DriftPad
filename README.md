@@ -184,6 +184,8 @@ and validation procedures.
 
 ## Engineering guides
 
+- [architectural blueprint](docs/ARCHITECTURAL_BLUEPRINT.md)
+- [competitive analysis](docs/competitive-analysis.md)
 - [firmware integration](docs/firmware-integration.md)
 - [beta checklist](docs/beta-checklist.md)
 - [bring up](docs/bring-up.md)

@@ -36,6 +36,7 @@ held, and in `--release` any skip, import error, missing tool, dirty tree or sta
 | `test_build` | build artifacts | PlatformIO build succeeds; UF2 structure and RP2040 family id; ELF/BIN belong to this run |
 | `test_sensor_faults` | compiled firmware on host | Isolated rail spike rejection, sustained-fault key release, healthy key isolation, fault reporting, rest-only recovery, boot faults and both sensor polarities |
 | `test_flash_layout` | build artifacts | The settings sectors (A/B slots, legacy sector at `_FS_start`) do not overlap the program |
+| `test_challenger1_dsp` | synthetic model | Adversarial DSP, timing, tremor variance, and mathematical model verification |
 | `test_challenger2_verification` | build artifacts + source inspection | Binary layout, RAM/flash budgets, command coverage |
 | `test_dsp_harness` | synthetic model | Waveforms, Rapid Trigger accuracy, EMI/noise rejection, latency, auto-zero drift (TC-01..TC-12 and helpers) |
 | `test_adversarial_m2` | synthetic model | ADV-01..ADV-05: chatter at the RT floor, auto-zero lockout |
