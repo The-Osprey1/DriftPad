@@ -46,10 +46,11 @@
     // INFO.features of the current firmware (firmware/src/commands.cpp, cmdInfo).
     const FEATURES = ["keymap", "layers", "rapid_trigger", "telemetry", "timing", "raw", "sim", "display",
                       "guided_calibration", "boot_output", "settings_ab", "display_status", "encoder_status",
-                      "key_modifiers", "screensaver_idle", "themes"];
+                      "key_modifiers", "screensaver_idle", "themes", "knob_modes"];
     const SAVER_IDLE = { max: 60, def: 2 };   // firmware limits::SAVER_IDLE_MAX_MIN, SAVER_IDLE_DEFAULT_MIN
     const SAVER_ANIMS = 8;                    // firmware limits::SAVER_ANIM_COUNT
     const THEMES = 3;                         // firmware limits::THEME_COUNT
+    const KNOB_MODES = 6;                     // firmware limits::KNOB_MODE_COUNT: volume, media, scroll, zoom, arrows, undo
     const THEME_SAVER = [-1, 6, 7];           // firmware configThemeScreensaver(): Drift shuffles, Cherry blossom plays Sakura, Space plays Orbit
     const TIMING_OPS = ["command", "telemetry", "save", "calibration", "publish", "display_request", "tx_drain"];
     const GAP_LIMITS_US = [1100, 1500, 2000, 5000, 10000, 50000];
@@ -175,7 +176,7 @@
         ["SLEEP", [], 0, 0], ["WAKE", [], 0, 0], ["OLED_TEST", [], 0, 0], ["OLED_SCAN", [], 0, 0], ["BOOTSEL", [], 0, 0],
         ["SET_BOOT_OUTPUT", [], 1, 1, "boot_output"], ["CAL", [], 1, 1, "guided_calibration"],
         ["SET_SAVER_IDLE", [], 1, 1, "screensaver_idle"], ["SET_SAVER_ANIM", [], 1, 1, "screensaver_idle"],
-        ["SET_THEME", [], 1, 1, "themes"],
+        ["SET_THEME", [], 1, 1, "themes"], ["SET_KNOB", [], 2, 2, "knob_modes"],
     ];
 
     function maskList(mask) {
@@ -262,7 +263,7 @@
         _factory() {
             return {
                 actuationCmm: ACT.def, rtSensCmm: RT.def, rtEnabled: true, activeLayer: 0, bootOutput: false,
-                saverIdle: SAVER_IDLE.def, saverAnim: -1, theme: 0,
+                saverIdle: SAVER_IDLE.def, saverAnim: -1, theme: 0, knob: [0, 0, 0],
                 layers: DEFAULT_ROWS.map(l => l.map(([code, label]) => ({ code, label, mods: 0 }))),
             };
         }
@@ -273,6 +274,7 @@
             if (this.has("settings_ab")) { s.b = state.bootOutput; s.c = calibration; }
             if (this.has("screensaver_idle")) { s.si = state.saverIdle; s.sa = state.saverAnim; }
             if (this.has("themes")) s.th = state.theme;
+            if (this.has("knob_modes")) s.kn = state.knob;
             return JSON.stringify(s);
         }
 
@@ -570,6 +572,14 @@
                     s.theme = p.value;
                     s.saverAnim = THEME_SAVER[p.value];
                     return this._applied({ theme: s.theme, saver_anim: s.saverAnim });
+                case "SET_KNOB": {
+                    const layer = parseUint(a[0], 0, NUM_LAYERS - 1);
+                    if (layer.err) return { error: layer.err, msg: "layer must be 0, 1 or 2" };
+                    p = parseUint(a[1], 0, KNOB_MODES - 1);
+                    if (p.err) return { error: p.err, msg: "knob mode must be 0 to 5 (volume, media, scroll, zoom, arrows, undo)" };
+                    s.knob[layer.value] = p.value;
+                    return this._applied({ layer: layer.value, knob: p.value });
+                }
                 case "SET_HID": {
                     p = parseBool(a[0]);
                     if (p.err) return { error: p.err, msg: "SET_HID takes 0 or 1" };
@@ -731,6 +741,7 @@
                     code_max: 255, line_max: LINE_MAX, stream_hz_max: STREAM_HZ_MAX,
                     ...(this.has("screensaver_idle") ? { saver_idle_max: SAVER_IDLE.max, saver_anims: SAVER_ANIMS } : {}),
                     ...(this.has("themes") ? { themes: THEMES } : {}),
+                    ...(this.has("knob_modes") ? { knob_modes: KNOB_MODES } : {}),
                 },
                 calibration: cal,
                 output: this._outputObj(),
@@ -749,6 +760,7 @@
                 active_layer: s.activeLayer, boot_output: s.bootOutput,
                 ...(this.has("screensaver_idle") ? { saver_idle: s.saverIdle, saver_anim: s.saverAnim } : {}),
                 ...(this.has("themes") ? { theme: s.theme } : {}),
+                ...(this.has("knob_modes") ? { knob: s.knob.slice() } : {}),
                 dirty: this.dirty, settings_seq: this.flash ? this.seq : 0,
                 layers: s.layers.map(l => l.map((k, i) => ({ idx: i, code: k.code, label: k.label,
                     ...(this.has("key_modifiers") ? { mods: k.mods || 0 } : {}) }))),

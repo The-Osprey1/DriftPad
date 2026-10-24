@@ -300,7 +300,7 @@ class OledFrames(unittest.TestCase):
         self.lib.oled_manual_step.argtypes = [ctypes.c_int, ctypes.c_uint32]
         self.lib.oled_manual_reset()
         self.assertEqual(self.lib.oled_manual_step(0, 10000), -1)
-        for page in (0, 1, 2, 3, 4, -1):   # sensitivity, actuation, RT on/off, layer, theme, closed
+        for page in (0, 1, 2, 3, 4, 5, -1):   # sensitivity, actuation, RT on/off, layer, theme, knob, closed
             self.assertEqual(self.lib.oled_manual_step(1, 500), page)
             if page >= 0:
                 self.assertEqual(self.lib.oled_manual_step(0, 300), page)  # finish the entry wipe
@@ -570,6 +570,49 @@ class OledFrames(unittest.TestCase):
         for dt in (46000, 200000, 3600000):
             self.lib.oled_idle_step(dt, 0)
             self.assertEqual(self.lib.oled_idle_hidden(), 0, "idle hid the selected screen")
+
+
+class KnobScreens(unittest.TestCase):
+    """The knob's menu page and the pop-up that says what a knob turn or press sent."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lib = oh.load()
+
+    @staticmethod
+    def lit(fb, x0, y0, x1, y1):
+        return sum(oh.pixel(fb, x, y) for x in range(x0, x1) for y in range(y0, y1))
+
+    def test_the_knob_page_names_the_mode_and_marks_it_among_six(self):
+        fb = oh.frame(self.lib, "menu_knob")   # set to media
+        self.assertGreater(self.lit(fb, 20, 18, 108, 36), 120, "no mode name")
+        for i in range(6):
+            x = 42 + 8 * i
+            self.assertEqual(oh.pixel(fb, x, 54), 1, f"mode dot {i} missing")
+            self.assertEqual(oh.pixel(fb, x + 2, 56), 1 if i == 1 else 0, f"dot {i}: only media's is solid")
+        self.assertEqual(oh.pixel(fb, 42 + 8 * 6, 54), 0, "a seventh dot")
+
+    def test_the_page_pips_fit_the_screen(self):
+        fb = oh.frame(self.lib, "menu_knob")
+        pips = [x for x in range(100, 126) if oh.pixel(fb, x, 4)]   # x 126..127: the corner bracket
+        self.assertEqual((min(pips), max(pips), len(pips)), (102, 124, 18), f"six pips, 3 px each: {pips}")
+        self.assertEqual(oh.pixel(fb, 123, 6), 1, "the knob page's own pip, the last, is solid")
+
+    def test_a_knob_turn_shows_what_it_sent(self):
+        under = oh.frame(self.lib, "standby")
+        popup = oh.frame(self.lib, "knob_popup")
+        self.assertEqual([oh.pixel(popup, 8, y) for y in range(23, 42)], [1] * 19, "the pop-up's frame")
+        self.assertGreater(self.lit(popup, 34, 23, 118, 32), 40, "no action name")
+        self.assertGreater(self.lit(popup, 14, 25, 28, 39), 20, "no icon")
+        self.assertNotEqual(self.lit(popup, 34, 34, 118, 43), 0, "no chevrons for the turn")
+        self.assertNotEqual(popup, under)
+        # the key map's rightmost column still shows beside it
+        self.assertEqual(self.lit(popup, 122, 10, 128, 52), self.lit(under, 122, 10, 128, 52))
+
+    def test_with_output_off_the_pop_up_says_nothing_was_sent(self):
+        on, off = oh.frame(self.lib, "knob_popup"), oh.frame(self.lib, "knob_popup_output_off")
+        self.assertEqual(self.lit(on, 34, 23, 118, 32), self.lit(off, 34, 23, 118, 32), "the same action name")
+        self.assertGreater(self.lit(off, 34, 34, 118, 43), self.lit(on, 34, 34, 118, 43) + 30, "no 'Output is off' line")
 
 
 class CherryBlossomTheme(unittest.TestCase):

@@ -48,6 +48,9 @@ constexpr uint8_t SAVER_IDLE_DEFAULT_MIN = 2;
 // Built-in screensaver animations (OLED_ANIM_COUNT in oled.h); -1 shuffles them. A stored
 // animation this firmware does not have plays as shuffle.
 constexpr uint8_t SAVER_ANIM_COUNT = 8;
+// What the knob does on each layer (KnobMode in config.h): 0 volume ... 5 undo/redo. A stored mode
+// this firmware does not have works as volume.
+constexpr uint8_t KNOB_MODE_COUNT = 6;
 // Screen themes: 0 Drift, 1 Cherry blossom, 2 Space. A stored theme this firmware does not have
 // draws as Drift.
 constexpr uint8_t THEME_COUNT = 3;

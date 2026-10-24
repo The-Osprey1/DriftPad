@@ -78,7 +78,10 @@ constexpr uint16_t PAYLOAD_LIMIT  = (uint16_t)(FlashIo::SECTOR_SIZE - HEADER_SIZ
 // Schema 4 payload (PAYLOAD_V4_SIZE bytes): the schema 3 payload unchanged, then the display block
 //    444 u8 saver_idle_min (0 = never)      446 u8 theme (0 = Drift)
 //    445 i8 saver_anim (-1 = shuffle)       447 u8 screen_speed (0 = fast, 1 = safe)
-//    448 u8[4] reserved 0 (ignored when read)
+//    448 u8 knob_mode[3] (KnobMode per layer, 0 = volume)
+//    451 u8 reserved 0 (ignored when read)
+// The knob modes took over reserved bytes that earlier schema 4 firmware wrote as 0, which reads as
+// volume, the knob's behaviour before it had modes: no new schema was needed.
 //    452 end
 //
 // Migration table (decode()): schemas 2 (no modifiers), 3 (no display block) and 4 -> current

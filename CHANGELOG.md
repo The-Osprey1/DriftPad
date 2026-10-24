@@ -11,6 +11,19 @@ work with this firmware and says so.
 
 ### Changed
 
+- The knob does a different job on each layer. Besides **volume** (turn, press to mute) there is:
+  - **media**: previous or next track, press to play or pause;
+  - **scroll**: the mouse wheel, press for a middle click;
+  - **zoom**: Ctrl − and Ctrl +, press for actual size;
+  - **arrows**: Left and Right, press for Enter;
+  - **undo**: Ctrl+Z and Ctrl+Y.
+
+  Choose it with `SET_KNOB` (feature `knob_modes`), on the configurator's Keys tab, or on the
+  knob menu's new Knob page. It is stored per layer and kept in backups, in bytes of the settings
+  record that earlier firmware left at 0, which reads as volume. A pop-up on the pad's screen says
+  what each turn or press sent, with chevrons sliding the way the knob turned, or that nothing went
+  out because keyboard output is off. Key combinations from the knob leave keys held on the pad
+  down. The pad now also appears to the computer as a mouse, for the scroll mode.
 - Firmware updates no longer need the Pico's button. **Device → Firmware update** on the
   configurator downloads `DriftPad.uf2` and restarts the pad into update mode over USB (`BOOTSEL`).
   After you copy the file onto the RPI-RP2 drive, the page reconnects to the pad by itself when it

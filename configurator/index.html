@@ -64,13 +64,25 @@
                     <div class="oled-main" id="oledMain">ESC</div>
                     <div class="oled-sub" id="oledSub">KEY 0 · Esc</div>
                 </div>
-                <div class="knob" id="knob" aria-hidden="true" title="Turn: volume. Press: mute. Hold one second: settings menu on the pad.">
+                <div class="knob" id="knob" aria-hidden="true" title="Turn and press: as set for this layer below (volume and mute at first). Hold one second: settings menu on the pad.">
                     <div class="knob-dial"></div><span>KNOB</span>
                 </div>
                 <!-- 16 key caps are created once by app.js and updated in place -->
             </div>
+            <div class="knob-row">
+                <label for="knobSelect">Knob on this layer</label>
+                <select id="knobSelect" disabled aria-describedby="knobModeHint">
+                    <option value="0">Volume: turn for volume, press to mute</option>
+                    <option value="1">Media: turn for previous or next track, press to play or pause</option>
+                    <option value="2">Scroll: turn to scroll, press for a middle click</option>
+                    <option value="3">Zoom: turn to zoom out or in (Ctrl − and Ctrl +), press for actual size</option>
+                    <option value="4">Arrows: turn for Left or Right, press for Enter</option>
+                    <option value="5">Undo: turn to undo or redo (Ctrl+Z, Ctrl+Y), press does nothing</option>
+                </select>
+                <span id="knobModeHint" class="hint">Applies to the pad at once; save on the Device page to keep it. Also on the pad: hold the knob, then press until Knob.</span>
+            </div>
             <p id="knobState" class="small knob-note">Connect the pad to check the knob.</p>
-            <p id="knobHint" class="muted small knob-note">Turn the knob for volume and press it to mute (keyboard output must be on); hold it for one second for the settings menu on the pad's screen. Turning should switch A and B between high and low and count steps (4 per click), and pressing should show the switch closed. If nothing changes, check the knob's ground wire and its A, B and switch wires (GP20, GP21, GP2).</p>
+            <p id="knobHint" class="muted small knob-note">Turn and press the knob as chosen above (keyboard output must be on); hold it for one second for the settings menu on the pad's screen. Turning should switch A and B between high and low and count steps (4 per click), and pressing should show the switch closed. If nothing changes, check the knob's ground wire and its A, B and switch wires (GP20, GP21, GP2).</p>
 
             <div class="legend">
                 <span><i class="flag-custom" aria-hidden="true">●</i> Changed from the default layout</span>

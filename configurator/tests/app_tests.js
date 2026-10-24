@@ -529,6 +529,32 @@
         }
     });
 
+    test("app: the Keys tab sets what the knob does on the layer being viewed", async () => {
+        await connected();
+        app().setView("keys", false);
+        app().setLayer(1);
+        await sleep(10);
+        const sel = $("knobSelect");
+        assert(!sel.disabled, "enabled with a pad that has knob modes");
+        assertEq(sel.value, "0", "factory: volume");
+        assertEq([...sel.options].map(o => o.textContent.split(":")[0]), ["Volume", "Media", "Scroll", "Zoom", "Arrows", "Undo"]);
+        sel.value = "2";
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.knob[1] === 2), "SET_KNOB sent for the viewed layer");
+        assertEq(sim().device.state.knob, [0, 2, 0], "only that layer changed");
+        assert(await waitUntil(() => app().session.dirty === true), "applied, not saved yet");
+        app().setLayer(0);
+        await sleep(10);
+        assertEq(sel.value, "0", "another layer shows its own mode");
+        app().setLayer(1);
+        await sleep(10);
+        assertEq(sel.value, "2");
+        sel.value = "0";
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        assert(await waitUntil(() => sim().device.state.knob[1] === 0));
+        app().setLayer(0);
+    });
+
     test("app: a port that comes back without an update under way is left alone", async () => {
         await disconnected();
         const before = sim().serial.requests;
@@ -574,7 +600,7 @@
 
     test("app: controls that need a device are disabled without one", async () => {
         await disconnected();
-        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn", "themeSelect", "updateBtn"]) {
+        for (const id of ["writeBtn", "saveBtn", "revertBtn", "resetBtn", "actSlider", "rtSlider", "rtToggle", "backupBtn", "restoreBtn", "timingBtn", "rawBtn", "bootselBtn", "animSelect", "screensaverBtn", "screensaverStopBtn", "displayOffBtn", "displayRefreshBtn", "saverIdle", "saverAnim", "saverPlayBtn", "saverSaveBtn", "themeSelect", "updateBtn", "knobSelect"]) {
             assert($(id).disabled, `#${id} must be disabled while disconnected`);
         }
         assert(!$("captureBtn").disabled, "the draft stays editable offline");

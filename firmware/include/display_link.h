@@ -60,6 +60,9 @@ struct Snapshot {
     uint16_t faultMask;     // latched sensor rail faults (bit i = key i)
     int8_t  saverAnim;      // the animation the idle screensaver plays, -1 = shuffle
     uint8_t theme;          // screen theme (0 = Drift)
+    uint8_t knobMode;       // the active layer's knob mode (KnobMode)
+    uint8_t knobSeq;        // counts knob turns and presses (MediaKeys::knobSeq): a change shows the pop-up
+    uint8_t knobAction;     // the last one (MediaKeys::knobAction)
 };
 
 enum class Request : uint8_t {

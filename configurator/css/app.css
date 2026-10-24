@@ -177,6 +177,9 @@
 
         /* Wrap to the pad's width instead of widening the auto-sized layout column */
         .knob-note { width: 0; min-width: 100%; }
+        .knob-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; width: 0; min-width: 100%; margin: 12px 0 4px; font-size: 14px; }
+        .knob-row select { flex: 1 1 14em; min-width: 0; max-width: 100%; }
+        .knob-row .hint { flex-basis: 100%; }
         .knob.pressed .knob-dial { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25) inset; }
         .knob-dial::after {
             content: ""; position: absolute; top: 4px; left: 50%; width: 3px; height: 12px;

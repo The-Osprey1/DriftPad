@@ -4,7 +4,8 @@
 // libraries/HID_Keyboard) are compiled against the headers in tests/firmware_host/usb_host/.
 // This file supplies what those headers declare and models the behaviour that matters:
 //
-// - One HID IN endpoint. tud_hid_keyboard_report() queues a report only when the endpoint is
+// - One HID IN endpoint for keyboard, media and mouse reports (the libraries share one HID
+//   interface). tud_hid_keyboard_report() queues a report only when the endpoint is
 //   free and the link is up (mounted, not suspended); the endpoint stays busy until the host
 //   polls it. The host polls on a fixed interval (default 1 ms), or never ("stalled").
 // - A delivered report replaces the host's view of the keyboard entirely (boot-protocol reports
@@ -44,6 +45,12 @@ bool     s_inflightMedia = false;   // the in-flight report is a media (consumer
 uint16_t s_inflightUsage = 0;
 uint16_t s_hostMedia = 0;           // media usage the host sees held (0 = none)
 std::vector<uint16_t> s_mediaLog;   // media reports the host collected, in order (0 = release)
+bool     s_inflightMouse = false;   // the in-flight report is a mouse report
+uint8_t  s_inflightButtons = 0;
+int8_t   s_inflightWheel = 0;
+uint8_t  s_hostButtons = 0;         // mouse buttons the host sees held
+int32_t  s_hostWheel = 0;           // wheel steps the host has received (positive = up)
+std::vector<int16_t> s_mouseLog;    // mouse reports collected, in order: wheel, or 100 + buttons with no wheel
 uint64_t s_deliverAtUs = 0;
 uint8_t  s_hostMods = 0;
 uint8_t  s_hostKeys[6];
@@ -66,6 +73,7 @@ void logEvent(uint8_t kind, const uint8_t* report8) {
 
 void hostForget() {
     s_hostMedia = 0;
+    s_hostButtons = 0;
     s_hostMods = 0;
     memset(s_hostKeys, 0, sizeof(s_hostKeys));
     logEvent(4, nullptr);
@@ -81,6 +89,15 @@ void deliverIfDue() {
     if (host_clock_now_us() < s_deliverAtUs) return;
     s_busy = false;
     s_delivered++;
+    if (s_inflightMouse) {
+        s_inflightMouse = false;
+        s_hostButtons = s_inflightButtons;
+        s_hostWheel += s_inflightWheel;
+        s_mouseLog.push_back(s_inflightWheel ? (int16_t)s_inflightWheel : (int16_t)(100 + s_inflightButtons));
+        uint8_t report[4] = { s_inflightButtons, 0, 0, (uint8_t)s_inflightWheel };
+        tud_hid_report_complete_cb(0, report, 4);
+        return;
+    }
     if (s_inflightMedia) {
         s_inflightMedia = false;
         s_hostMedia = s_inflightUsage;
@@ -138,6 +155,22 @@ bool tud_hid_report(uint8_t, const void* data, uint16_t len) {
     return true;
 }
 
+// Mouse reports: buttons and wheel (the knob's scroll mode), same endpoint
+bool tud_hid_mouse_report(uint8_t, uint8_t buttons, int8_t, int8_t, int8_t vertical, int8_t) {
+    if (!tud_hid_ready()) {
+        s_refused++;
+        logEvent(5, nullptr);
+        return false;
+    }
+    s_inflightMouse = true;
+    s_inflightButtons = buttons;
+    s_inflightWheel = vertical;
+    s_busy = true;
+    s_deliverAtUs = nextPollAfter(host_clock_now_us());
+    s_queued++;
+    return true;
+}
+
 // ---- USBClass surface ------------------------------------------------------------------------
 
 uint8_t USBClass::registerHIDDevice(const uint8_t*, size_t, int, uint32_t) { return s_nextHidId++; }
@@ -181,6 +214,12 @@ void usbfake_reset() {
     s_inflightUsage = 0;
     s_hostMedia = 0;
     s_mediaLog.clear();
+    s_inflightMouse = false;
+    s_inflightButtons = 0;
+    s_inflightWheel = 0;
+    s_hostButtons = 0;
+    s_hostWheel = 0;
+    s_mouseLog.clear();
     s_queued = s_delivered = s_lost = s_refused = 0;
     s_blockedUs = 0;
     s_log.clear();
@@ -205,6 +244,7 @@ void usbfake_unmount() {
     if (s_busy) {
         s_busy = false;
         s_inflightMedia = false;
+        s_inflightMouse = false;
         s_lost++;
         logEvent(3, s_inflight);
     }
@@ -219,6 +259,7 @@ void usbfake_fail_inflight() {
     if (!s_busy) return;
     s_busy = false;
     s_inflightMedia = false;
+    s_inflightMouse = false;
     s_lost++;
     logEvent(3, s_inflight);
     tud_hid_report_failed_cb(0, HID_REPORT_TYPE_INPUT, s_inflight, 0);
@@ -257,5 +298,12 @@ void usbfake_clear_log() { s_log.clear(); }
 int usbfake_media_log_len() { return (int)s_mediaLog.size(); }
 int usbfake_media_log_entry(int i) { return (int)s_mediaLog[(size_t)i]; }
 int usbfake_media_held() { return (int)s_hostMedia; }
+
+// Mouse reports the host collected (wheel steps, or 100 + buttons for a report without wheel), the
+// wheel steps received in total (positive = up) and the buttons it sees held
+int usbfake_mouse_log_len() { return (int)s_mouseLog.size(); }
+int usbfake_mouse_log_entry(int i) { return (int)s_mouseLog[(size_t)i]; }
+int usbfake_mouse_wheel_total() { return (int)s_hostWheel; }
+int usbfake_mouse_buttons() { return (int)s_hostButtons; }
 
 }

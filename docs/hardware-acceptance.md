@@ -65,7 +65,7 @@ Pass criteria are exact. "Events" means keydown/keyup lines in `tools/key_tester
 | ID | Check | Procedure | Pass criterion |
 |---|---|---|---|
 | HW-01 | Update with the release tool | `python tools/flash.py --uf2 <bundle>/firmware.uf2` on a pad running any earlier firmware. | Ends with "Updated and verified" naming the bundle's fw version and build id. |
-| HW-02 | USB identity | Device Manager (or `lsusb`) with the pad connected. | One composite device 2E8A:000B with a CDC serial port and a keyboard; no unknown devices. |
+| HW-02 | USB identity | Device Manager (or `lsusb`) with the pad connected. | One composite device 2E8A:0009 with a CDC serial port, a keyboard and a mouse (the knob's scroll mode); no unknown devices. Firmware before the knob modes was 2E8A:000B, without the mouse. |
 | HW-03 | Bootloader from the configurator | Device tab, "Restart into the bootloader", then `flash.py --drive <RPI-RP2 drive>`. | The RPI-RP2 drive appears within 5 s; flashing it ends "Updated and verified". |
 
 ### Sensors and calibration

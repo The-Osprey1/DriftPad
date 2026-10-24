@@ -33,6 +33,9 @@ uint16_t  s_ownedMask = 0;         // its captured action is part of the report
 uint16_t  s_softSuppressed = 0;    // no output until its next release edge (or seen at rest)
 uint16_t  s_hardSuppressed = 0;    // no output until seen at rest (pressedNow = true)
 HidAction s_captured[NUM_KEYS];
+// The knob's own key: an owner beside the 16 keys, for knob turns that are key combinations
+HidAction s_knobAction = {0, 0, false};
+bool      s_knobOwned = false;
 
 // Reference counts. At most MAX_USAGES distinct usages are ever owned (the rollover rule), so a
 // small table replaces a 256-entry array; count 0 marks a free entry.
@@ -162,11 +165,24 @@ void libraryReleaseAll() {
     endAttempt(true);
 }
 
-void releaseOwned(uint8_t physKey) {
-    uint16_t bit = (uint16_t)(1u << physKey);
-    if (!(s_ownedMask & bit)) return;
-    s_ownedMask &= (uint16_t)~bit;
-    const HidAction& a = s_captured[physKey];
+// Takes the references of an action that may own a slot (the caller checked the rollover rule)
+void acquire(const HidAction& a) {
+    // Modifiers before the key, so the host applies them to it
+    for (uint8_t b = 0; b < 8; ++b) {
+        if ((a.modifiers & (1u << b)) && s_modifierRefs[b]++ == 0) {
+            libraryPress((uint8_t)(RAW_MODIFIER_BASE + b));
+        }
+    }
+    if (a.usage != 0 && usageRefAdd(a.usage) == 1) {
+        libraryPress((uint8_t)(RAW_USAGE_BASE + a.usage));
+    }
+}
+
+bool wouldOverflow(const HidAction& a) {
+    return a.usage != 0 && usageRefCount(a.usage) == 0 && distinctUsages() >= MAX_USAGES;
+}
+
+void release(const HidAction& a) {
     // Key up before its modifiers, the order a host expects from a real keyboard
     if (a.usage != 0 && usageRefRemove(a.usage) == 0) {
         libraryRelease((uint8_t)(RAW_USAGE_BASE + a.usage));
@@ -178,9 +194,17 @@ void releaseOwned(uint8_t physKey) {
     }
 }
 
+void releaseOwned(uint8_t physKey) {
+    uint16_t bit = (uint16_t)(1u << physKey);
+    if (!(s_ownedMask & bit)) return;
+    s_ownedMask &= (uint16_t)~bit;
+    release(s_captured[physKey]);
+}
+
 // Releases everything in one library report and forgets every capture
 void releaseEverything() {
     s_ownedMask = 0;
+    s_knobOwned = false;
     for (uint8_t b = 0; b < 8; ++b) s_modifierRefs[b] = 0;
     for (uint8_t i = 0; i < MAX_USAGES; ++i) s_usageRefs[i] = UsageRef{0, 0};
     libraryReleaseAll();
@@ -196,6 +220,8 @@ void init() {
     s_softSuppressed = 0;
     s_hardSuppressed = 0;
     for (uint8_t k = 0; k < NUM_KEYS; ++k) s_captured[k] = HidAction{0, 0, false};
+    s_knobAction = HidAction{0, 0, false};
+    s_knobOwned = false;
     for (uint8_t b = 0; b < 8; ++b) s_modifierRefs[b] = 0;
     for (uint8_t i = 0; i < MAX_USAGES; ++i) {
         s_usageRefs[i] = UsageRef{0, 0};
@@ -262,22 +288,37 @@ void onPress(uint8_t physKey, uint8_t code, uint8_t extraModifiers) {
     a.valid = true;
     // Rollover: a 7th distinct usage is blocked for this whole press, modifiers included, and is
     // never sent later. Actions that only carry modifiers need no slot and never overflow.
-    if (a.usage != 0 && usageRefCount(a.usage) == 0 && distinctUsages() >= MAX_USAGES) {
+    if (wouldOverflow(a)) {
         s_stats.overflowBlocked++;
         return;
     }
 
     s_captured[physKey] = a;
     s_ownedMask |= bit;
-    // Modifiers before the key, so the host applies them to it
-    for (uint8_t b = 0; b < 8; ++b) {
-        if ((a.modifiers & (1u << b)) && s_modifierRefs[b]++ == 0) {
-            libraryPress((uint8_t)(RAW_MODIFIER_BASE + b));
-        }
+    acquire(a);
+}
+
+bool knobPress(uint8_t modifiers, uint8_t usage) {
+    if (!s_enabled || s_knobOwned || (modifiers == 0 && usage == 0)) return false;
+    const HidAction a{modifiers, usage, true};
+    if (wouldOverflow(a)) {
+        s_stats.overflowBlocked++;
+        return false;
     }
-    if (a.usage != 0 && usageRefAdd(a.usage) == 1) {
-        libraryPress((uint8_t)(RAW_USAGE_BASE + a.usage));
-    }
+    s_knobAction = a;
+    s_knobOwned = true;
+    acquire(a);
+    return true;
+}
+
+void knobRelease() {
+    if (!s_knobOwned) return;
+    s_knobOwned = false;
+    release(s_knobAction);
+}
+
+bool knobHeld() {
+    return s_knobOwned;
 }
 
 void onRelease(uint8_t physKey) {

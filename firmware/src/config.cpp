@@ -118,7 +118,8 @@ bool sameKeymaps(const DeviceSettings& a, const DeviceSettings& b) {
 bool sameStored(const DeviceSettings& a, const DeviceSettings& b) {
     if (a.actuationCmm != b.actuationCmm || a.rtSensCmm != b.rtSensCmm || a.rtEnabled != b.rtEnabled ||
         a.activeLayer != b.activeLayer || !sameKeymaps(a, b) || a.saverIdleMin != b.saverIdleMin ||
-        a.saverAnim != b.saverAnim || a.theme != b.theme || a.screenSpeed != b.screenSpeed) {
+        a.saverAnim != b.saverAnim || a.theme != b.theme || a.screenSpeed != b.screenSpeed ||
+        memcmp(a.knobMode, b.knobMode, sizeof(a.knobMode)) != 0) {
         return false;
     }
     if (persistStoresBootOutput() && a.bootOutput != b.bootOutput) return false;
@@ -303,6 +304,14 @@ int8_t configThemeScreensaver(uint8_t theme) {
         7,    // Space: Orbit
     };
     return theme < limits::THEME_COUNT ? kThemeSaver[theme] : -1;
+}
+
+ConfigStatus configSetKnobMode(uint8_t layer, uint8_t mode) {
+    if (layer >= NUM_LAYERS) return ConfigStatus::InvalidLayer;
+    if (mode >= limits::KNOB_MODE_COUNT) return ConfigStatus::OutOfRange;
+    s_settings.knobMode[layer] = mode;
+    updateDirty();
+    return ConfigStatus::Ok;
 }
 
 ConfigStatus configSetTheme(uint8_t theme) {

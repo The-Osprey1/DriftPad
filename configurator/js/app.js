@@ -414,7 +414,7 @@
         const r = update.result;
         const line = {
             restarting: ["Restarting the pad into update mode…"],
-            waiting: [`The pad is in update mode. Copy DriftPad.uf2${site ? " (in your downloads)" : ""} onto the RPI-RP2 drive. This page reconnects when the pad comes back.`],
+            waiting: [`The pad is in update mode. Copy DriftPad.uf2${site ? " (in your downloads)" : ""} onto the RPI-RP2 drive. This page reconnects when the pad comes back; if it does not within a few seconds of the drive closing, click Connect DriftPad.`],
             reconnecting: ["The pad is back. Reconnecting…"],
             done: r && r.changed ? [`Updated: the pad now runs firmware ${r.fw}, build ${r.build}. Settings and calibration were kept.`, "ok"]
                 : r ? [`The pad is back on the same build (${r.build}): the file was not copied, or it was this firmware already.`] : [""],
@@ -651,6 +651,10 @@
         const confirmed = isConn && session.confirmed;
         $("activeLayerNote").textContent = confirmed ? `The pad is using layer ${session.confirmed.active_layer}.` : "";
         $("makeActiveBtn").disabled = !confirmed || session.confirmed.active_layer === ui.layer;
+        const knobSel = $("knobSelect");
+        const knobs = confirmed && session.hasFeature("knob_modes") ? session.confirmed.knob : null;
+        knobSel.disabled = !knobs || session.opState("knob") === "pending";
+        if (knobs && document.activeElement !== knobSel) knobSel.value = String(knobs[ui.layer]);
 
         const pressed = session.telemetry.pressed;
         for (let i = 0; i < NUM_KEYS; i++) {
@@ -964,6 +968,14 @@
         });
         document.querySelectorAll("#layerTabs .layer-tab").forEach(b => b.addEventListener("click", () => setLayer(Number(b.dataset.layer))));
         radioGroupKeys($("layerTabs"), ".layer-tab", b => setLayer(Number(b.dataset.layer)));
+        $("knobSelect").addEventListener("change", async e => {
+            const sel = e.target, layer = ui.layer, mode = Number(sel.value);
+            await run("Knob", () => session.runOp("knob", () => session.setKnob(layer, mode)),
+                `The knob on layer ${layer} now: ${sel.selectedOptions[0].textContent.split(":")[0]}. Save on the Device page to keep it.`);
+            // Show what the pad has, also when the change was refused
+            const knobs = session.confirmed && session.confirmed.knob;
+            if (knobs && ui.layer === layer) sel.value = String(knobs[layer]);
+        });
         $("makeActiveBtn").addEventListener("click", () => run("Active layer", () => session.setSetting("active_layer", ui.layer),
             `The pad now uses layer ${ui.layer} (applied, not saved).`));
 

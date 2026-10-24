@@ -73,7 +73,8 @@ sensitivity, calibration, output, and display controls.
   by itself after an idle time, and a Screen Lab to preview your own GIFs.
 - USB WebSerial communication and a browser-side DSP simulator.
 - RP2040 firmware for Hall sensors, a multiplexer, an encoder, and an OLED display. The knob is
-  a volume control (turn, press to mute); holding it opens the settings menu on the display.
+  a volume control at first (turn, press to mute). Each layer can give it another job: media
+  tracks, scrolling, zoom, left/right arrows or undo/redo. Holding it opens the settings menu.
 - Key combinations: any key can hold Ctrl, Shift, Alt and Win with its key (Ctrl + C, Win + D),
   set with four checkboxes in the configurator.
 

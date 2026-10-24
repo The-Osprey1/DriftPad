@@ -166,7 +166,8 @@ void loop() {
         s_tx.drain(s_sink);
     }
 
-    // Rotary encoder. Normally: turn = volume, press = mute, hold 1 s = open the settings menu.
+    // Rotary encoder. Normally: turn and press as the layer's knob mode says (volume and mute by
+    // default), hold 1 s = open the settings menu.
     // In the menu: turn adjusts (through the config mutators), press = next page, hold = close.
     encoderUpdate();
     int32_t delta = encoderGetDelta();
@@ -180,12 +181,11 @@ void loop() {
         if (shortPress) oledCycleMenu();
         if (longPress) oledCloseMenu();
     } else {
-        if (delta != 0) {
-            const uint32_t clicks = (uint32_t)(delta > 0 ? delta : -delta);
-            MediaKeys::tap(delta > 0 ? MediaKeys::VOLUME_UP : MediaKeys::VOLUME_DOWN,
-                           (uint8_t)(clicks > 255 ? 255 : clicks));
-        }
-        if (shortPress) MediaKeys::tap(MediaKeys::MUTE);
+        // What turning and pressing send is the active layer's knob mode (volume by default)
+        const DeviceSettings& cfg = configGet();
+        const uint8_t mode = cfg.activeLayer < NUM_LAYERS ? cfg.knobMode[cfg.activeLayer] : 0;
+        if (delta != 0) MediaKeys::knobTurn(mode, delta);
+        if (shortPress) MediaKeys::knobPress(mode);
         // Knob input wakes a hidden display; unlike menu input, volume and mute still apply
         if (delta != 0 || shortPress) oledWake();
         if (longPress) oledCycleMenu();   // opens the first page

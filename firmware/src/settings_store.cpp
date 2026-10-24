@@ -226,6 +226,7 @@ void displayDefaults(DeviceSettings& s) {
     s.saverAnim    = -1;
     s.theme        = 0;
     s.screenSpeed  = 0;
+    for (uint8_t& m : s.knobMode) m = 0;
 }
 
 void encodeV4(const DeviceSettings& s, uint8_t* p) {
@@ -236,6 +237,7 @@ void encodeV4(const DeviceSettings& s, uint8_t* p) {
     d[1] = (uint8_t)s.saverAnim;
     d[2] = s.theme;
     d[3] = s.screenSpeed;
+    for (uint8_t l = 0; l < NUM_LAYERS; ++l) d[4 + l] = s.knobMode[l];
 }
 
 bool decodeV4(const uint8_t* p, uint16_t len, DeviceSettings& out) {
@@ -246,6 +248,7 @@ bool decodeV4(const uint8_t* p, uint16_t len, DeviceSettings& out) {
     out.saverAnim    = (int8_t)d[1];
     out.theme        = d[2];
     out.screenSpeed  = d[3];
+    for (uint8_t l = 0; l < NUM_LAYERS; ++l) out.knobMode[l] = d[4 + l];   // 0 (volume) in older records
     return true;
 }
 

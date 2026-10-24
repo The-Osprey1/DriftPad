@@ -26,6 +26,7 @@ enum class MenuMode {
     TOGGLE_RT,
     CYCLE_LAYER,
     THEME,
+    KNOB,           // what the knob does on the active layer
     COUNT
 };
 

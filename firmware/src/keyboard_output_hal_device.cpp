@@ -3,6 +3,7 @@
 #include "keyboard_output_hal.h"
 #include <Arduino.h>
 #include <Keyboard.h>
+#include <Mouse.h>
 #include <USB.h>
 #include "tusb.h"
 
@@ -28,6 +29,7 @@ extern "C" void tud_hid_report_failed_cb(uint8_t, hid_report_type_t type, uint8_
 
 void hidInit() {
     Keyboard.begin();
+    Mouse.begin();
 }
 
 bool hidPress(uint8_t code) {
@@ -48,6 +50,19 @@ bool hidConsumerPress(uint16_t usage) {
 
 bool hidConsumerRelease() {
     return Keyboard.consumerRelease() != 0;
+}
+
+// The Mouse library returns nothing: like the keyboard calls, an attempt is judged by the
+// transfer counters
+bool hidMouseWheel(int8_t steps) {
+    Mouse.move(0, 0, steps);
+    return true;
+}
+
+bool hidMouseButtons(uint8_t buttons) {
+    Mouse.release(MOUSE_ALL & ~buttons);
+    Mouse.press(buttons);
+    return true;
 }
 
 bool hidLinkUp() {

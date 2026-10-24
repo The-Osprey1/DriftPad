@@ -32,10 +32,11 @@ the actual screen confirms rendering. See [hardware.md](hardware.md) for firmwar
 
 ## Check each sensor before calibration
 
-Standby stays on the layer/key screen. There the knob is a volume control: turning sends volume
-up or down and a press sends mute, both only while keyboard output is on. Holding the knob for one
-second opens the settings menu: a press then selects Rapid Trigger sensitivity, actuation, Rapid
-Trigger on/off, layer, screen theme, then the key screen again, turning adjusts the selected setting, and
+Standby stays on the layer/key screen. There the knob does what the active layer's knob mode says,
+only while keyboard output is on: at first it is a volume control (turning sends volume up or down,
+a press sends mute). A pop-up on the screen says what each turn or press sent. Holding the knob for
+one second opens the settings menu: a press then selects Rapid Trigger sensitivity, actuation, Rapid
+Trigger on/off, layer, screen theme, knob mode, then the key screen again, turning adjusts the selected setting, and
 holding again closes the menu. Selected settings screens stay visible;
 they do not time out or cycle automatically.
 After 2 minutes without a key press or knob input, the screensaver starts by itself (any key or

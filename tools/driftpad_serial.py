@@ -12,7 +12,8 @@ guessed:
   composite scheme of older cores)
 * cores/rp2040/USB.cpp: idProduct = USBD_PID (0x000a) XOR the pidMask of every registered HID
   device: Keyboard.cpp 0x0001, Mouse.cpp/MouseAbsolute.cpp 0x0002, Joystick.cpp 0x0004. A DriftPad
-  (CDC + Keyboard) built with this core therefore enumerates as 2E8A:000B.
+  (CDC + Keyboard + Mouse, the mouse for the knob's scroll mode) built with this core therefore
+  enumerates as 2E8A:0009; firmware before the knob modes had no mouse and was 2E8A:000B.
 
 Identification (contract section 2): `@1 INFO` must return device "DriftPad" and protocol 2. A
 protocol-1 firmware answers that line with an id-less `{"status":"error","msg":"Unknown command"}`
@@ -34,7 +35,7 @@ RPI_VID = 0x2E8A
 BOARDS_TXT_PIDS = (0x000A, 0x010A, 0x400A, 0x410A, 0x800A, 0x810A, 0xC00A, 0xC10A)
 USB_CPP_BASE_PID = 0x000A
 USB_CPP_PID_MASKS = (0x0001, 0x0002, 0x0004)   # keyboard, mouse, joystick
-DRIFTPAD_PID = USB_CPP_BASE_PID ^ 0x0001       # CDC + Keyboard
+DRIFTPAD_PID = USB_CPP_BASE_PID ^ 0x0001 ^ 0x0002   # CDC + Keyboard + Mouse
 
 INFO_TIMEOUT_S = 0.8
 PING_TIMEOUT_S = 0.8

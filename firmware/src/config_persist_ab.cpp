@@ -57,11 +57,14 @@ bool settingsValid(const DeviceSettings& s) {
     return true;
 }
 
-// Display choices made by newer firmware (an animation or theme this one does not have) fall back
-// to shuffle and the default theme instead of rejecting the whole record
+// Display and knob choices made by newer firmware (an animation, theme or knob mode this one does
+// not have) fall back to shuffle, the default theme and volume instead of rejecting the record
 void finishLoadedDisplay(DeviceSettings& s) {
     if (s.saverAnim < -1 || s.saverAnim >= (int8_t)limits::SAVER_ANIM_COUNT) s.saverAnim = -1;
     if (s.theme >= limits::THEME_COUNT) s.theme = 0;
+    for (uint8_t& m : s.knobMode) {
+        if (m >= limits::KNOB_MODE_COUNT) m = 0;
+    }
 }
 
 // Stored calibration is re-judged by the current plausibility rules on every load

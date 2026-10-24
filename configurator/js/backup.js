@@ -5,8 +5,8 @@
  *   {"format":"driftpad-backup","format_version":1,"created":"<ISO>",
  *    "source":{"fw","protocol","build"},
  *    "settings":{"actuation_mm","rt_sens_mm","rt_enabled","active_layer","boot_output",
- *                "theme","saver_idle","saver_anim"},   (the last three optional: screen theme,
- *                screensaver minutes, animation)
+ *                "theme","saver_idle","saver_anim","knob"},   (the last four optional: screen theme,
+ *                screensaver minutes, animation, the knob mode of each layer)
  *    "layers":[3][16]{"code","label","mods"}}   ("mods" optional, 0 when absent: Ctrl/Shift/Alt/Win bits)
  * Calibration is specific to one pad's sensors and magnets, so it is never part of a backup.
  *
@@ -42,6 +42,7 @@
                 boot_output: !!c.boot_output,
                 ...(Number.isInteger(c.theme) ? { theme: c.theme } : {}),
                 ...(Number.isInteger(c.saver_idle) ? { saver_idle: c.saver_idle, saver_anim: c.saver_anim } : {}),
+                ...(Array.isArray(c.knob) ? { knob: c.knob.slice() } : {}),
             },
             layers: c.layers.map(l => l.map(k => ({ code: k.code, label: k.label, mods: k.mods || 0 }))),
         };
@@ -110,6 +111,13 @@
                     problems.push(`settings.saver_idle must be 0 to ${idleMax} minutes.`);
                 } else settings.saver_idle = s.saver_idle;
             }
+            if (s.knob !== undefined) {
+                const modes = limits.knob_modes || 6;
+                if (!Array.isArray(s.knob) || s.knob.length !== limits.layers ||
+                    !s.knob.every(m => Number.isInteger(m) && m >= 0 && m < modes)) {
+                    problems.push(`settings.knob must list one knob mode (0 to ${modes - 1}) per layer.`);
+                } else settings.knob = s.knob.slice();
+            }
             if (s.saver_anim !== undefined) {
                 const count = limits.saver_anims || 7;
                 if (!Number.isInteger(s.saver_anim) || s.saver_anim < -1 || s.saver_anim >= count) {
@@ -139,6 +147,9 @@
                     if (field === "theme" && !session.hasFeature("themes")) continue;
                     if (field.startsWith("saver_") && !session.hasFeature("screensaver_idle")) continue;
                     steps.push({ what: field, run: () => session.setSetting(field, parsed.settings[field]) });
+                }
+                if (parsed.settings.knob && session.hasFeature("knob_modes")) {
+                    parsed.settings.knob.forEach((mode, l) => steps.push({ what: `layer ${l} knob`, run: () => session.setKnob(l, mode) }));
                 }
             }
             for (let l = 0; l < parsed.layers.length; l++) {
@@ -171,6 +182,9 @@
                     check("boot_output", parsed.settings.boot_output, cfg.boot_output);
                 }
                 if (parsed.settings.theme !== undefined && session.hasFeature("themes")) check("theme", parsed.settings.theme, cfg.theme);
+                if (parsed.settings.knob && session.hasFeature("knob_modes") && cfg.knob) {
+                    parsed.settings.knob.forEach((mode, l) => check(`layer ${l} knob`, mode, cfg.knob[l]));
+                }
                 if (session.hasFeature("screensaver_idle")) {
                     for (const field of ["saver_idle", "saver_anim"]) {
                         if (parsed.settings[field] !== undefined) check(field, parsed.settings[field], cfg[field]);

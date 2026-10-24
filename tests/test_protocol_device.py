@@ -666,6 +666,105 @@ class TestKnobActions(unittest.TestCase):
         self.assertEqual(counters[3], 0, "a report was refused: something sent while the endpoint was busy")
         self.assertEqual(self.media(), [self.VOLUME_UP, 0] * 3)
 
+    # ---- knob modes (SET_KNOB): what the knob does on each layer
+    NEXT, PREV, PLAY = 0xB5, 0xB6, 0xCD
+    CTRL = 0x01
+
+    def knob_mode(self, mode: int, layer: int = 0) -> None:
+        r = self.d.replies(f"SET_KNOB {layer} {mode}")[0]
+        self.assertEqual((r["status"], r["knob"]), ("ok", mode))
+
+    def delivered(self) -> list:
+        """Keyboard reports the host collected: (modifiers, usages held)"""
+        out, buf = [], (ctypes.c_uint8 * 8)()
+        for i in range(self.lib.usbfake_log_len()):
+            self.lib.usbfake_log_entry(i, buf)
+            if buf[0] == 2:
+                out.append((buf[1], tuple(k for k in list(buf)[2:8] if k)))
+        return out
+
+    def mouse(self) -> list:
+        return [self.lib.usbfake_mouse_log_entry(i) for i in range(self.lib.usbfake_mouse_log_len())]
+
+    def test_media_mode_skips_tracks_and_plays(self):
+        self.output_on()
+        self.knob_mode(1)
+        self.turn(clockwise=True)
+        self.turn(clockwise=False)
+        self.hold(100)
+        self.assertEqual(self.media(), [self.NEXT, 0, self.PREV, 0, self.PLAY, 0])
+
+    def test_scroll_mode_turns_the_mouse_wheel_and_presses_the_middle_button(self):
+        self.output_on()
+        self.knob_mode(2)
+        self.turn(clockwise=True)
+        self.turn(clockwise=True)
+        self.turn(clockwise=False)
+        self.assertEqual(self.lib.usbfake_mouse_wheel_total(), -1, "clockwise scrolls down, one step a click")
+        self.hold(100)
+        self.assertEqual(self.mouse(), [-1, -1, 1, 100 + 4, 100], "three wheel steps, then the middle button down and up")
+        self.assertEqual(self.lib.usbfake_mouse_buttons(), 0, "no button left held")
+        self.assertEqual(self.media(), [], "no volume")
+
+    def test_zoom_arrow_and_undo_modes_type_their_combinations(self):
+        self.output_on()
+        cases = [(3, True, (self.CTRL, (0x2E,))), (3, False, (self.CTRL, (0x2D,))), (3, None, (self.CTRL, (0x27,))),
+                 (4, True, (0, (0x4F,))), (4, False, (0, (0x50,))), (4, None, (0, (0x28,))),
+                 (5, False, (self.CTRL, (0x1D,))), (5, True, (self.CTRL, (0x1C,)))]
+        names = {3: "zoom", 4: "arrows", 5: "undo"}
+        for mode, clockwise, combo in cases:
+            with self.subTest(mode=names[mode], turn={True: "clockwise", False: "anticlockwise", None: "press"}[clockwise]):
+                self.knob_mode(mode)
+                self.lib.usbfake_clear_log()
+                if clockwise is None:
+                    self.hold(100)
+                else:
+                    self.turn(clockwise)
+                self.ms(20)
+                sent = self.delivered()
+                self.assertIn(combo, sent)
+                self.assertEqual(sent[-1], (0, ()), "everything is released afterwards")
+        self.assertEqual(self.media(), [])
+
+    def test_a_press_in_undo_mode_sends_nothing(self):
+        self.output_on()
+        self.knob_mode(5)
+        self.lib.usbfake_clear_log()
+        self.hold(100)
+        self.assertEqual(self.delivered(), [])
+
+    def test_a_combination_from_the_knob_leaves_a_held_key_down(self):
+        self.output_on()
+        self.knob_mode(5)
+        self.lib.set_travel(3, 3.0)        # a key goes down, then the knob undoes
+        self.ms(20)
+        self.turn(clockwise=False)
+        self.assertIn((self.CTRL, (38, 0x1D)), self.delivered(), "Ctrl+Z went out with the key still held")
+        host = (ctypes.c_uint8 * 7)()
+        self.lib.usbfake_host_state(host)
+        self.assertEqual((host[0], [k for k in list(host)[1:] if k]), (0, [38]), "only the held key is left down")
+        self.lib.set_travel(3, 0.0)
+        self.ms(20)
+
+    def test_each_layer_has_its_own_knob_mode(self):
+        self.output_on()
+        self.knob_mode(1, layer=1)
+        self.turn(clockwise=True)                       # layer 0: still volume
+        self.assertEqual(self.d.replies("SET_LAYER 1")[0]["status"], "ok")
+        self.turn(clockwise=True)                       # layer 1: media
+        self.assertEqual(self.media(), [self.VOLUME_UP, 0, self.NEXT, 0])
+        self.assertEqual(self.d.config()["knob"], [0, 1, 0])
+
+    def test_knob_modes_survive_a_save_and_nothing_is_sent_with_output_off(self):
+        self.knob_mode(2, layer=2)
+        self.d.replies("SAVE")
+        self.d = dh.Device(self.lib)                    # power cycle: the saved settings load again
+        self.assertEqual(self.d.config()["knob"], [0, 0, 2])
+        self.assertEqual(self.d.replies("SET_LAYER 2")[0]["status"], "ok")
+        self.turn(clockwise=True)
+        self.hold(100)
+        self.assertEqual((self.mouse(), self.media()), ([], []), "output is off after power-up")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

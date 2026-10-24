@@ -490,7 +490,7 @@
         assertEq(res.failed.map(f => f.what), ["layer 1 key 4"]);
         assertEq(res.mismatched.map(m => m.what).sort(), ["layer 0 key 0"]);
         assertEq(res.mismatched[0].actual, key(98, "BQ"), "mismatches show what the pad holds");
-        assertEq(res.applied.length, 8 + 48 - 1, "every other step was accepted (8 settings, 48 keys)");
+        assertEq(res.applied.length, 8 + 3 + 48 - 1, "every other step was accepted (8 settings, 3 knob modes, 48 keys)");
     });
 
     test("backup: invalid files are refused with a reason", () => {
@@ -787,6 +787,39 @@
         const res = await DP.backup.restore(session, parsed);
         assertEq(res.failed, []);
         assert(!device.received.some(l => /^SET_SAVER_/.test(l)), "no command the firmware would reject");
+    });
+
+    test("knob: each layer's mode is read, set and kept in backups", async () => {
+        const { session, device } = await rig();
+        assertEq(session.confirmed.knob, [0, 0, 0], "factory: volume on every layer");
+        assertEq(session.limits.knob_modes, 6);
+        assertEq(await session.setKnob(2, 3), 3);
+        assertEq(device.received.slice(-1).map(l => l.replace(/^@\S+ /, "")), ["SET_KNOB 2 3"]);
+        assertEq(session.confirmed.knob, [0, 0, 3]);
+        assertEq(session.dirty, true);
+        const backup = DP.backup.create(session);
+        assertEq(backup.settings.knob, [0, 0, 3]);
+        await session.setKnob(2, 0);
+        const res = await DP.backup.restore(session, DP.backup.parse(JSON.stringify(backup), session.limits));
+        assertEq([res.failed, res.mismatched], [[], []]);
+        assertEq(session.confirmed.knob, [0, 0, 3], "restored");
+        for (const bad of [[0, 0], [0, 0, 6], [0, -1, 0], "volume"]) {
+            const b = JSON.parse(JSON.stringify(backup));
+            b.settings.knob = bad;
+            assert(DP.backup.parse(JSON.stringify(b), session.limits).problems.length > 0, `knob ${JSON.stringify(bad)} refused`);
+        }
+        let err = null;
+        try { await session.setKnob(0, 6); } catch (e) { err = e; }
+        assertEq(err && err.code, "out_of_range");
+    });
+
+    test("knob: firmware without knob modes is never sent SET_KNOB", async () => {
+        const { session, device } = await rig({ device: { features: DP.fake.FEATURES.filter(f => f !== "knob_modes") } });
+        assertEq(session.confirmed.knob, null);
+        let err = null;
+        try { await session.setKnob(0, 1); } catch (e) { err = e; }
+        assert(err && /no knob modes/.test(err.message), String(err));
+        assert(!device.received.some(l => /^SET_KNOB/.test(l)));
     });
 
     test("themes: choosing a theme also picks its screensaver, and backups keep both", async () => {

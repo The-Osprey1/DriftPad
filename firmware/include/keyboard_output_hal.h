@@ -19,7 +19,7 @@
  * only from the transfer counters below.
  */
 
-void hidInit();                  // Keyboard.begin()
+void hidInit();                  // Keyboard.begin(), Mouse.begin()
 // Library calls. Each attempts at most one report and may block inside the library while the
 // previous report is still waiting for the host to poll (up to 500 ms if the host stops polling
 // while the device stays mounted). Return: the library's own return value.
@@ -30,6 +30,10 @@ void hidReleaseAll();
 // the keyboard calls; only MediaKeys calls them, and only while hidEndpointFree().
 bool hidConsumerPress(uint16_t usage);
 bool hidConsumerRelease();
+// Mouse (the knob's scroll mode): one report each, same endpoint and rules as the media keys.
+// steps > 0 scrolls up. buttons: bit 0 left, 1 right, 2 middle, held until the next call.
+bool hidMouseWheel(int8_t steps);
+bool hidMouseButtons(uint8_t buttons);
 
 // Non-blocking transport state
 bool hidLinkUp();                // mounted and not suspended (tud_ready())

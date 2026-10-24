@@ -20,9 +20,10 @@ SCENES = {"standby": 0, "travelling": 1, "actuated": 2, "actuated_ent": 3,
           "standby_no_cal": 4, "travelling_output_off": 5,
           "rt_backing_off": 6, "no_rt_backing_off": 7,
           "wide_label": 8, "wide_label_actuated": 9,
-          "menu_rt": 10, "menu_actuation": 11, "menu_toggle": 12, "menu_layer": 13, "menu_theme": 14,
+          "menu_rt": 10, "menu_actuation": 11, "menu_toggle": 12, "menu_layer": 13, "menu_theme": 14, "menu_knob": 15,
           "splash": 20, **{f"screensaver{i}": 30 + i for i in range(ANIM_COUNT)},
-          "layer_change": 40, "layer_change_start": 41, "key_press": 42}
+          "layer_change": 40, "layer_change_start": 41, "key_press": 42,
+          "knob_popup": 43, "knob_popup_output_off": 44}
 
 
 def load():

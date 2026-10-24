@@ -7,7 +7,7 @@ DriftPad speaks a line-based text protocol over its USB serial port (CDC, 115200
 fails when this document and the table disagree. Detect capabilities with `INFO`: `protocol` is 2 and
 `features[]` lists what this firmware has (`keymap layers rapid_trigger telemetry timing raw sim
 display guided_calibration boot_output settings_ab display_status encoder_status key_modifiers
-screensaver_idle themes`). Firmware before 2.1.0 spoke protocol 1
+screensaver_idle themes knob_modes`). Firmware before 2.1.0 spoke protocol 1
 (replies without `cmd` or `id`); the configurator refuses it and says so.
 
 ## Limits
@@ -21,6 +21,7 @@ screensaver_idle themes`). Firmware before 2.1.0 spoke protocol 1
 | Line length | | 160 bytes | |
 | Screensaver idle start (`SET_SAVER_IDLE`) | 0 minutes (never) | 60 minutes | 2 minutes |
 | Screen theme (`SET_THEME`) | 0 (Drift) | 2 (Space) | 0 |
+| Knob mode per layer (`SET_KNOB`) | 0 (volume) | 5 (undo) | 0 |
 | Request id | | 12 characters | |
 | Stream rate | | 60 Hz | 30 Hz |
 
@@ -73,8 +74,8 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 | Command | Reply fields (besides status/cmd/id) |
 |---|---|
 | `PING` | `type:"pong"` |
-| `INFO` (alias `HELLO`) | `type:"info", device:"DriftPad", hw, fw, protocol:2, build, build_date, features[], limits{actuation{min,max,default,step}, rt_sens{...}, layers, keys, label_max, label_chars, code_max, line_max, stream_hz_max, saver_idle_max, saver_anims, themes}, calibration{state}, output{enabled, reason, active_keys[], suppressed_keys[], overflow, delivery}, settings{dirty, source, seq, load_errors[]}, uptime_ms`, plus optional `display{available, mode, animation, shuffle, dimmed}` when `display_status` is advertised |
-| `GET_CONFIG` | `type:"config", actuation, rt_sens, rt_enabled, active_layer, boot_output, saver_idle, saver_anim, theme, dirty, settings_seq, layers[3][16]{idx, code, label, mods}` (`mods` with feature `key_modifiers`; `saver_idle` and `saver_anim` with `screensaver_idle`; `theme` with `themes`) |
+| `INFO` (alias `HELLO`) | `type:"info", device:"DriftPad", hw, fw, protocol:2, build, build_date, features[], limits{actuation{min,max,default,step}, rt_sens{...}, layers, keys, label_max, label_chars, code_max, line_max, stream_hz_max, saver_idle_max, saver_anims, themes, knob_modes}, calibration{state}, output{enabled, reason, active_keys[], suppressed_keys[], overflow, delivery}, settings{dirty, source, seq, load_errors[]}, uptime_ms`, plus optional `display{available, mode, animation, shuffle, dimmed}` when `display_status` is advertised |
+| `GET_CONFIG` | `type:"config", actuation, rt_sens, rt_enabled, active_layer, boot_output, saver_idle, saver_anim, theme, knob[3], dirty, settings_seq, layers[3][16]{idx, code, label, mods}` (`mods` with feature `key_modifiers`; `saver_idle` and `saver_anim` with `screensaver_idle`; `theme` with `themes`; `knob`, one mode per layer, with `knob_modes`) |
 | `STATUS` | `type:"status", active_layer, last_key, keys[16]{idx, pressed, travel, label}, output{...}, calibration{state}, sim_mask, dirty`, plus optional `display{...}` when `display_status` is advertised |
 | `STREAM <0|1> [hz]` | `streaming, hz`; then `{"type":"telemetry","seq","t","layer","pressed"(bitmask),"active"(bitmask),"sim"(bitmask),"travel"[16 × cmm ints],"knob"{a,b,sw,steps,presses},"dirty"}` at `hz` (default 30, max 60). `knob` (feature `encoder_status`) gives the raw encoder pin levels (1 = HIGH, contact open) and the quadrature steps and debounced presses counted since boot, for wiring checks. Streaming stops when the host closes the port. |
 | `SET_ACTUATION <mm>` | `actuation` + applied/persisted/dirty |
@@ -85,6 +86,7 @@ Only `INFO.limits` is authoritative at run time; the configurator reads its boun
 | `SET_SAVER_IDLE <minutes>` | `saver_idle` + applied/persisted/dirty. Feature `screensaver_idle`: the screensaver starts by itself after this many idle minutes, 0 to 60; 0 = never (see below) |
 | `SET_SAVER_ANIM <0-7\|SHUFFLE>` | `saver_anim` (`-1` for shuffle) + applied/persisted/dirty. The animation the idle screensaver plays, numbered as for `ANIM` |
 | `SET_THEME <0-2>` | `theme`, `saver_anim` + applied/persisted/dirty. Feature `themes`: the screen's look, 0 Drift, 1 Cherry blossom or 2 Space (title, key card, press effect, layer change, standby art). It also sets the idle screensaver to the theme's own (Drift: shuffle, `-1`; Cherry blossom: Sakura, `6`; Space: Orbit, `7`); a later `SET_SAVER_ANIM` picks another. Behaviour is the same in every theme |
+| `SET_KNOB <layer> <0-5>` | `layer, knob` + applied/persisted/dirty. Feature `knob_modes`: what the knob does while that layer is active (turn anticlockwise / clockwise, press). 0 volume (down / up, mute), 1 media (previous / next track, play-pause), 2 scroll (up / down with the mouse wheel, middle click), 3 zoom (Ctrl+minus / Ctrl+equals, Ctrl+0), 4 arrows (Left / Right, Enter), 5 undo (Ctrl+Z / Ctrl+Y, nothing). Like the keys, it sends nothing while keyboard output is off. The pad shows what was sent in a pop-up |
 | `SET_HID <bool> [FORCE]` (aliases `HID`, `OUTPUT`) | `hid_output, output{...}` (runtime only, never saved) |
 | `SAVE` | `persisted:true, dirty:false, duration_ms`, or error `flash_error`/`flash_verify_failed` with `persisted:false` |
 | `REVERT` | `applied, persisted, dirty` — reloads the saved settings; `not_allowed` when nothing is saved |

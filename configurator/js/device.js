@@ -75,6 +75,7 @@
             saver_idle_max: isInt(l.saver_idle_max) ? l.saver_idle_max : C.FALLBACK_LIMITS.saver_idle_max,
             saver_anims: isInt(l.saver_anims) ? l.saver_anims : C.FALLBACK_LIMITS.saver_anims,
             themes: isInt(l.themes) ? l.themes : C.FALLBACK_LIMITS.themes,
+            knob_modes: isInt(l.knob_modes) ? l.knob_modes : C.FALLBACK_LIMITS.knob_modes,
         };
     }
 
@@ -110,6 +111,8 @@
             saver_idle: isInt(r.saver_idle) ? r.saver_idle : null,
             saver_anim: isInt(r.saver_anim) ? r.saver_anim : null,
             theme: isInt(r.theme) ? r.theme : null,   // 0 Drift, 1 Cherry blossom, 2 Space; null without themes
+            // What the knob does on each layer (0 volume .. 5 undo); null without knob_modes
+            knob: Array.isArray(r.knob) && r.knob.length === C.LIMITS_CMM.NUM_LAYERS && r.knob.every(isInt) ? r.knob.slice() : null,
             layers: r.layers.map(layer => layer.map(k => ({ code: k.code, label: k.label, mods: isInt(k.mods) ? k.mods : 0 }))),
             dirty: typeof r.dirty === "boolean" ? r.dirty : null,
             settings_seq: isInt(r.settings_seq) ? r.settings_seq : null,
@@ -565,6 +568,20 @@
             this._noteDirty(r);
             this._changed();
             return r[field];
+        }
+
+        // SET_KNOB (feature knob_modes): what the knob does on `layer`. Resolves with the mode the
+        // device reports.
+        async setKnob(layer, mode) {
+            if (!this.hasFeature("knob_modes")) {
+                throw new ProtocolError("bad_request", "This firmware has no knob modes; update it (Device → Firmware update)");
+            }
+            const r = await this.request("SET_KNOB", [String(layer), String(mode)],
+                { validate: rep => (isInt(rep.knob) && rep.layer === layer ? null : "knob missing from the reply") });
+            if (this.confirmed && this.confirmed.knob) this.confirmed.knob[layer] = r.knob;
+            this._noteDirty(r);
+            this._changed();
+            return r.knob;
         }
 
         // SET_KEY; resolves with the normalised {code, label, mods} the device reports. `mods`
