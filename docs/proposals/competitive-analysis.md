@@ -1,3 +1,7 @@
+> **Status: market notes and a wish list.** The roadmap in section 4 lists ideas, not work in
+> progress. Several entries under "DriftPad architectural solution" describe features that are not
+> built; the [blueprint's status note](ARCHITECTURAL_BLUEPRINT.md) lists them.
+
 # DriftPad: Market Analysis, Competitor Benchmarking & Engineering Roadmap
 
 ## Executive Summary

@@ -1,3 +1,19 @@
+> **Status: proposal, not built.** This document describes features that neither the firmware nor
+> the Studio has yet: separate press and release Rapid Trigger distances, Snap Tap (priority between
+> opposing keys), multi-stage keys, a different auto-zero filter from the one in
+> `firmware/src/hall.cpp`, and the commands `SET_AUTOZERO`, `SET_RT_SPLIT`, `SET_KEY_RT`, `SET_SOCD`
+> and `SET_DKS_*`. The files it names (`firmware/include/auto_zero_filter.h`, `split_rt.h`,
+> `socd_engine.h`, `dks_engine.h`, `src/services/dsp/`, `src/store/`) do not exist.
+>
+> Its "schema 4" settings layout is **not** the schema 4 the firmware stores: the real one ends at
+> byte 452 (`firmware/include/settings_store.h`), so these settings would need a schema 5.
+>
+> For what the code does today, see [hardware](../hardware.md), [serial protocol](../serial-protocol.md),
+> [flash layout](../flash-layout.md) and [calibration](../calibration.md). The Python models in
+> [checks/](checks/) test this document's proposed code, not the firmware, so they live here rather
+> than in `tests/`. Run them with
+> `python -m unittest discover -s docs/proposals/checks -p "blueprint_*.py"`.
+
 # DriftPad Next-Generation Competitive Gaming Architecture Blueprint
 ## Publication-Grade Software Design Specification & Systems Architecture
 
