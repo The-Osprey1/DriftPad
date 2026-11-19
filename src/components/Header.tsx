@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ProductivityProfile } from '../types/driftpad';
-import { ConnectionMode } from '../services/serialService';
+import { ConnectionMode } from '../types/driftpad';
 import {
   Usb,
   ChevronDown,
@@ -254,43 +254,27 @@ export const HeaderComponent: React.FC<HeaderProps> = ({
         <button
           onClick={onToggleVirtualMode}
           className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium flex items-center gap-1.5 border transition-colors ${
-            connectionMode === 'hardware'
-              ? 'bg-[#15803d]/10 text-[#15803d] border-[#15803d]/30'
-              : connectionMode === 'virtual'
+            connectionMode === 'virtual'
               ? 'bg-[#5b8e85]/15 text-[#153641] border-[#5b8e85]/35'
               : 'bg-red-500/10 text-red-600 border-red-500/30'
           }`}
           title="Click to toggle Virtual Simulator mode"
         >
           <span
-            className={`w-2 h-2 rounded-full ${
-              connectionMode === 'hardware'
-                ? 'bg-[#15803d] animate-pulse'
-                : connectionMode === 'virtual'
-                ? 'bg-[#5b8e85]'
-                : 'bg-red-500'
-            }`}
+            className={`w-2 h-2 rounded-full ${connectionMode === 'virtual' ? 'bg-[#5b8e85]' : 'bg-red-500'}`}
           />
           <span className="text-[11px] font-semibold">
-            {connectionMode === 'hardware'
-              ? 'USB Hardware'
-              : connectionMode === 'virtual'
-              ? 'Digital Twin'
-              : 'Offline'}
+            {connectionMode === 'virtual' ? 'Digital Twin' : 'Offline'}
           </span>
         </button>
 
-        {/* Primary USB Connect / Disconnect Button */}
+        {/* Opens the device configurator, which talks to the real pad */}
         <button
           onClick={onConnectToggle}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs ${
-            connectionMode === 'hardware'
-              ? 'bg-[#faf7f2] hover:bg-red-50 text-red-600 border border-red-200'
-              : 'bg-[#c86443] hover:bg-[#b25536] text-white'
-          }`}
+          className="px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs bg-[#c86443] hover:bg-[#b25536] text-white"
         >
           <Usb className="w-3.5 h-3.5" />
-          <span>{connectionMode === 'hardware' ? 'Disconnect' : 'Connect USB'}</span>
+          <span>Connect USB</span>
         </button>
       </div>
     </header>

@@ -184,8 +184,6 @@ and validation procedures.
 
 ## Engineering guides
 
-- [architectural blueprint](docs/ARCHITECTURAL_BLUEPRINT.md)
-- [competitive analysis](docs/competitive-analysis.md)
 - [firmware integration](docs/firmware-integration.md)
 - [beta checklist](docs/beta-checklist.md)
 - [bring up](docs/bring-up.md)
@@ -198,6 +196,9 @@ and validation procedures.
 - [scheduling](docs/scheduling.md)
 - [serial protocol](docs/serial-protocol.md)
 - [testing](docs/testing.md)
+
+Proposals, not built yet: [gaming features blueprint](docs/proposals/ARCHITECTURAL_BLUEPRINT.md)
+and [competitive analysis](docs/proposals/competitive-analysis.md).
 
 ## License
 

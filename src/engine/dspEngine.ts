@@ -1,4 +1,12 @@
 import { DeviceConfig, KeyStatus, INITIAL_DEVICE_CONFIG, LayerKey } from '../types/driftpad';
+import {
+  ACTUATION_MAX_MM,
+  ACTUATION_MIN_MM,
+  RT_SENS_MAX_MM,
+  RT_SENS_MIN_MM,
+  isActuationMm,
+  isRtSensMm,
+} from './limits';
 
 export interface KeyDSPState {
   index: number;
@@ -261,7 +269,7 @@ export class DriftPadDspEngine {
 
     if (upper.startsWith('SET_ACTUATION ')) {
       const val = parseFloat(line.substring(14));
-      if (!isNaN(val) && val >= 0.1 && val <= 3.8) {
+      if (isActuationMm(val)) {
         this.config.actuation = Number(val.toFixed(2));
         this.saveConfigToStorage();
         const resp = JSON.stringify({
@@ -271,14 +279,17 @@ export class DriftPadDspEngine {
         this.onSerialOutput?.(resp);
         return resp;
       }
-      const err = JSON.stringify({ status: 'error', msg: 'Invalid actuation (0.1 - 3.8mm)' });
+      const err = JSON.stringify({
+        status: 'error',
+        msg: `Invalid actuation (${ACTUATION_MIN_MM.toFixed(2)} - ${ACTUATION_MAX_MM.toFixed(2)} mm)`,
+      });
       this.onSerialOutput?.(err);
       return err;
     }
 
     if (upper.startsWith('SET_RT_SENS ')) {
       const val = parseFloat(line.substring(12));
-      if (!isNaN(val) && val >= 0.1 && val <= 2.0) {
+      if (isRtSensMm(val)) {
         this.config.rt_sens = Number(val.toFixed(2));
         this.saveConfigToStorage();
         const resp = JSON.stringify({
@@ -288,7 +299,10 @@ export class DriftPadDspEngine {
         this.onSerialOutput?.(resp);
         return resp;
       }
-      const err = JSON.stringify({ status: 'error', msg: 'Invalid RT sensitivity (0.10 - 2.0mm)' });
+      const err = JSON.stringify({
+        status: 'error',
+        msg: `Invalid RT sensitivity (${RT_SENS_MIN_MM.toFixed(2)} - ${RT_SENS_MAX_MM.toFixed(2)} mm)`,
+      });
       this.onSerialOutput?.(err);
       return err;
     }

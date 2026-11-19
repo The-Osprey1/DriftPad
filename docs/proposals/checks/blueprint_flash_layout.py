@@ -1,5 +1,5 @@
 """
-test_empirical_challenger2_audit.py
+blueprint_flash_layout.py (formerly tests/audit_empirical_challenger2.py)
 Adversarial Verification Suite for Challenger 2:
 - Schema 4 Flash Binary Layout (offsets 0..955, alignment, packing, padding)
 - Calibration Invariance across Schema 2, 3, and 4 (offsets 296..395)
@@ -207,7 +207,7 @@ class TestSchema4FlashLayout(unittest.TestCase):
         """CRITICAL AUDIT: Check firmware PAYLOAD_MAX against PAYLOAD_V4_SIZE.
         If PAYLOAD_MAX < 956, firmware inspect() and encode() will fail!
         """
-        firmware_h = (Path(__file__).resolve().parent.parent / "firmware" / "include" / "settings_store.h").read_text()
+        firmware_h = (Path(__file__).resolve().parents[3] / "firmware" / "include" / "settings_store.h").read_text()
         import re
         m = re.search(r"constexpr\s+uint16_t\s+PAYLOAD_MAX\s*=\s*(\d+);", firmware_h)
         self.assertIsNotNone(m, "PAYLOAD_MAX not found in settings_store.h")

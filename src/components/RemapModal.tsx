@@ -14,6 +14,7 @@ import {
   Search,
 } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
+import { ACTUATION_MAX_MM, ACTUATION_MIN_MM } from '../engine/limits';
 
 interface RemapModalProps {
   isOpen: boolean;
@@ -254,8 +255,8 @@ export const RemapModal: React.FC<RemapModalProps> = ({
                 </div>
                 <input
                   type="range"
-                  min="0.20"
-                  max="3.80"
+                  min={ACTUATION_MIN_MM}
+                  max={ACTUATION_MAX_MM}
                   step="0.05"
                   value={customActuationMm}
                   onChange={(e) => setCustomActuationMm(parseFloat(e.target.value))}

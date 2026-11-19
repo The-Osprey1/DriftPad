@@ -25,6 +25,9 @@ test('matches protocol responses for core settings', () => {
   assert.equal(JSON.parse(engine.processCommand('SET_LAYER 2')).status, 'ok');
   assert.equal(engine.getConfig().active_layer, 2);
   assert.equal(JSON.parse(engine.processCommand('SET_ACTUATION 9')).status, 'error');
+  // Below the firmware's 0.25 mm minimum: the pad refuses it, so the Digital Twin must too
+  assert.equal(JSON.parse(engine.processCommand('SET_ACTUATION 0.10')).status, 'error');
+  assert.equal(JSON.parse(engine.processCommand('SET_ACTUATION 0.25')).status, 'ok');
   assert.equal(JSON.parse(engine.processCommand('SET_RT_SENS 0.25')).status, 'ok');
   assert.equal(JSON.parse(engine.processCommand('SET_HID 0')).hid_output, false);
   engine.dispose();

@@ -1,5 +1,5 @@
 """
-test_challenger1_dsp.py - Adversarial DSP, Timing & Mathematical Model Verification Suite.
+blueprint_dsp_models.py (formerly tests/test_challenger1_dsp.py) - Adversarial DSP, Timing & Mathematical Model Verification Suite.
 
 Challenger 1 (Timing, Cycle Budget & DSP Challenger)
 Empirical verification and stress testing of ARCHITECTURAL_BLUEPRINT.md:
