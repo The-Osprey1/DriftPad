@@ -4,6 +4,14 @@ import {
   LayerKey,
   ProductivityProfile,
 } from '../types/driftpad';
+import { ACTUATION_MAX_MM, ACTUATION_MIN_MM, isRtSensMm } from '../engine/limits';
+
+// Before the Studio shared the firmware's limits it allowed actuation down to 0.10 mm. Profiles from
+// then are still accepted; fitToFirmwareLimits raises those values to the firmware's minimum.
+const LEGACY_ACTUATION_MIN_MM = 0.1;
+
+const isStoredActuationMm = (mm: unknown): mm is number =>
+  typeof mm === 'number' && Number.isFinite(mm) && mm >= LEGACY_ACTUATION_MIN_MM && mm <= ACTUATION_MAX_MM;
 
 const CATEGORIES = new Set<ProductivityProfile['category']>([
   'developer',
@@ -42,10 +50,7 @@ const isLayerKey = (value: unknown, index: number): value is LayerKey => {
     key.label.length <= 4 &&
     (key.description === undefined || typeof key.description === 'string') &&
     (key.modifiers === undefined || isModifierFlags(key.modifiers)) &&
-    (key.customActuation === undefined ||
-      (typeof key.customActuation === 'number' &&
-        key.customActuation >= 0.1 &&
-        key.customActuation <= 3.8))
+    (key.customActuation === undefined || isStoredActuationMm(key.customActuation))
   );
 };
 
@@ -107,12 +112,9 @@ export const validateProductivityProfiles = (value: unknown): value is Productiv
     }
     const tuning = profile.tuning as ProductivityProfile['tuning'];
     if (
-      typeof tuning.actuation !== 'number' ||
-      tuning.actuation < 0.1 ||
-      tuning.actuation > 3.8 ||
+      !isStoredActuationMm(tuning.actuation) ||
       typeof tuning.rt_sens !== 'number' ||
-      tuning.rt_sens < 0.1 ||
-      tuning.rt_sens > 2 ||
+      !isRtSensMm(tuning.rt_sens) ||
       typeof tuning.rt_enabled !== 'boolean'
     ) {
       return false;
@@ -122,8 +124,23 @@ export const validateProductivityProfiles = (value: unknown): value is Productiv
   });
 };
 
+const raiseToActuationMin = (mm: number): number => (mm < ACTUATION_MIN_MM ? ACTUATION_MIN_MM : mm);
+
+/** Raises actuation values saved by older Studio versions to the firmware's minimum. */
+export const fitToFirmwareLimits = (profile: ProductivityProfile): ProductivityProfile => ({
+  ...profile,
+  tuning: profile.tuning && { ...profile.tuning, actuation: raiseToActuationMin(profile.tuning.actuation) },
+  layers: profile.layers?.map((layer) =>
+    layer.map((key) =>
+      typeof key?.customActuation === 'number'
+        ? { ...key, customActuation: raiseToActuationMin(key.customActuation) }
+        : key
+    )
+  ),
+});
+
 export const getValidatedBackupProfiles = (value: unknown): ProductivityProfile[] | null => {
   if (typeof value !== 'object' || value === null) return null;
   const profiles = (value as { profiles?: unknown }).profiles;
-  return validateProductivityProfiles(profiles) ? profiles : null;
+  return validateProductivityProfiles(profiles) ? profiles.map(fitToFirmwareLimits) : null;
 };

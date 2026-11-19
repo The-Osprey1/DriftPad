@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sliders, Zap, Activity, Play, RotateCcw, ShieldAlert, LineChart } from 'lucide-react';
 import { HoverExplain } from './HoverExplain';
+import { ACTUATION_MAX_MM, ACTUATION_MIN_MM, RT_SENS_MAX_MM, RT_SENS_MIN_MM } from '../engine/limits';
 
 interface RapidTriggerTuningProps {
   actuation: number;
@@ -217,7 +218,7 @@ export const RapidTriggerTuningComponent: React.FC<RapidTriggerTuningProps> = ({
             <HoverExplain
               title="Actuation Point"
               badge="Hardware Travel"
-              explanation="The initial distance the key switch must be pressed down before sending a keystroke. Lower numbers (0.1mm-1.0mm) respond with ultra-light touch; higher numbers (2.0mm-3.8mm) require deliberate intent."
+              explanation="The initial distance the key switch must be pressed down before sending a keystroke. Lower numbers (0.25mm-1.0mm) respond with ultra-light touch; higher numbers (2.0mm-3.8mm) require deliberate intent."
               tip="If you experience accidental mis-types, increase actuation to 1.5mm - 2.0mm."
             />
           </div>
@@ -228,8 +229,8 @@ export const RapidTriggerTuningComponent: React.FC<RapidTriggerTuningProps> = ({
 
         <input
           type="range"
-          min="0.10"
-          max="3.80"
+          min={ACTUATION_MIN_MM}
+          max={ACTUATION_MAX_MM}
           step="0.05"
           value={actuation}
           onChange={(e) => onActuationChange(parseFloat(e.target.value))}
@@ -237,8 +238,8 @@ export const RapidTriggerTuningComponent: React.FC<RapidTriggerTuningProps> = ({
         />
 
         <div className="flex justify-between items-center text-[10px] text-[#84949b] font-mono tabular-nums">
-          <span>0.10 mm (Hair Trigger)</span>
-          <span>3.80 mm (Deep Stroke)</span>
+          <span>{ACTUATION_MIN_MM.toFixed(2)} mm (Hair Trigger)</span>
+          <span>{ACTUATION_MAX_MM.toFixed(2)} mm (Deep Stroke)</span>
         </div>
       </div>
 
@@ -262,8 +263,8 @@ export const RapidTriggerTuningComponent: React.FC<RapidTriggerTuningProps> = ({
 
         <input
           type="range"
-          min="0.10"
-          max="2.00"
+          min={RT_SENS_MIN_MM}
+          max={RT_SENS_MAX_MM}
           step="0.05"
           value={rtSens}
           onChange={(e) => onRtSensChange(parseFloat(e.target.value))}
@@ -271,8 +272,8 @@ export const RapidTriggerTuningComponent: React.FC<RapidTriggerTuningProps> = ({
         />
 
         <div className="flex justify-between items-center text-[10px] text-[#84949b] font-mono tabular-nums">
-          <span>0.10 mm (Instant Reset)</span>
-          <span>2.00 mm (Soft Cushion)</span>
+          <span>{RT_SENS_MIN_MM.toFixed(2)} mm (Instant Reset)</span>
+          <span>{RT_SENS_MAX_MM.toFixed(2)} mm (Soft Cushion)</span>
         </div>
       </div>
 

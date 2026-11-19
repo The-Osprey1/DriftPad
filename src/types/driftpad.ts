@@ -813,3 +813,6 @@ export const PRODUCTIVITY_SHORTCUT_PRESETS = [
   { label: 'Format (Alt+Shift+F)', code: 102, modifiers: { alt: true, shift: true }, disp: 'FMT' },
   { label: 'Command Pal (Ctrl+Shift+P)', code: 112, modifiers: { ctrl: true, shift: true }, disp: 'PAL' }
 ];
+
+// The Studio runs only the Digital Twin; a real pad is configured in the device configurator.
+export type ConnectionMode = 'disconnected' | 'virtual';

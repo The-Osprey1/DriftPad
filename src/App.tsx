@@ -12,10 +12,11 @@ import {
   EncoderAction,
   OledThemeConfig,
   DEFAULT_OLED_THEME,
+  ConnectionMode,
 } from './types/driftpad';
-import { getValidatedBackupProfiles } from './services/profileValidation';
-import { SerialService, ConnectionMode } from './services/serialService';
+import { fitToFirmwareLimits, getValidatedBackupProfiles } from './services/profileValidation';
 import { DriftPadDspEngine } from './engine/dspEngine';
+import { clampActuationMm, clampRtSensMm } from './engine/limits';
 import { audioService } from './services/audioService';
 import { Header } from './components/Header';
 import { KeyMatrix } from './components/KeyMatrix';
@@ -45,8 +46,7 @@ import {
 } from 'lucide-react';
 
 export const App: React.FC = () => {
-  // Services
-  const serialServiceRef = useRef<SerialService>(new SerialService());
+  // Services. The Studio only drives the Digital Twin; Connect USB opens the device configurator.
   const dspEngineRef = useRef<DriftPadDspEngine | null>(null);
 
   // Connection & Config State
@@ -60,7 +60,6 @@ export const App: React.FC = () => {
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState<boolean>(true);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [commissioning, setCommissioning] = useState({
-    connected: false,
     calibrated: false,
     oledChecked: false,
     saved: false,
@@ -76,9 +75,10 @@ export const App: React.FC = () => {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const hasNumpad = parsed.some((p: ProductivityProfile) => p.id === 'number-pad');
-          if (hasNumpad) return parsed;
-          return [PRODUCTIVITY_PROFILES[0], ...parsed];
+          const stored = (parsed as ProductivityProfile[]).map(fitToFirmwareLimits);
+          const hasNumpad = stored.some((p) => p.id === 'number-pad');
+          if (hasNumpad) return stored;
+          return [PRODUCTIVITY_PROFILES[0], ...stored];
         }
       } catch {
         // use default
@@ -288,19 +288,15 @@ export const App: React.FC = () => {
       const trimmed = cmd.trim();
       if (!trimmed) return;
 
-      if (connectionMode === 'hardware' && serialServiceRef.current.isConnected()) {
-        serialServiceRef.current.sendCommand(trimmed);
-      } else {
-        addLog('TX', trimmed);
-        if (dspEngineRef.current) {
-          const resp = dspEngineRef.current.processCommand(trimmed);
-          if (resp) {
-            handleIncomingLine(resp);
-          }
+      addLog('TX', trimmed);
+      if (dspEngineRef.current) {
+        const resp = dspEngineRef.current.processCommand(trimmed);
+        if (resp) {
+          handleIncomingLine(resp);
         }
       }
     },
-    [connectionMode, addLog, handleIncomingLine]
+    [addLog, handleIncomingLine]
   );
 
   // Initialize engine and profile
@@ -329,19 +325,7 @@ export const App: React.FC = () => {
 
     addLog('INFO', `DriftPad Studio loaded: [${initialProfile.name}]`);
 
-    const serial = serialServiceRef.current;
-    serial.setCallbacks({
-      onLineReceived: (line) => handleIncomingLineRef.current(line),
-      onLineSent: () => {},
-      onStatusChange: (mode) => {
-        setConnectionMode(mode);
-        setCommissioning((prev) => ({ ...prev, connected: mode === 'hardware' }));
-      },
-      onLog: (dir, text) => addLog(dir, text),
-    });
-
     return () => {
-      serial.disconnect();
       engine.dispose();
     };
   }, [addLog]);
@@ -594,15 +578,11 @@ export const App: React.FC = () => {
     showToast(`Editing layer ${layer}`);
   };
 
-  const handleConnectToggle = async () => {
-    await serialServiceRef.current.disconnect();
+  const handleConnectToggle = () => {
     window.location.assign(new URL('configurator/index.html', window.location.href).href);
   };
 
   const handleToggleVirtualMode = () => {
-    if (connectionMode === 'hardware') {
-      serialServiceRef.current.disconnect();
-    }
     const next = connectionMode === 'virtual' ? 'disconnected' : 'virtual';
     setConnectionMode(next);
     addLog('INFO', `Switched mode to ${next}`);
@@ -610,7 +590,7 @@ export const App: React.FC = () => {
   };
 
   const handleActuationChange = (val: number) => {
-    const clamped = Number(Math.max(0.1, Math.min(3.8, val)).toFixed(2));
+    const clamped = clampActuationMm(val);
     setDeviceConfig((prev) => ({ ...prev, actuation: clamped }));
     sendSerialCommand(`SET_ACTUATION ${clamped.toFixed(2)}`);
 
@@ -624,7 +604,7 @@ export const App: React.FC = () => {
   };
 
   const handleRtSensChange = (val: number) => {
-    const clamped = Number(Math.max(0.1, Math.min(2.0, val)).toFixed(2));
+    const clamped = clampRtSensMm(val);
     setDeviceConfig((prev) => ({ ...prev, rt_sens: clamped }));
     sendSerialCommand(`SET_RT_SENS ${clamped.toFixed(2)}`);
 
@@ -660,10 +640,6 @@ export const App: React.FC = () => {
 
       if (res.pressed) {
         recordKeyPress(keyIdx);
-      }
-
-      if (connectionMode === 'hardware') {
-        sendSerialCommand(`SIM ${keyIdx} ${clamped.toFixed(2)}`);
       }
     }
   };
@@ -829,7 +805,7 @@ export const App: React.FC = () => {
             {/* Chassis Header Bar */}
             <div className="flex items-center justify-between text-[11px] font-mono text-[#5a6a72] border-b border-[#ded7ca] pb-2">
               <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${connectionMode === 'hardware' ? 'bg-[#15803d]' : 'bg-[#5b8e85]'}`} />
+                <span className="w-2 h-2 rounded-full bg-[#5b8e85]" />
                 <span className="font-bold tracking-wider text-[#1b2930]">DRIFTPAD · RP2040</span>
               </div>
               <span className="text-[#71828a] font-semibold text-[10px]">16-KEY HALL EFFECT CHASSIS</span>
@@ -1030,12 +1006,11 @@ export const App: React.FC = () => {
                       </p>
                     </div>
                     <span className="font-mono text-[10px] text-[#5b8e85]">
-                      {Object.values(commissioning).filter(Boolean).length}/4
+                      {Object.values(commissioning).filter(Boolean).length}/{Object.keys(commissioning).length}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[10px]">
                     {[
-                      ['connected', 'Device connection'],
                       ['calibrated', 'Calibrate sensors'],
                       ['oledChecked', 'Scan OLED'],
                       ['saved', 'Save to flash'],
